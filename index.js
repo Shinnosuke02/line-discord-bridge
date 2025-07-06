@@ -7,20 +7,24 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-// LINE config
+// LINE設定
 const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 const lineClient = new line.Client(lineConfig);
 
-// Discord bot init
+// Discord設定
 const discordClient = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
-// Load or create mapping file
+// Mappingファイル読み込み
 const mappingPath = './mapping.json';
 let mapping = {};
 if (fs.existsSync(mappingPath)) {
@@ -29,42 +33,54 @@ if (fs.existsSync(mappingPath)) {
   fs.writeFileSync(mappingPath, JSON.stringify({}));
 }
 
-// ✅ Webhook verification fallback route (for LINE test ping to /)
-app.post('/', (req, res) => {
-  res.status(200).send('OK');
-});
-
-// LINE Webhook handler
+// Webhook受信
 app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
+  console.log('📨 LINE Webhook received');
   const events = req.body.events;
-  for (const event of events) {
-    const sourceId = event.source.groupId || event.source.userId;
-    let discordChannelId = mapping[sourceId];
 
-    if (!discordChannelId) {
-      const guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
-      const channel = await guild.channels.create({
-        name: `line-${sourceId.slice(0, 8)}`,
-        type: 0, // GUILD_TEXT
-      });
-      discordChannelId = channel.id;
-      mapping[sourceId] = discordChannelId;
-      fs.writeFileSync(mappingPath, JSON.stringify(mapping, null, 2));
-      await channel.send('🔗 このチャンネルはLINEと接続されました。');
+  for (const event of events) {
+    console.log('📦 Event:', JSON.stringify(event, null, 2));
+
+    if (event.type !== 'message' || event.message.type !== 'text') {
+      console.log('⚠️ スキップ対象イベント（非テキスト）');
+      continue;
     }
 
-    if (event.type === 'message' && event.message.type === 'text') {
-      const msg = event.message.text;
+    const sourceId = event.source.groupId || event.source.userId;
+    let discordChannelId = mapping[sourceId];
+    console.log(`🔍 sourceId: ${sourceId}`);
+    console.log(`🔁 対応するDiscordチャンネルID: ${discordChannelId || '未登録'}`);
+
+    try {
+      if (!discordChannelId) {
+        const guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
+        console.log(`✅ Guild取得成功: ${guild.name}`);
+
+        const channel = await guild.channels.create({
+          name: `line-${sourceId.slice(0, 8)}`,
+          type: 0, // GUILD_TEXT
+        });
+        console.log(`📘 チャンネル作成成功: ${channel.name}`);
+
+        discordChannelId = channel.id;
+        mapping[sourceId] = discordChannelId;
+        fs.writeFileSync(mappingPath, JSON.stringify(mapping, null, 2));
+        await channel.send('🔗 このチャンネルはLINEと接続されました。');
+      }
+
       const channel = await discordClient.channels.fetch(discordChannelId);
-      await channel.send(`💬 LINE: ${msg}`);
+      await channel.send(`💬 LINE: ${event.message.text}`);
+      console.log(`✅ メッセージ送信完了`);
+    } catch (err) {
+      console.error('❌ エラー:', err);
     }
   }
 
   res.status(200).send('OK');
 });
 
-// Start server
+// サーバ起動
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
