@@ -15,7 +15,9 @@ const lineConfig = {
 const lineClient = new line.Client(lineConfig);
 
 // Discord bot init
-const discordClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const discordClient = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
 // Load or create mapping file
@@ -27,6 +29,12 @@ if (fs.existsSync(mappingPath)) {
   fs.writeFileSync(mappingPath, JSON.stringify({}));
 }
 
+// ✅ Webhook verification fallback route (for LINE test ping to /)
+app.post('/', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// LINE Webhook handler
 app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
   const events = req.body.events;
   for (const event of events) {
@@ -34,7 +42,6 @@ app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
     let discordChannelId = mapping[sourceId];
 
     if (!discordChannelId) {
-      // Create a new Discord channel
       const guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
       const channel = await guild.channels.create({
         name: `line-${sourceId.slice(0, 8)}`,
@@ -56,6 +63,7 @@ app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
   res.status(200).send('OK');
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
