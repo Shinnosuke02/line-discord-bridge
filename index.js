@@ -28,10 +28,9 @@ discordClient.once('ready', () => {
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
 const userChannelMapPath = './userChannelMap.json';
-let userChannelMap = {};
-if (fs.existsSync(userChannelMapPath)) {
-  userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
-}
+let userChannelMap = fs.existsSync(userChannelMapPath)
+  ? JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'))
+  : {};
 
 async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
@@ -80,14 +79,18 @@ async function handleEvent(event) {
     const channelId = await getOrCreateChannel(displayName, sourceId);
     const channel = await discordClient.channels.fetch(channelId);
 
-    if (event.message.type === 'text') {
-      await channel.send(`**${displayName}**: ${event.message.text}`);
-    } else if (event.message.type === 'image') {
-      await channel.send(`📷 ${displayName} sent an image (not shown here).`);
-    } else if (event.message.type === 'sticker') {
-      await channel.send(`🎴 ${displayName} sent a sticker.`);
-    } else {
-      await channel.send(`📎 ${displayName} sent a ${event.message.type} message.`);
+    switch (event.message.type) {
+      case 'text':
+        await channel.send(`**${displayName}**: ${event.message.text}`);
+        break;
+      case 'image':
+        await channel.send(`📷 ${displayName} sent an image.`);
+        break;
+      case 'sticker':
+        await channel.send(`🎴 ${displayName} sent a sticker.`);
+        break;
+      default:
+        await channel.send(`📎 ${displayName} sent a ${event.message.type} message.`);
     }
   } catch (err) {
     console.error('LINE → Discord error:', err);
@@ -150,7 +153,7 @@ app.post(
         req.rawBody = string;
         try {
           req.body = JSON.parse(string);
-        } catch (e) {
+        } catch {
           req.body = {};
         }
         next();
