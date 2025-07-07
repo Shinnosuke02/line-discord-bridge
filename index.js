@@ -103,8 +103,30 @@ discordClient.on('messageCreate', async (message) => {
   }
 
   try {
-    const text = `${message.content}`;
-    await lineClient.pushMessage(userId, { type: 'text', text });
+    if (message.content) {
+      await lineClient.pushMessage(userId, {
+        type: 'text',
+        text: message.content,
+      });
+    }
+
+    for (const attachment of message.attachments.values()) {
+      const mimeType = attachment.contentType || '';
+      const isImage = mimeType.startsWith('image/');
+
+      if (isImage) {
+        await lineClient.pushMessage(userId, {
+          type: 'image',
+          originalContentUrl: attachment.url,
+          previewImageUrl: attachment.url,
+        });
+      } else {
+        await lineClient.pushMessage(userId, {
+          type: 'text',
+          text: `📎 添付ファイル: ${attachment.name}\n${attachment.url}`,
+        });
+      }
+    }
   } catch (err) {
     console.error('Discord → LINE error:', err);
   }
