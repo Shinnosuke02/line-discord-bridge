@@ -1,11 +1,11 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { middleware, Client: LineClient } = require('@line/bot-sdk');
 const fs = require('fs');
+const getRawBody = require('raw-body');
 
 const app = express();
-app.use(express.json());
 
 const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -27,7 +27,6 @@ discordClient.once('ready', () => {
 
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
-const channelCache = new Map();
 const userChannelMapPath = './userChannelMap.json';
 let userChannelMap = {};
 if (fs.existsSync(userChannelMapPath)) {
@@ -38,11 +37,12 @@ async function getOrCreateChannel(displayName, userId) {
   if (userChannelMap[userId]) return userChannelMap[userId];
 
   const guild = await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID);
+  await guild.channels.fetch(); // Ensure cache is populated
   const baseName = displayName.toLowerCase().replace(/[^a-z0-9\-]/g, '-').slice(0, 20);
   const channelName = `line-${baseName}`;
 
   const existing = guild.channels.cache.find(
-    (c) => c.name === channelName && c.type === 0
+    (c) => c.name === channelName && c.type === ChannelType.GuildText
   );
   if (existing) {
     userChannelMap[userId] = existing.id;
@@ -52,7 +52,7 @@ async function getOrCreateChannel(displayName, userId) {
 
   const newChannel = await guild.channels.create({
     name: channelName,
-    type: 0,
+    type: ChannelType.GuildText,
     reason: 'LINE user sync',
   });
 
@@ -109,17 +109,37 @@ discordClient.on('messageCreate', async (message) => {
   }
 });
 
-app.post('/webhook', middleware(lineConfig), async (req, res) => {
-  try {
-    for (const event of req.body.events) {
-      await handleEvent(event);
+app.post(
+  '/webhook',
+  (req, res, next) => {
+    getRawBody(req, {
+      length: req.headers['content-length'],
+      limit: '1mb',
+      encoding: req.charset || 'utf-8',
+    }, (err, string) => {
+      if (err) return next(err);
+      req.rawBody = string;
+      try {
+        req.body = JSON.parse(string);
+      } catch (e) {
+        req.body = {};
+      }
+      next();
+    });
+  },
+  middleware(lineConfig),
+  async (req, res) => {
+    try {
+      for (const event of req.body.events) {
+        await handleEvent(event);
+      }
+      res.status(200).send('OK');
+    } catch (err) {
+      console.error('Webhook error:', err);
+      res.status(500).send('NG');
     }
-    res.status(200).send('OK');
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).send('NG');
   }
-});
+);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
