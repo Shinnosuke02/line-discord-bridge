@@ -21,39 +21,23 @@ const discordClient = new Client({
   ],
 });
 
-let guildPromise = null;
-
 discordClient.once('ready', () => {
   console.log('✅ Discord bot ready');
-  const guild = discordClient.guilds.cache.get(process.env.DISCORD_SERVER_ID);
-  if (!guild) {
-    console.error('❌ Guild not found. Check DISCORD_SERVER_ID and bot permissions.');
-  }
-  guildPromise = Promise.resolve(guild);
 });
 
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
 const userChannelMapPath = './userChannelMap.json';
 let userChannelMap = {};
-
-function loadUserChannelMap() {
-  if (fs.existsSync(userChannelMapPath)) {
-    userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
-  }
+if (fs.existsSync(userChannelMapPath)) {
+  userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
 }
-
-function saveUserChannelMap() {
-  fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
-}
-
-loadUserChannelMap();
 
 async function getOrCreateChannel(displayName, userId) {
   if (userChannelMap[userId]) return userChannelMap[userId];
 
-  const guild = await guildPromise;
-  if (!guild) throw new Error('Guild not available');
+  const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
+  if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
   const baseName = displayName.toLowerCase().replace(/[^a-z0-9\-]/g, '-').slice(0, 20);
   const channelName = `line-${baseName}`;
@@ -63,7 +47,7 @@ async function getOrCreateChannel(displayName, userId) {
   );
   if (existing) {
     userChannelMap[userId] = existing.id;
-    saveUserChannelMap();
+    fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
     return existing.id;
   }
 
@@ -74,7 +58,7 @@ async function getOrCreateChannel(displayName, userId) {
   });
 
   userChannelMap[userId] = newChannel.id;
-  saveUserChannelMap();
+  fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
   return newChannel.id;
 }
 
