@@ -34,32 +34,35 @@ if (fs.existsSync(userChannelMapPath)) {
 }
 
 async function getOrCreateChannel(displayName, userId) {
-  if (userChannelMap[userId]) return userChannelMap[userId];
-
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
   const baseName = displayName.toLowerCase().replace(/[^a-z0-9\-]/g, '-').slice(0, 20);
   const channelName = `line-${baseName}`;
 
-  const existing = guild.channels.cache.find(
-    (c) => c.name === channelName && c.type === ChannelType.GuildText
-  );
-  if (existing) {
-    userChannelMap[userId] = existing.id;
+  let channelId = userChannelMap[userId];
+  let channel = channelId ? guild.channels.cache.get(channelId) : null;
+
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    const existing = guild.channels.cache.find(
+      (c) => c.name === channelName && c.type === ChannelType.GuildText
+    );
+
+    if (existing) {
+      channel = existing;
+    } else {
+      channel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        reason: 'LINE user sync',
+      });
+    }
+
+    userChannelMap[userId] = channel.id;
     fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
-    return existing.id;
   }
 
-  const newChannel = await guild.channels.create({
-    name: channelName,
-    type: ChannelType.GuildText,
-    reason: 'LINE user sync',
-  });
-
-  userChannelMap[userId] = newChannel.id;
-  fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
-  return newChannel.id;
+  return channel.id;
 }
 
 async function handleEvent(event) {
