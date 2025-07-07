@@ -4,8 +4,8 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const line = require('@line/bot-sdk');
 const fs = require('fs');
 
-// Express準備
 const app = express();
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 
 // LINE設定
 const lineConfig = {
@@ -19,12 +19,12 @@ const discordClient = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    GatewayIntentBits.MessageContent
+  ]
 });
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
-// mapping.json 読み込み
+// Mappingファイル読み込み
 const mappingPath = './mapping.json';
 let mapping = {};
 if (fs.existsSync(mappingPath)) {
@@ -33,56 +33,41 @@ if (fs.existsSync(mappingPath)) {
   fs.writeFileSync(mappingPath, JSON.stringify({}));
 }
 
-// Discord → LINE 転送処理
-discordClient.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
+// 無効文字を除外する関数
+function sanitizeName(name) {
+  return name.toLowerCase().replace(/[^\w\-]/g, '-').slice(0, 90);
+}
 
-  const channelId = message.channel.id;
-  const sourceId = Object.keys(mapping).find(key => mapping[key] === channelId);
-
-  if (!sourceId) {
-    console.log(`❌ 対応するLINE送信先が見つかりません: DiscordチャンネルID ${channelId}`);
-    return;
-  }
-
-  try {
-    await lineClient.pushMessage(sourceId, [
-      { type: 'text', text: `💬 Discord: ${message.content}` }
-    ]);
-    console.log(`📤 Discord → LINE 送信成功`);
-  } catch (err) {
-    console.error('❌ Discord→LINE送信エラー:', err);
-  }
-});
-
-// LINE → Discord 転送処理
+// LINE → Discord
 app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
-  console.log('📨 LINE Webhook received');
   const events = req.body.events;
 
   for (const event of events) {
-    console.log('📦 Event:', JSON.stringify(event, null, 2));
-
-    if (event.type !== 'message' || event.message.type !== 'text') {
-      console.log('⚠️ スキップ対象イベント（非テキスト）');
-      continue;
-    }
+    if (event.type !== 'message' || event.message.type !== 'text') continue;
 
     const sourceId = event.source.groupId || event.source.userId;
     let discordChannelId = mapping[sourceId];
-    console.log(`🔍 sourceId: ${sourceId}`);
-    console.log(`🔁 対応するDiscordチャンネルID: ${discordChannelId || '未登録'}`);
 
     try {
       if (!discordChannelId) {
-        const guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
-        console.log(`✅ Guild取得成功: ${guild.name}`);
+        // 名前取得
+        let rawName = 'line-chat';
+        if (event.source.type === 'user') {
+          const profile = await lineClient.getProfile(event.source.userId);
+          rawName = profile.displayName || 'user';
+        } else if (event.source.type === 'group') {
+          const summary = await lineClient.getGroupSummary(event.source.groupId);
+          rawName = summary.groupName || 'group';
+        }
 
+        const channelName = sanitizeName(`line-${rawName}`);
+
+        // Discordチャンネル作成
+        const guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
         const channel = await guild.channels.create({
-          name: `line-${sourceId.slice(0, 8)}`,
-          type: 0, // GUILD_TEXT
+          name: channelName,
+          type: 0,
         });
-        console.log(`📘 チャンネル作成成功: ${channel.name}`);
 
         discordChannelId = channel.id;
         mapping[sourceId] = discordChannelId;
@@ -92,21 +77,33 @@ app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
 
       const channel = await discordClient.channels.fetch(discordChannelId);
       await channel.send(`💬 LINE: ${event.message.text}`);
-      console.log(`✅ メッセージ送信完了`);
     } catch (err) {
-      console.error('❌ LINE→Discord送信エラー:', err);
+      console.error('❌ LINE → Discord エラー:', err);
     }
   }
 
   res.status(200).send('OK');
 });
 
-// JSONの生データを受け取るための設定（LINE署名検証用）
-app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
+// Discord → LINE
+discordClient.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const lineSourceId = Object.keys(mapping).find(key => mapping[key] === message.channel.id);
+  if (!lineSourceId) return;
+
+  const displayName = message.member?.nickname || message.author.username;
+  const content = message.content;
+
+  try {
+    await lineClient.pushMessage(lineSourceId, {
+      type: 'text',
+      text: `👤 ${displayName}: ${content}`
+    });
+  } catch (err) {
+    console.error('❌ Discord → LINE エラー:', err);
   }
-}));
+});
 
 // サーバ起動
 const PORT = process.env.PORT || 3000;
