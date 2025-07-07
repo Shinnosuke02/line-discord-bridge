@@ -36,8 +36,9 @@ if (fs.existsSync(userChannelMapPath)) {
 async function getOrCreateChannel(displayName, userId) {
   if (userChannelMap[userId]) return userChannelMap[userId];
 
-  const guild = await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID);
-  await guild.channels.fetch(); // Ensure cache is populated
+  const guild = discordClient.guilds.cache.get(process.env.DISCORD_SERVER_ID);
+  if (!guild) throw new Error('Guild not found. Check DISCORD_SERVER_ID and bot permissions.');
+
   const baseName = displayName.toLowerCase().replace(/[^a-z0-9\-]/g, '-').slice(0, 20);
   const channelName = `line-${baseName}`;
 
@@ -112,20 +113,24 @@ discordClient.on('messageCreate', async (message) => {
 app.post(
   '/webhook',
   (req, res, next) => {
-    getRawBody(req, {
-      length: req.headers['content-length'],
-      limit: '1mb',
-      encoding: req.charset || 'utf-8',
-    }, (err, string) => {
-      if (err) return next(err);
-      req.rawBody = string;
-      try {
-        req.body = JSON.parse(string);
-      } catch (e) {
-        req.body = {};
+    getRawBody(
+      req,
+      {
+        length: req.headers['content-length'],
+        limit: '1mb',
+        encoding: req.charset || 'utf-8',
+      },
+      (err, string) => {
+        if (err) return next(err);
+        req.rawBody = string;
+        try {
+          req.body = JSON.parse(string);
+        } catch (e) {
+          req.body = {};
+        }
+        next();
       }
-      next();
-    });
+    );
   },
   middleware(lineConfig),
   async (req, res) => {
