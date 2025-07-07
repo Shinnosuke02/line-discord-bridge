@@ -28,16 +28,26 @@ discordClient.once('ready', () => {
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
 const userChannelMapPath = './userChannelMap.json';
-let userChannelMap = fs.existsSync(userChannelMapPath)
-  ? JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'))
-  : {};
+let userChannelMap = {};
+if (fs.existsSync(userChannelMapPath)) {
+  userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
+}
+
+function normalizeName(name) {
+  return name.normalize('NFKD')
+    .replace(/[^\w\-]+/g, '-')
+    .replace(/--+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 90);
+}
 
 async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
-  const baseName = displayName.toLowerCase().replace(/[^a-z0-9\-]/g, '-').slice(0, 20);
-  const channelName = `line-${baseName}`;
+  const safeName = normalizeName(displayName || userId);
+  const channelName = safeName || userId.slice(0, 8);
 
   let channelId = userChannelMap[userId];
   let channel = channelId ? guild.channels.cache.get(channelId) : null;
@@ -53,7 +63,7 @@ async function getOrCreateChannel(displayName, userId) {
       channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        reason: 'LINE user sync',
+        reason: `LINE user ${displayName} sync`,
       });
     }
 
@@ -71,7 +81,14 @@ async function handleEvent(event) {
 
   try {
     let displayName = sourceId;
-    if (!isGroup) {
+    if (isGroup) {
+      try {
+        const groupSummary = await lineClient.getGroupSummary(sourceId);
+        displayName = groupSummary.groupName || sourceId;
+      } catch (e) {
+        displayName = 'group-' + sourceId.slice(0, 8);
+      }
+    } else {
       const profile = await lineClient.getProfile(sourceId);
       displayName = profile.displayName;
     }
@@ -79,18 +96,14 @@ async function handleEvent(event) {
     const channelId = await getOrCreateChannel(displayName, sourceId);
     const channel = await discordClient.channels.fetch(channelId);
 
-    switch (event.message.type) {
-      case 'text':
-        await channel.send(`**${displayName}**: ${event.message.text}`);
-        break;
-      case 'image':
-        await channel.send(`📷 ${displayName} sent an image.`);
-        break;
-      case 'sticker':
-        await channel.send(`🎴 ${displayName} sent a sticker.`);
-        break;
-      default:
-        await channel.send(`📎 ${displayName} sent a ${event.message.type} message.`);
+    if (event.message.type === 'text') {
+      await channel.send(`**${displayName}**: ${event.message.text}`);
+    } else if (event.message.type === 'image') {
+      await channel.send(`📷 **${displayName}** sent an image.`);
+    } else if (event.message.type === 'sticker') {
+      await channel.send(`🎴 **${displayName}** sent a sticker.`);
+    } else {
+      await channel.send(`📎 **${displayName}** sent a ${event.message.type} message.`);
     }
   } catch (err) {
     console.error('LINE → Discord error:', err);
@@ -99,14 +112,10 @@ async function handleEvent(event) {
 
 discordClient.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  const match = message.channel.name.match(/^line-([a-z0-9\-]+)/);
-  if (!match) return;
+  if (!message.guild || !message.channel) return;
 
   const userId = Object.keys(userChannelMap).find((key) => userChannelMap[key] === message.channel.id);
-  if (!userId) {
-    console.warn('No LINE user mapped to this channel');
-    return;
-  }
+  if (!userId) return;
 
   try {
     if (message.content) {
@@ -153,7 +162,7 @@ app.post(
         req.rawBody = string;
         try {
           req.body = JSON.parse(string);
-        } catch {
+        } catch (e) {
           req.body = {};
         }
         next();
