@@ -3,8 +3,8 @@ const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
 const line = require('@line/bot-sdk');
 const fs = require('fs');
-const path = require('path');
 
+// Express準備
 const app = express();
 
 // LINE設定
@@ -19,13 +19,13 @@ const discordClient = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
-// Mappingファイル読み込み
-const mappingPath = path.join('/tmp', 'mapping.json');
+// mapping.json 読み込み
+const mappingPath = './mapping.json';
 let mapping = {};
 if (fs.existsSync(mappingPath)) {
   mapping = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
@@ -33,10 +33,29 @@ if (fs.existsSync(mappingPath)) {
   fs.writeFileSync(mappingPath, JSON.stringify({}));
 }
 
-// ✅ 生のBodyを取得するミドルウェア（LINE用）
-app.use('/webhook', express.raw({ type: '*/*' }));
+// Discord → LINE 転送処理
+discordClient.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
 
-// Webhook受信
+  const channelId = message.channel.id;
+  const sourceId = Object.keys(mapping).find(key => mapping[key] === channelId);
+
+  if (!sourceId) {
+    console.log(`❌ 対応するLINE送信先が見つかりません: DiscordチャンネルID ${channelId}`);
+    return;
+  }
+
+  try {
+    await lineClient.pushMessage(sourceId, [
+      { type: 'text', text: `💬 Discord: ${message.content}` }
+    ]);
+    console.log(`📤 Discord → LINE 送信成功`);
+  } catch (err) {
+    console.error('❌ Discord→LINE送信エラー:', err);
+  }
+});
+
+// LINE → Discord 転送処理
 app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
   console.log('📨 LINE Webhook received');
   const events = req.body.events;
@@ -75,15 +94,19 @@ app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
       await channel.send(`💬 LINE: ${event.message.text}`);
       console.log(`✅ メッセージ送信完了`);
     } catch (err) {
-      console.error('❌ エラー:', err);
+      console.error('❌ LINE→Discord送信エラー:', err);
     }
   }
 
   res.status(200).send('OK');
 });
 
-// ✅ LINE用ルート以外に通常の JSON を使いたいときはここから適用
-app.use(express.json());
+// JSONの生データを受け取るための設定（LINE署名検証用）
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // サーバ起動
 const PORT = process.env.PORT || 3000;
