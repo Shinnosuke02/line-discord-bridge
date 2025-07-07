@@ -33,44 +33,33 @@ if (fs.existsSync(userChannelMapPath)) {
   userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
 }
 
-function normalizeName(name) {
-  return name.normalize('NFKD')
-    .replace(/[^\w\-]+/g, '-')
-    .replace(/--+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase()
-    .slice(0, 90);
-}
-
 async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
-  const safeName = normalizeName(displayName || userId);
-  const channelName = safeName || userId.slice(0, 8);
+  const baseName = (displayName || userId).replace(/[\s\r\n]/g, '-').slice(0, 85);
+  let channelName = baseName;
 
-  let channelId = userChannelMap[userId];
-  let channel = channelId ? guild.channels.cache.get(channelId) : null;
-
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    const existing = guild.channels.cache.find(
-      (c) => c.name === channelName && c.type === ChannelType.GuildText
+  for (let i = 1; i <= 999; i++) {
+    const suffix = `-${String(i).padStart(3, '0')}`;
+    const proposedName = `${baseName}${suffix}`;
+    const exists = guild.channels.cache.find(
+      (c) => c.name === proposedName && c.type === ChannelType.GuildText
     );
-
-    if (existing) {
-      channel = existing;
-    } else {
-      channel = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        reason: `LINE user ${displayName} sync`,
-      });
+    if (!exists) {
+      channelName = proposedName;
+      break;
     }
-
-    userChannelMap[userId] = channel.id;
-    fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
   }
 
+  const channel = await guild.channels.create({
+    name: channelName,
+    type: ChannelType.GuildText,
+    reason: `LINE user ${displayName} sync`,
+  });
+
+  userChannelMap[userId] = channel.id;
+  fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
   return channel.id;
 }
 
