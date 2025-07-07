@@ -37,7 +37,7 @@ async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
-  const baseName = (displayName || userId).replace(/[\s\r\n]/g, '-').slice(0, 85);
+  const baseName = displayName.replace(/[^\w\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF-]/g, '-').slice(0, 85);
   let channelName = baseName;
 
   for (let i = 1; i <= 999; i++) {
@@ -66,34 +66,40 @@ async function getOrCreateChannel(displayName, userId) {
 async function handleEvent(event) {
   if (event.type !== 'message') return;
   const sourceId = event.source.groupId || event.source.userId;
+  const senderId = event.source.userId;
   const isGroup = !!event.source.groupId;
+  let displayName = sourceId;
 
   try {
-    let displayName = sourceId;
     if (isGroup) {
       try {
+        const memberProfile = await lineClient.getGroupMemberProfile(sourceId, senderId);
+        displayName = memberProfile.displayName;
+      } catch {
         const groupSummary = await lineClient.getGroupSummary(sourceId);
-        displayName = groupSummary.groupName || sourceId;
-      } catch (e) {
-        displayName = 'group-' + sourceId.slice(0, 8);
+        displayName = groupSummary.groupName || `group-${sourceId.slice(0, 8)}`;
       }
     } else {
-      const profile = await lineClient.getProfile(sourceId);
+      const profile = await lineClient.getProfile(senderId);
       displayName = profile.displayName;
     }
 
     const channelId = await getOrCreateChannel(displayName, sourceId);
     const channel = await discordClient.channels.fetch(channelId);
 
-    if (event.message.type === 'text') {
-      await channel.send(`**${displayName}**: ${event.message.text}`);
-    } else if (event.message.type === 'image') {
-      await channel.send(`📷 **${displayName}** sent an image.`);
-    } else if (event.message.type === 'sticker') {
-      await channel.send(`🎴 **${displayName}** sent a sticker.`);
+    const label = `**${displayName}**`;
+    const msgType = event.message.type;
+
+    if (msgType === 'text') {
+      await channel.send(`${label}: ${event.message.text}`);
+    } else if (msgType === 'image') {
+      await channel.send(`📷 ${label} sent an image.`);
+    } else if (msgType === 'sticker') {
+      await channel.send(`🎴 ${label} sent a sticker.`);
     } else {
-      await channel.send(`📎 **${displayName}** sent a ${event.message.type} message.`);
+      await channel.send(`📎 ${label} sent a ${msgType} message.`);
     }
+
   } catch (err) {
     console.error('LINE → Discord error:', err);
   }
