@@ -3,9 +3,9 @@ const express = require('express');
 const { Client, GatewayIntentBits } = require('discord.js');
 const line = require('@line/bot-sdk');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
-app.use(express.json());
 
 // LINE設定
 const lineConfig = {
@@ -25,13 +25,16 @@ const discordClient = new Client({
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
 
 // Mappingファイル読み込み
-const mappingPath = './mapping.json';
+const mappingPath = path.join('/tmp', 'mapping.json');
 let mapping = {};
 if (fs.existsSync(mappingPath)) {
   mapping = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
 } else {
   fs.writeFileSync(mappingPath, JSON.stringify({}));
 }
+
+// ✅ 生のBodyを取得するミドルウェア（LINE用）
+app.use('/webhook', express.raw({ type: '*/*' }));
 
 // Webhook受信
 app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
@@ -78,6 +81,9 @@ app.post('/webhook', line.middleware(lineConfig), async (req, res) => {
 
   res.status(200).send('OK');
 });
+
+// ✅ LINE用ルート以外に通常の JSON を使いたいときはここから適用
+app.use(express.json());
 
 // サーバ起動
 const PORT = process.env.PORT || 3000;
