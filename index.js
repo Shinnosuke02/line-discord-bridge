@@ -33,11 +33,22 @@ if (fs.existsSync(userChannelMapPath)) {
   userChannelMap = JSON.parse(fs.readFileSync(userChannelMapPath, 'utf-8'));
 }
 
+const messageMapPath = './messageMap.json';
+let messageMap = {};
+if (fs.existsSync(messageMapPath)) {
+  messageMap = JSON.parse(fs.readFileSync(messageMapPath, 'utf-8'));
+}
+
 async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
-  const baseName = displayName.replace(/[^\w\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF-]/g, '-').slice(0, 85);
+  if (userChannelMap[userId]) {
+    const existing = guild.channels.cache.get(userChannelMap[userId]);
+    if (existing) return userChannelMap[userId];
+  }
+
+  const baseName = displayName.replace(/[^\w　-〿぀-ゟ゠-ヿ一-鿿-]/g, '-').slice(0, 85);
   let channelName = baseName;
 
   for (let i = 1; i <= 999; i++) {
@@ -90,15 +101,19 @@ async function handleEvent(event) {
     const label = `**${displayName}**`;
     const msgType = event.message.type;
 
+    let sentMessage;
     if (msgType === 'text') {
-      await channel.send(`${label}: ${event.message.text}`);
+      sentMessage = await channel.send(`${label}: ${event.message.text}`);
     } else if (msgType === 'image') {
-      await channel.send(`📷 ${label} sent an image.`);
+      sentMessage = await channel.send(`📷 ${label} sent an image.`);
     } else if (msgType === 'sticker') {
-      await channel.send(`🎴 ${label} sent a sticker.`);
+      sentMessage = await channel.send(`🎴 ${label} sent a sticker.`);
     } else {
-      await channel.send(`📎 ${label} sent a ${msgType} message.`);
+      sentMessage = await channel.send(`📎 ${label} sent a ${msgType} message.`);
     }
+
+    messageMap[event.message.id] = sentMessage.id;
+    fs.writeFileSync(messageMapPath, JSON.stringify(messageMap, null, 2));
 
   } catch (err) {
     console.error('LINE → Discord error:', err);
