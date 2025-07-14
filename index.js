@@ -58,8 +58,10 @@ async function getOrCreateChannel(displayName, userId) {
   }
 
   if (userChannelMap[userId]) {
-    const existing = guild.channels.cache.get(userChannelMap[userId]);
+    const existing = guild.channels.cache.get(userChannelMap[userId]) || await guild.channels.fetch(userChannelMap[userId]).catch(() => null);
     if (existing) return userChannelMap[userId];
+    delete userChannelMap[userId];
+    fs.writeFileSync(userChannelMapPath, JSON.stringify(userChannelMap, null, 2));
   }
 
   const baseName = displayName.replace(/[^\p{L}\p{N}_\-]/gu, '-').slice(0, 85);
