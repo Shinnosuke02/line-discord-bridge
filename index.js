@@ -1,10 +1,12 @@
-require('dotenv').config();
+""require('dotenv').config();
 const express = require('express');
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { middleware, Client: LineClient } = require('@line/bot-sdk');
 const fs = require('fs');
 const getRawBody = require('raw-body');
 const axios = require('axios');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 
@@ -40,6 +42,10 @@ if (fs.existsSync(messageMapPath)) {
   messageMap = JSON.parse(fs.readFileSync(messageMapPath, 'utf-8'));
 }
 
+if (!fs.existsSync('./temp')) {
+  fs.mkdirSync('./temp');
+}
+
 async function getOrCreateChannel(displayName, userId) {
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
@@ -49,7 +55,7 @@ async function getOrCreateChannel(displayName, userId) {
     if (existing) return userChannelMap[userId];
   }
 
-  const baseName = displayName.replace(/[^぀-ヿ㐀-䶿一-鿿豈-﫿\w\s\-]/g, '-').slice(0, 85);
+  const baseName = displayName.replace(/[^\p{L}\p{N}_\-]/gu, '-').slice(0, 85);
   let channelName = baseName;
 
   for (let i = 1; i <= 999; i++) {
@@ -105,9 +111,24 @@ async function handleEvent(event) {
     let sentMessage;
     if (msgType === 'text') {
       sentMessage = await channel.send(`${label}: ${event.message.text}`);
-    } else if (msgType === 'image') {
-      const contentUrl = lineClient.getMessageContent(event.message.id);
-      sentMessage = await channel.send(`📷 ${label} sent an image (not fetched).`);
+    } else if (msgType === 'image' || msgType === 'file') {
+      const ext = msgType === 'image' ? 'jpg' : 'dat';
+      const tmpFile = `./temp/${uuidv4()}.${ext}`;
+      const stream = await lineClient.getMessageContent(event.message.id);
+      const writer = fs.createWriteStream(tmpFile);
+
+      await new Promise((resolve, reject) => {
+        stream.pipe(writer);
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
+
+      sentMessage = await channel.send({
+        content: `📎 ${label} sent a ${msgType}:`,
+        files: [tmpFile],
+      });
+
+      fs.unlink(tmpFile, () => {});
     } else if (msgType === 'sticker') {
       const stickerId = event.message.stickerId;
       const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/android/sticker.png`;
