@@ -46,6 +46,26 @@ if (!fs.existsSync('./temp')) {
   fs.mkdirSync('./temp');
 }
 
+const recentMessages = new Map();
+const MESSAGE_TTL_MS = 3 * 60 * 1000;
+
+function isDuplicate(lineMsgId) {
+  const ts = recentMessages.get(lineMsgId);
+  if (!ts) return false;
+  return Date.now() - ts < MESSAGE_TTL_MS;
+}
+
+function markAsProcessed(lineMsgId) {
+  recentMessages.set(lineMsgId, Date.now());
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of recentMessages.entries()) {
+    if (now - ts > MESSAGE_TTL_MS) recentMessages.delete(key);
+  }
+}, 60 * 1000);
+
 async function getOrCreateChannel(displayName, userId) {
   let guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
 
@@ -96,6 +116,12 @@ async function handleEvent(event) {
   const senderId = event.source.userId;
   const isGroup = !!event.source.groupId;
   let displayName = sourceId;
+
+  if (isDuplicate(event.message.id)) {
+    console.log(`⏩ Duplicate message ignored: ${event.message.id}`);
+    return;
+  }
+  markAsProcessed(event.message.id);
 
   try {
     if (isGroup) {
