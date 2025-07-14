@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { middleware, Client: LineClient } = require('@line/bot-sdk');
 const fs = require('fs');
 const getRawBody = require('raw-body');
+const axios = require('axios');
 
 const app = express();
 
@@ -48,7 +49,7 @@ async function getOrCreateChannel(displayName, userId) {
     if (existing) return userChannelMap[userId];
   }
 
-  const baseName = displayName.replace(/[^\w　-〿぀-ゟ゠-ヿ一-鿿-]/g, '-').slice(0, 85);
+  const baseName = displayName.replace(/[^぀-ヿ㐀-䶿一-鿿豈-﫿\w\s\-]/g, '-').slice(0, 85);
   let channelName = baseName;
 
   for (let i = 1; i <= 999; i++) {
@@ -105,9 +106,12 @@ async function handleEvent(event) {
     if (msgType === 'text') {
       sentMessage = await channel.send(`${label}: ${event.message.text}`);
     } else if (msgType === 'image') {
-      sentMessage = await channel.send(`📷 ${label} sent an image.`);
+      const contentUrl = lineClient.getMessageContent(event.message.id);
+      sentMessage = await channel.send(`📷 ${label} sent an image (not fetched).`);
     } else if (msgType === 'sticker') {
-      sentMessage = await channel.send(`🎴 ${label} sent a sticker.`);
+      const stickerId = event.message.stickerId;
+      const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/android/sticker.png`;
+      sentMessage = await channel.send({ content: `🎴 ${label} sent a sticker:`, files: [stickerUrl] });
     } else {
       sentMessage = await channel.send(`📎 ${label} sent a ${msgType} message.`);
     }
