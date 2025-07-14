@@ -121,7 +121,6 @@ async function handleEvent(event) {
     console.log(`⏩ Duplicate message ignored: ${event.message.id}`);
     return;
   }
-  markAsProcessed(event.message.id);
 
   try {
     if (isGroup) {
@@ -174,6 +173,7 @@ async function handleEvent(event) {
 
     messageMap[event.message.id] = sentMessage.id;
     fs.writeFileSync(messageMapPath, JSON.stringify(messageMap, null, 2));
+    markAsProcessed(event.message.id);
   } catch (err) {
     console.error('LINE → Discord error:', err);
   }
