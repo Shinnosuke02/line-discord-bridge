@@ -47,8 +47,15 @@ if (!fs.existsSync('./temp')) {
 }
 
 async function getOrCreateChannel(displayName, userId) {
-  const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
-  if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
+  let guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
+
+  if (!guild) {
+    try {
+      guild = await discordClient.guilds.fetch(process.env.DISCORD_GUILD_ID);
+    } catch (e) {
+      throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
+    }
+  }
 
   if (userChannelMap[userId]) {
     const existing = guild.channels.cache.get(userChannelMap[userId]);
@@ -139,7 +146,6 @@ async function handleEvent(event) {
 
     messageMap[event.message.id] = sentMessage.id;
     fs.writeFileSync(messageMapPath, JSON.stringify(messageMap, null, 2));
-
   } catch (err) {
     console.error('LINE → Discord error:', err);
   }
