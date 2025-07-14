@@ -1,4 +1,4 @@
-""require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { middleware, Client: LineClient } = require('@line/bot-sdk');
