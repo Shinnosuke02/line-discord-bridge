@@ -112,7 +112,7 @@ async function handleEvent(event) {
     if (msgType === 'text') {
       sentMessage = await channel.send(`${label}: ${event.message.text}`);
     } else if (msgType === 'image' || msgType === 'file') {
-      const ext = msgType === 'image' ? 'jpg' : 'dat';
+      const ext = msgType === 'image' ? 'png' : 'dat';
       const tmpFile = `./temp/${uuidv4()}.${ext}`;
       const stream = await lineClient.getMessageContent(event.message.id);
       const writer = fs.createWriteStream(tmpFile);
