@@ -28,26 +28,7 @@ const discordClient = new Client({
 
 // === 永続ファイル ===
 const userChannelMapPath = './userChannelMap.json';
-const messageMapPath = './messageMap.json';
 let userChannelMap = fs.existsSync(userChannelMapPath) ? JSON.parse(fs.readFileSync(userChannelMapPath)) : {};
-let messageMap = fs.existsSync(messageMapPath) ? JSON.parse(fs.readFileSync(messageMapPath)) : {};
-
-// === 重複検知用メモリキャッシュ ===
-const recentMessages = new Map();
-const MESSAGE_TTL = 3 * 60 * 1000;
-function isDuplicate(id) {
-  const ts = recentMessages.get(id);
-  return ts && Date.now() - ts < MESSAGE_TTL;
-}
-function markAsProcessed(id) {
-  recentMessages.set(id, Date.now());
-}
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, ts] of recentMessages.entries()) {
-    if (now - ts > MESSAGE_TTL) recentMessages.delete(id);
-  }
-}, 60 * 1000);
 
 // === Discordチャンネル作成 ===
 async function getOrCreateChannel(displayName, userId) {
@@ -89,8 +70,6 @@ async function handleEvent(event) {
   const isGroup = !!event.source.groupId;
   let displayName = sourceId;
 
-  if (isDuplicate(event.message.id)) return;
-
   try {
     if (isGroup) {
       try {
@@ -109,33 +88,13 @@ async function handleEvent(event) {
     const channel = await discordClient.channels.fetch(channelId);
     const label = `**${displayName}**`;
 
-    let sent;
     const type = event.message.type;
 
     if (type === 'text') {
-      sent = await channel.send(`${label}: ${event.message.text}`);
-    } else if (type === 'image' || type === 'file') {
-      const ext = type === 'image' ? 'jpg' : 'dat';
-      const tmp = `./temp/${uuidv4()}.${ext}`;
-      const stream = await lineClient.getMessageContent(event.message.id);
-      const writer = fs.createWriteStream(tmp);
-      await new Promise((res, rej) => {
-        stream.pipe(writer);
-        writer.on('finish', res);
-        writer.on('error', rej);
-      });
-      sent = await channel.send({ content: `📎 ${label} sent a ${type}:`, files: [tmp] });
-      fs.unlink(tmp, () => {});
-    } else if (type === 'sticker') {
-      const url = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${event.message.stickerId}/android/sticker.png`;
-      sent = await channel.send({ content: `🎴 ${label} sent a sticker:`, files: [url] });
+      await channel.send(`${label}: ${event.message.text}`);
     } else {
-      sent = await channel.send(`${label} sent a ${type} message.`);
+      await channel.send(`${label} sent a ${type} message.`);
     }
-
-    messageMap[event.message.id] = sent.id;
-    fs.writeFileSync(messageMapPath, JSON.stringify(messageMap, null, 2));
-    markAsProcessed(event.message.id);
   } catch (err) {
     console.error('LINE → Discord error:', err);
   }
@@ -151,21 +110,6 @@ discordClient.on('messageCreate', async (message) => {
   try {
     if (message.content) {
       await lineClient.pushMessage(userId, { type: 'text', text: message.content });
-    }
-    for (const att of message.attachments.values()) {
-      const isImg = (att.contentType || '').startsWith('image/');
-      if (isImg) {
-        await lineClient.pushMessage(userId, {
-          type: 'image',
-          originalContentUrl: att.url,
-          previewImageUrl: att.url,
-        });
-      } else {
-        await lineClient.pushMessage(userId, {
-          type: 'text',
-          text: `📎 添付ファイル: ${att.name}\n${att.url}`,
-        });
-      }
     }
   } catch (err) {
     console.error('Discord → LINE error:', err);
@@ -203,7 +147,6 @@ app.post('/webhook',
 // === 初期化処理 ===
 discordClient.once('ready', () => console.log('✅ Discord bot ready'));
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
-if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
