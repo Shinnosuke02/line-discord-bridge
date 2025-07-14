@@ -1,4 +1,4 @@
-require('dotenv').config();
+""require('dotenv').config();
 const express = require('express');
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { middleware, Client: LineClient } = require('@line/bot-sdk');
@@ -24,8 +24,15 @@ const discordClient = new Client({
   ],
 });
 
-discordClient.once('ready', () => {
+discordClient.once('ready', async () => {
   console.log('✅ Discord bot ready');
+
+  await discordClient.guilds.fetch(); // キャッシュ強制更新
+
+  console.log('📋 Guilds the bot has joined:');
+  discordClient.guilds.cache.forEach((guild) => {
+    console.log(`- ${guild.name} (${guild.id})`);
+  });
 });
 
 discordClient.login(process.env.DISCORD_BOT_TOKEN);
@@ -47,6 +54,8 @@ if (!fs.existsSync('./temp')) {
 }
 
 async function getOrCreateChannel(displayName, userId) {
+  await discordClient.guilds.fetch(); // キャッシュを更新（重要）
+
   const guild = discordClient.guilds.cache.get(process.env.DISCORD_GUILD_ID);
   if (!guild) throw new Error('Guild not found. Check DISCORD_GUILD_ID and bot permissions.');
 
@@ -112,7 +121,7 @@ async function handleEvent(event) {
     if (msgType === 'text') {
       sentMessage = await channel.send(`${label}: ${event.message.text}`);
     } else if (msgType === 'image' || msgType === 'file') {
-      const ext = msgType === 'image' ? 'png' : 'dat';
+      const ext = msgType === 'image' ? 'jpg' : 'dat';
       const tmpFile = `./temp/${uuidv4()}.${ext}`;
       const stream = await lineClient.getMessageContent(event.message.id);
       const writer = fs.createWriteStream(tmpFile);
