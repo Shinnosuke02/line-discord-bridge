@@ -60,7 +60,7 @@ class LineService {
   }
 
   /**
-   * メッセージを送信
+   * 単一メッセージを送信
    * @param {string} userId - ユーザーID
    * @param {Object} message - メッセージオブジェクト
    * @returns {Promise<Object>} 送信結果
@@ -72,6 +72,41 @@ class LineService {
       return result;
     } catch (error) {
       logger.error('Failed to send message to LINE', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 複数メッセージを送信
+   * @param {string} userId - ユーザーID
+   * @param {Array} messages - メッセージ配列
+   * @returns {Promise<Object>} 送信結果
+   */
+  async pushMessages(userId, messages) {
+    try {
+      // LINE APIの制限: 一度に最大5つのメッセージ
+      const maxMessagesPerRequest = 5;
+      const results = [];
+      
+      for (let i = 0; i < messages.length; i += maxMessagesPerRequest) {
+        const batch = messages.slice(i, i + maxMessagesPerRequest);
+        const result = await this.client.pushMessage(userId, batch);
+        results.push(result);
+        
+        // バッチ間に少し待機（レート制限対策）
+        if (i + maxMessagesPerRequest < messages.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      logger.debug('Multiple messages sent to LINE', { 
+        userId, 
+        totalMessages: messages.length,
+        batches: results.length 
+      });
+      return results;
+    } catch (error) {
+      logger.error('Failed to send multiple messages to LINE', error);
       throw error;
     }
   }
@@ -107,7 +142,25 @@ class LineService {
   }
 
   /**
-   * メッセージをフォーマット
+   * メッセージタイプに応じた説明を取得
+   * @param {string} type - メッセージタイプ
+   * @returns {string} 説明
+   */
+  getMessageTypeDescription(type) {
+    const descriptions = {
+      'text': 'テキスト',
+      'image': '画像',
+      'video': '動画',
+      'audio': '音声',
+      'file': 'ファイル',
+      'location': '位置情報',
+      'sticker': 'スタンプ',
+    };
+    return descriptions[type] || type;
+  }
+
+  /**
+   * メッセージをフォーマット（テキストメッセージ用）
    * @param {Object} event - LINEイベント
    * @param {string} displayName - 表示名
    * @returns {string} フォーマットされたメッセージ
@@ -119,7 +172,8 @@ class LineService {
     if (type === 'text') {
       return `${label}: ${event.message.text}`;
     } else {
-      return `${label} sent a ${type} message.`;
+      const description = this.getMessageTypeDescription(type);
+      return `${label} sent a ${description} message.`;
     }
   }
 }

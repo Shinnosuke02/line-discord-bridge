@@ -2,6 +2,7 @@
  * メッセージブリッジサービス
  */
 const LineService = require('./lineService');
+const MediaService = require('./mediaService');
 const logger = require('../utils/logger');
 
 class MessageBridge {
@@ -9,6 +10,7 @@ class MessageBridge {
     this.discordClient = discordClient;
     this.channelManager = channelManager;
     this.lineService = new LineService();
+    this.mediaService = new MediaService();
   }
 
   /**
@@ -32,16 +34,58 @@ class MessageBridge {
       const channelId = await this.channelManager.getOrCreateChannel(displayName, sourceId);
       const channel = await this.discordClient.channels.fetch(channelId);
 
-      // メッセージをフォーマットして送信
-      const formattedMessage = this.lineService.formatMessage(event, displayName);
-      await channel.send(formattedMessage);
+      // メッセージタイプに応じて処理
+      const messageType = event.message.type;
+      let discordMessage;
+
+      switch (messageType) {
+        case 'text':
+          discordMessage = this.lineService.formatMessage(event, displayName);
+          await channel.send(discordMessage);
+          break;
+
+        case 'image':
+          discordMessage = await this.mediaService.processLineImage(event.message);
+          await channel.send(discordMessage);
+          break;
+
+        case 'video':
+          discordMessage = await this.mediaService.processLineVideo(event.message);
+          await channel.send(discordMessage);
+          break;
+
+        case 'audio':
+          discordMessage = await this.mediaService.processLineAudio(event.message);
+          await channel.send(discordMessage);
+          break;
+
+        case 'file':
+          discordMessage = await this.mediaService.processLineFile(event.message);
+          await channel.send(discordMessage);
+          break;
+
+        case 'location':
+          const location = event.message;
+          await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
+          break;
+
+        case 'sticker':
+          discordMessage = await this.mediaService.processLineSticker(event.message);
+          await channel.send(discordMessage);
+          break;
+
+        default:
+          const description = this.lineService.getMessageTypeDescription(messageType);
+          await channel.send(`**${displayName}** sent a ${description} message.`);
+          break;
+      }
 
       logger.info('Message forwarded from LINE to Discord', {
         sourceId,
         senderId,
         displayName,
         channelId,
-        messageType: event.message.type,
+        messageType,
       });
     } catch (error) {
       logger.error('Failed to handle LINE to Discord message', error);
@@ -66,20 +110,51 @@ class MessageBridge {
     }
 
     try {
-      // テキストメッセージのみを処理
-      if (message.content && message.content.trim()) {
-        await this.lineService.pushMessage(userId, {
-          type: 'text',
-          text: message.content,
-        });
+      const messages = [];
 
-        logger.info('Message forwarded from Discord to LINE', {
-          userId,
-          channelId: message.channel.id,
-          authorId: message.author.id,
-          authorName: message.author.username,
-        });
+      // テキストメッセージの処理
+      if (message.content && message.content.trim()) {
+        // URLを検出して埋め込み画像を処理
+        const urlMessages = await this.mediaService.processUrls(message.content);
+        messages.push(...urlMessages);
+
+        // テキストメッセージを追加（URLが含まれている場合は除く）
+        const textWithoutUrls = message.content.replace(/https?:\/\/[^\s]+/g, '').trim();
+        if (textWithoutUrls) {
+          messages.push({
+            type: 'text',
+            text: textWithoutUrls,
+          });
+        }
       }
+
+      // 添付ファイルの処理
+      if (message.attachments && message.attachments.size > 0) {
+        const attachmentMessages = await this.mediaService.processDiscordAttachments(
+          Array.from(message.attachments.values())
+        );
+        messages.push(...attachmentMessages);
+      }
+
+      // メッセージが空の場合は何もしない
+      if (messages.length === 0) {
+        return;
+      }
+
+      // メッセージを送信
+      if (messages.length === 1) {
+        await this.lineService.pushMessage(userId, messages[0]);
+      } else {
+        await this.lineService.pushMessages(userId, messages);
+      }
+
+      logger.info('Message forwarded from Discord to LINE', {
+        userId,
+        channelId: message.channel.id,
+        authorId: message.author.id,
+        authorName: message.author.username,
+        messageCount: messages.length,
+      });
     } catch (error) {
       logger.error('Failed to handle Discord to LINE message', error);
     }

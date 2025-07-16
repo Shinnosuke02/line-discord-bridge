@@ -32,6 +32,18 @@ const config = {
     maxSuffix: 999,
     suffixPadding: 3,
   },
+
+  // メディア処理設定
+  media: {
+    // ファイルサイズ制限（バイト）
+    maxFileSize: 10 * 1024 * 1024, // 10MB
+    // ダウンロードタイムアウト（ミリ秒）
+    downloadTimeout: 30000, // 30秒
+    // バッチ処理間隔（ミリ秒）
+    batchDelay: 100,
+    // 最大バッチサイズ
+    maxBatchSize: 5,
+  },
 };
 
 // 必須環境変数の検証

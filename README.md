@@ -6,10 +6,31 @@ LINEとDiscord間でメッセージを転送するブリッジアプリケーシ
 
 - LINEからDiscordへのメッセージ転送
 - DiscordからLINEへのメッセージ転送
+- **画像、動画、音声、ファイルの双方向転送**
+- **URL埋め込み画像・動画の自動検出と転送**
 - 自動的なDiscordチャンネル作成
 - グループチャットとプライベートメッセージのサポート
 - 詳細なログ機能
 - エラーハンドリングとリトライ機能
+
+## サポートするメディアタイプ
+
+### LINE → Discord
+- ✅ テキストメッセージ
+- ✅ 画像（JPEG, PNG, GIF, WebP）
+- ✅ 動画（MP4, MOV等）
+- ✅ 音声メッセージ
+- ✅ ファイル添付
+- ✅ 位置情報
+- ✅ スタンプ
+
+### Discord → LINE
+- ✅ テキストメッセージ
+- ✅ 画像添付
+- ✅ 動画添付
+- ✅ 音声ファイル
+- ✅ その他のファイル（URLとして送信）
+- ✅ URL埋め込み画像・動画の自動検出
 
 ## アーキテクチャ
 
@@ -22,6 +43,7 @@ LINEとDiscord間でメッセージを転送するブリッジアプリケーシ
 ├── services/
 │   ├── channelManager.js  # Discordチャンネル管理
 │   ├── lineService.js     # LINE API操作
+│   ├── mediaService.js    # メディアファイル処理
 │   └── messageBridge.js   # メッセージブリッジ
 ├── middleware/
 │   └── lineWebhook.js     # LINE Webhookミドルウェア
@@ -69,6 +91,7 @@ LOG_LEVEL=info
 1. [LINE Developers Console](https://developers.line.biz/)でボットを作成
 2. Webhook URLを設定: `https://your-domain.com/webhook`
 3. チャンネルアクセストークンとチャンネルシークレットを取得
+4. **メディアメッセージの受信を有効化**
 
 ### 4. Discord Bot設定
 
@@ -77,6 +100,8 @@ LOG_LEVEL=info
    - Send Messages
    - Manage Channels
    - Read Message History
+   - **Attach Files**（メディア送信用）
+   - **Embed Links**（URL埋め込み用）
 3. ボットトークンを取得
 4. サーバーにボットを招待
 
@@ -114,6 +139,21 @@ POST /webhook
 ```
 
 LINEからのWebhookイベントを受信し、Discordに転送します。
+
+## メディアファイル処理
+
+### ファイルサイズ制限
+- **LINE**: 10MB以下
+- **Discord**: 25MB以下（無料プラン）、100MB以下（Nitro）
+
+### サポート形式
+- **画像**: JPEG, PNG, GIF, WebP, BMP
+- **動画**: MP4, MOV, AVI, WMV, FLV, WebM
+- **音声**: MP3, WAV, OGG, M4A
+- **その他**: PDF, その他のファイル
+
+### URL埋め込み機能
+Discordで送信されたメッセージに含まれる画像・動画URLを自動検出し、LINEに画像・動画として送信します。
 
 ## ログレベル
 
@@ -159,6 +199,11 @@ npm run lint:fix
 3. **チャンネルが作成されない**
    - Discordボットにチャンネル管理権限があるか確認
    - ギルドIDが正しいか確認
+
+4. **メディアファイルが転送されない**
+   - ファイルサイズが制限内か確認
+   - ファイル形式がサポートされているか確認
+   - ネットワーク接続を確認
 
 ### ログの確認
 
