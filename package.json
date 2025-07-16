@@ -1,10 +1,24 @@
 {
   "name": "line-discord-bridge",
   "version": "1.0.0",
+  "description": "A bridge application that forwards messages between LINE and Discord",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
+  "keywords": [
+    "line",
+    "discord",
+    "bridge",
+    "bot",
+    "messaging"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "@line/bot-sdk": "^7.5.1",
     "axios": "^1.6.0",
@@ -13,5 +27,12 @@
     "express": "^4.18.2",
     "uuid": "^9.0.0",
     "raw-body": "^2.5.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "eslint": "^8.54.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
