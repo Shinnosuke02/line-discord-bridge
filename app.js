@@ -65,10 +65,6 @@ class LineDiscordBridge {
    * Expressアプリケーションを設定
    */
   setupExpressApp() {
-    // ミドルウェア
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
-
     // ヘルスチェックエンドポイント
     this.app.get('/health', (req, res) => {
       res.status(200).json({ 
@@ -78,8 +74,12 @@ class LineDiscordBridge {
       });
     });
 
-    // Webhookルートを設定
+    // Webhookルートを設定（LINE SDKのmiddlewareがリクエストボディを処理）
     this.app.use(setupWebhookRoutes(this.messageBridge));
+
+    // その他のルート用のミドルウェア（Webhookエンドポイントには影響しない）
+    this.app.use('/api', express.json());
+    this.app.use('/api', express.urlencoded({ extended: true }));
 
     // 404ハンドラー
     this.app.use('*', (req, res) => {

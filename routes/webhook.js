@@ -2,7 +2,7 @@
  * Webhookルート
  */
 const express = require('express');
-const { rawBodyParser, lineWebhookMiddleware, webhookErrorHandler } = require('../middleware/lineWebhook');
+const { lineWebhookMiddleware, webhookErrorHandler, webhookLogMiddleware } = require('../middleware/lineWebhook');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -14,15 +14,30 @@ const router = express.Router();
 function createWebhookHandler(messageBridge) {
   return async (req, res) => {
     try {
+      // リクエストボディの検証
+      if (!req.body || !req.body.events) {
+        logger.warn('Invalid webhook request body', { body: req.body });
+        return res.status(400).json({ error: 'Invalid request body' });
+      }
+
       // イベントを順次処理
-      for (const event of req.body.events || []) {
-        await messageBridge.handleLineToDiscord(event);
+      const events = req.body.events || [];
+      logger.info('Processing webhook events', { eventCount: events.length });
+
+      for (const event of events) {
+        try {
+          await messageBridge.handleLineToDiscord(event);
+        } catch (eventError) {
+          logger.error('Failed to process individual event', { 
+            event, 
+            error: eventError.message 
+          });
+          // 個別イベントのエラーは記録するが、全体の処理は継続
+        }
       }
       
       res.status(200).send('OK');
-      logger.debug('Webhook processed successfully', { 
-        eventCount: req.body.events?.length || 0 
-      });
+      logger.debug('Webhook processed successfully', { eventCount: events.length });
     } catch (error) {
       logger.error('Webhook processing error', error);
       res.status(500).send('NG');
@@ -36,7 +51,7 @@ function createWebhookHandler(messageBridge) {
  */
 function setupWebhookRoutes(messageBridge) {
   router.post('/webhook',
-    rawBodyParser,
+    webhookLogMiddleware,
     lineWebhookMiddleware,
     createWebhookHandler(messageBridge),
     webhookErrorHandler

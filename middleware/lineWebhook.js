@@ -1,35 +1,9 @@
 /**
  * LINE Webhookミドルウェア
  */
-const getRawBody = require('raw-body');
 const { middleware } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
-
-/**
- * 生のリクエストボディを解析するミドルウェア
- */
-function rawBodyParser(req, res, next) {
-  getRawBody(req, {
-    length: req.headers['content-length'],
-    limit: '1mb',
-    encoding: req.charset || 'utf-8',
-  }, (err, string) => {
-    if (err) {
-      logger.error('Failed to parse raw body', err);
-      return next(err);
-    }
-    
-    req.rawBody = string;
-    try {
-      req.body = JSON.parse(string);
-    } catch (parseError) {
-      logger.error('Failed to parse JSON body', parseError);
-      req.body = {};
-    }
-    next();
-  });
-}
 
 /**
  * LINE Webhook検証ミドルウェア
@@ -44,8 +18,24 @@ function webhookErrorHandler(err, req, res, next) {
   res.status(500).json({ error: 'Internal server error' });
 }
 
+/**
+ * Webhookリクエストログミドルウェア
+ */
+function webhookLogMiddleware(req, res, next) {
+  logger.debug('Webhook request received', {
+    method: req.method,
+    url: req.url,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length'],
+      'x-line-signature': req.headers['x-line-signature'] ? 'present' : 'missing',
+    },
+  });
+  next();
+}
+
 module.exports = {
-  rawBodyParser,
   lineWebhookMiddleware,
   webhookErrorHandler,
+  webhookLogMiddleware,
 }; 
