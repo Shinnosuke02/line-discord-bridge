@@ -40,9 +40,15 @@ class ModernFileProcessor {
         return fileType.mime;
       }
       
-      logger.debug('File type not detected by library, using fallback', {
-        contentLength: content.length
+      // デバッグ用: ファイルの先頭バイトを出力
+      const header = content.slice(0, 32);
+      logger.debug('File type not detected by library, analyzing header', {
+        contentLength: content.length,
+        headerHex: header.toString('hex'),
+        headerArray: Array.from(header),
+        headerString: header.toString('utf8', 0, Math.min(16, header.length))
       });
+      
       return 'application/octet-stream';
     } catch (error) {
       logger.error('Failed to detect MIME type', { error: error.message });
@@ -172,9 +178,15 @@ class ModernFileProcessor {
       const extension = this.getExtensionFromMimeType(finalMimeType);
       logger.info('File extension', { extension });
       
-      // ファイル名を生成
-      const filename = `${expectedType}_${message.id}.${extension}`;
-      logger.info('Generated filename', { filename });
+      // ファイル名を生成（実際のMIMEタイプに基づく）
+      const actualType = finalMimeType.split('/')[0]; // 'image', 'video', 'audio', 'application'
+      const filename = `${actualType}_${message.id}.${extension}`;
+      logger.info('Generated filename', { 
+        filename, 
+        actualType, 
+        expectedType, 
+        finalMimeType 
+      });
       
       // ファイルサイズを検証
       const sizeValidation = this.validateFileSize(content);
@@ -212,7 +224,7 @@ class ModernFileProcessor {
   }
 
   /**
-   * MIMEタイプの解決（期待されるタイプを考慮）
+   * MIMEタイプの解決（検出されたタイプを優先）
    * @param {string} originalMimeType - 元のMIMEタイプ
    * @param {string} detectedMimeType - 検出されたMIMEタイプ
    * @param {string} expectedType - 期待されるメッセージタイプ
@@ -229,26 +241,41 @@ class ModernFileProcessor {
     
     const defaultMimeType = defaultMimeTypes[expectedType] || 'application/octet-stream';
     
-    // 1. 元のMIMEタイプが有効な場合は使用（ただし期待されるタイプと一致する場合のみ）
+    // 1. 検出されたMIMEタイプが有効な場合は優先使用（期待されるタイプに関係なく）
+    if (
+      typeof detectedMimeType === 'string' &&
+      detectedMimeType !== 'application/octet-stream' &&
+      detectedMimeType !== 'line'
+    ) {
+      logger.debug('Using detected MIME type', { 
+        detectedMimeType, 
+        expectedType,
+        originalMimeType 
+      });
+      return detectedMimeType;
+    }
+    
+    // 2. 元のMIMEタイプが有効な場合は使用（ただし期待されるタイプと一致する場合のみ）
     if (
       typeof originalMimeType === 'string' &&
       originalMimeType !== 'application/octet-stream' &&
       originalMimeType !== 'line' &&
       this.isValidMimeTypeForExpectedType(originalMimeType, expectedType)
     ) {
+      logger.debug('Using original MIME type', { 
+        originalMimeType, 
+        expectedType 
+      });
       return originalMimeType;
     }
     
-    // 2. 検出されたMIMEタイプが有効な場合は使用
-    if (
-      typeof detectedMimeType === 'string' &&
-      detectedMimeType !== 'application/octet-stream' &&
-      this.isValidMimeTypeForExpectedType(detectedMimeType, expectedType)
-    ) {
-      return detectedMimeType;
-    }
-    
     // 3. デフォルトMIMEタイプを使用
+    logger.debug('Using default MIME type', { 
+      defaultMimeType, 
+      expectedType,
+      detectedMimeType,
+      originalMimeType 
+    });
     return defaultMimeType;
   }
 
