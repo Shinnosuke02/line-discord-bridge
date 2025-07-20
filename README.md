@@ -1,64 +1,38 @@
-# LINE-Discord Bridge
+# LINE-Discord Bridge (Modern Version 2.0.0)
 
-LINEとDiscord間でメッセージを転送するブリッジアプリケーションです。
+LINE Bot API v7対応の近代化されたLINE-Discordブリッジアプリケーションです。
 
-## 機能
+## 🚀 新機能
 
-- LINEからDiscordへのメッセージ転送
-- DiscordからLINEへのメッセージ転送
-- **画像、動画、音声、ファイルの双方向転送**
-- **URL埋め込み画像・動画の自動検出と転送**
-- 自動的なDiscordチャンネル作成
-- **永続的なチャンネルマッピング管理（再起動後も維持）**
-- グループチャットとプライベートメッセージのサポート
-- 詳細なログ機能
-- エラーハンドリングとリトライ機能
+### LINE Bot API v7対応
+- `uploadContent`の削除に対応
+- 外部URLを使用したメディア送信
+- より堅牢なエラーハンドリング
 
-## サポートするメディアタイプ
+### 正確なファイル処理
+- バイナリヘッダーによる正確なMIMEタイプ判定
+- 動画・音声ファイルの適切な拡張子設定
+- ファイルシグネチャ（マジックナンバー）による判定
 
-### LINE → Discord
-- ✅ テキストメッセージ
-- ✅ 画像（JPEG, PNG, GIF, WebP）
-- ✅ 動画（MP4, MOV等）
-- ✅ 音声メッセージ
-- ✅ ファイル添付
-- ✅ 位置情報
-- ✅ スタンプ
+### 近代化されたアーキテクチャ
+- マイクロサービス指向の設計
+- 単一責任原則に基づくサービス分離
+- レート制限対策とメッセージキュー
+- グレースフルシャットダウン
 
-### Discord → LINE
-- ✅ テキストメッセージ
-- ✅ 画像添付
-- ✅ 動画添付
-- ✅ 音声ファイル
-- ✅ その他のファイル（URLとして送信）
-- ✅ URL埋め込み画像・動画の自動検出
+### 強化されたログ機能
+- 構造化ログ（JSON形式）
+- ログローテーション
+- 詳細なデバッグ情報
 
-## アーキテクチャ
+## 📋 要件
 
-```
-├── config.js              # アプリケーション設定
-├── app.js                 # メインアプリケーション
-├── index.js               # エントリーポイント
-├── utils/
-│   └── logger.js          # ログユーティリティ
-├── services/
-│   ├── channelManager.js  # Discordチャンネル管理
-│   ├── lineService.js     # LINE API操作
-│   ├── mediaService.js    # メディアファイル処理
-│   └── messageBridge.js   # メッセージブリッジ
-├── middleware/
-│   └── lineWebhook.js     # LINE Webhookミドルウェア
-└── routes/
-    └── webhook.js         # Webhookルート
-```
+- Node.js 18.0.0以上
+- npm 8.0.0以上
+- LINE Bot API v7対応のチャンネル
+- Discord Bot Token
 
-## セットアップ
-
-### 前提条件
-
-- Node.js 16.0.0以上
-- LINE Bot API アカウント
-- Discord Bot アカウント
+## 🛠️ セットアップ
 
 ### 1. 依存関係のインストール
 
@@ -66,211 +40,197 @@ LINEとDiscord間でメッセージを転送するブリッジアプリケーシ
 npm install
 ```
 
-### 2. 環境変数の設定
+### 2. 設定ファイルの作成
 
-`.env`ファイルを作成し、以下の環境変数を設定してください：
+`config.js`を作成し、以下の内容を設定してください：
 
-```env
-# LINE設定
-LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
-LINE_CHANNEL_SECRET=your_line_channel_secret
-
-# Discord設定
-DISCORD_BOT_TOKEN=your_discord_bot_token
-DISCORD_GUILD_ID=your_discord_guild_id
-
-# サーバー設定
-PORT=3000
-NODE_ENV=development
-
-# Render設定（無料プランでのスリープ対策）
-RENDER_EXTERNAL_URL=https://your-app-name.onrender.com
-
-# ログ設定（オプション）
-LOG_LEVEL=info
+```javascript
+module.exports = {
+  line: {
+    channelId: 'YOUR_LINE_CHANNEL_ID',
+    channelSecret: 'YOUR_LINE_CHANNEL_SECRET',
+    channelAccessToken: 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'
+  },
+  discord: {
+    token: 'YOUR_DISCORD_BOT_TOKEN'
+  },
+  port: process.env.PORT || 3000
+};
 ```
 
-### Render無料プランでのスリープ対策
+### 3. マッピングファイルの設定
 
-Renderの無料プランでは、一定時間リクエストがないとサービスがスリープ状態になります。この対策として：
+`mapping.json`を作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
 
-1. **Discord → LINE送信時の自動ウェイクアップ**
-   - Discordでメッセージが送信されると、自動的にサーバーのヘルスチェックを実行
-   - スリープ状態の場合は自動的にウェイクアップ（最大3回リトライ）
-   - その後、LINEへのメッセージ送信を実行
+```json
+[
+  {
+    "lineUserId": "U1234567890abcdef",
+    "discordChannelId": "1234567890123456789"
+  }
+]
+```
 
-2. **LINE → Discord送信時**
-   - LINEのWebhookは失敗時に自動リトライされるため、2回目以降で成功することが多い
-
-3. **推奨設定**
-   - `RENDER_EXTERNAL_URL`環境変数を設定して、正確なURLでウェイクアップを実行
-   - 重要な運用の場合は有料プランの利用を推奨
-
-### 3. LINE Bot設定
-
-1. [LINE Developers Console](https://developers.line.biz/)でボットを作成
-2. Webhook URLを設定: `https://your-domain.com/webhook`
-3. チャンネルアクセストークンとチャンネルシークレットを取得
-4. **メディアメッセージの受信を有効化**
-
-### 4. Discord Bot設定
-
-1. [Discord Developer Portal](https://discord.com/developers/applications)でアプリケーションを作成
-2. Botを作成し、必要な権限を付与：
-   - Send Messages
-   - Manage Channels
-   - Read Message History
-   - **Attach Files**（メディア送信用）
-   - **Embed Links**（URL埋め込み用）
-3. ボットトークンを取得
-4. サーバーにボットを招待
-
-### 5. アプリケーションの起動
+### 4. 環境変数の設定（オプション）
 
 ```bash
-# 本番環境
-npm start
+export PORT=3000
+export NODE_ENV=production
+```
 
-# 開発環境（ファイル変更時に自動再起動）
+## 🚀 起動方法
+
+### 開発環境
+
+```bash
 npm run dev
 ```
 
-## API エンドポイント
+### 本番環境
 
-### ヘルスチェック
+```bash
+# 直接起動
+npm start
+
+# PM2を使用
+npm run pm2:start
+```
+
+### PM2コマンド
+
+```bash
+# ステータス確認
+npm run pm2:status
+
+# ログ確認
+npm run pm2:logs
+
+# 再起動
+npm run pm2:restart
+
+# 停止
+npm run pm2:stop
+```
+
+## 📁 ファイル構成
 
 ```
-GET /health
+├── modernApp.js              # メインアプリケーション
+├── services/
+│   ├── modernLineService.js  # LINE Bot API v7対応サービス
+│   ├── modernMediaService.js # メディア処理サービス
+│   ├── modernFileProcessor.js # ファイル処理サービス
+│   └── modernMessageBridge.js # メッセージブリッジ
+├── utils/
+│   └── logger.js             # ログユーティリティ
+├── config.js                 # 設定ファイル
+├── mapping.json              # チャンネルマッピング
+└── package.json
 ```
 
-レスポンス例：
+## 🔧 機能詳細
+
+### LINE→Discord転送
+
+- **テキストメッセージ**: そのまま転送
+- **画像**: 適切な拡張子で保存・転送
+- **動画**: MP4形式で保存・転送
+- **音声**: M4A形式で保存・転送
+- **ファイル**: 元の形式を保持して転送
+- **スタンプ**: PNG画像として転送
+- **位置情報**: テキストとして転送
+
+### Discord→LINE転送
+
+- **テキストメッセージ**: そのまま転送
+- **画像**: 外部URLを使用して転送
+- **動画**: 外部URLを使用して転送
+- **音声**: 外部URLを使用して転送
+- **ファイル**: URLとして転送
+- **スタンプ**: テキストとして転送
+
+### ファイル処理の改善
+
+- **正確なMIME判定**: バイナリヘッダーによる判定
+- **適切な拡張子**: ファイル内容に基づく拡張子設定
+- **サイズ制限**: 10MB制限の適用
+- **エラーハンドリング**: 堅牢なエラー処理
+
+## 📊 ログ
+
+### ログレベル
+
+- `ERROR`: エラー情報
+- `WARN`: 警告情報
+- `INFO`: 一般情報
+- `DEBUG`: デバッグ情報
+
+### ログ形式
+
 ```json
 {
-  "status": "ok",
-  "timestamp": "2023-12-01T12:00:00.000Z",
-  "discord": "connected"
-}
-```
-
-### チャンネルマッピング管理
-
-```
-GET /api/mappings
-```
-
-すべてのチャンネルマッピングと統計情報を取得します。
-
-```
-GET /api/mappings/stats
-```
-
-マッピング統計情報のみを取得します。
-
-レスポンス例：
-```json
-{
-  "mappings": [
-    {
-      "id": "mapping_1234567890_abc123",
-      "lineChannelId": "U1234567890abcdef",
-      "discordChannelId": "1234567890123456789",
-      "name": "ユーザー名",
-      "type": "user",
-      "createdAt": "2025-07-20T18:00:00.000Z",
-      "lastUsed": "2025-07-20T18:30:00.000Z"
-    }
-  ],
-  "stats": {
-    "total": 1,
-    "userMappings": 1,
-    "groupMappings": 0,
-    "lastUpdated": "2025-07-20T18:30:00.000Z"
+  "timestamp": "2025-01-20T10:30:00.000Z",
+  "level": "INFO",
+  "message": "Message forwarded from LINE to Discord",
+  "metadata": {
+    "sourceId": "U1234567890abcdef",
+    "senderId": "U1234567890abcdef",
+    "displayName": "ユーザー名",
+    "channelId": "1234567890123456789",
+    "messageType": "image"
   }
 }
 ```
 
-### LINE Webhook
-
-```
-POST /webhook
-```
-
-LINEからのWebhookイベントを受信し、Discordに転送します。
-
-## メディアファイル処理
-
-### ファイルサイズ制限
-- **LINE**: 10MB以下
-- **Discord**: 25MB以下（無料プラン）、100MB以下（Nitro）
-
-### サポート形式
-- **画像**: JPEG, PNG, GIF, WebP, BMP
-- **動画**: MP4, MOV, AVI, WMV, FLV, WebM
-- **音声**: MP3, WAV, OGG, M4A
-- **その他**: PDF, その他のファイル
-
-### URL埋め込み機能
-Discordで送信されたメッセージに含まれる画像・動画URLを自動検出し、LINEに画像・動画として送信します。
-
-## ログレベル
-
-- `error`: エラーログ
-- `warn`: 警告ログ
-- `info`: 情報ログ
-- `debug`: デバッグログ
-
-環境変数`LOG_LEVEL`で設定可能です。
-
-## 開発
-
-### コードスタイル
-
-```bash
-# リンター実行
-npm run lint
-
-# 自動修正
-npm run lint:fix
-```
-
-### ディレクトリ構造
-
-- `config.js`: アプリケーション設定と環境変数検証
-- `services/`: ビジネスロジックを含むサービスクラス
-- `middleware/`: Expressミドルウェア
-- `routes/`: APIルート定義
-- `utils/`: ユーティリティ関数
-
-## トラブルシューティング
+## 🔍 トラブルシューティング
 
 ### よくある問題
 
-1. **Discordボットが接続できない**
-   - ボットトークンが正しいか確認
-   - 必要な権限が付与されているか確認
+1. **LINE Bot API v7エラー**
+   - `uploadContent is not a function`エラーが発生した場合、新しいバージョンを使用してください
 
-2. **LINE Webhookが受信されない**
-   - Webhook URLが正しく設定されているか確認
-   - チャンネルシークレットが正しいか確認
+2. **ファイル拡張子が.binになる**
+   - 新しいFileProcessorが正しい拡張子を設定します
 
-3. **チャンネルが作成されない**
-   - Discordボットにチャンネル管理権限があるか確認
-   - ギルドIDが正しいか確認
+3. **Discord→LINEの画像送信エラー**
+   - 外部URLを使用するため、DiscordのURLが公開されている必要があります
 
-4. **メディアファイルが転送されない**
-   - ファイルサイズが制限内か確認
-   - ファイル形式がサポートされているか確認
-   - ネットワーク接続を確認
-
-### ログの確認
-
-アプリケーションログを確認して、エラーの詳細を把握してください：
+### デバッグ方法
 
 ```bash
-# ログレベルをdebugに設定
-LOG_LEVEL=debug npm start
+# 詳細ログを有効化
+export LOG_LEVEL=debug
+npm start
+
+# PM2ログの確認
+npm run pm2:logs
 ```
 
-## ライセンス
+## 🔄 アップグレード
 
-ISC License 
+### 1.xから2.xへの移行
+
+1. 新しい依存関係をインストール
+2. 設定ファイルを更新
+3. 新しいアプリケーションファイルを使用
+4. データベースの移行（必要に応じて）
+
+## 📝 ライセンス
+
+MIT License
+
+## 🤝 コントリビューション
+
+1. フォークを作成
+2. フィーチャーブランチを作成
+3. 変更をコミット
+4. プルリクエストを作成
+
+## 📞 サポート
+
+問題が発生した場合は、以下の情報を含めて報告してください：
+
+- Node.jsバージョン
+- エラーログ
+- 設定ファイル（機密情報は除く）
+- 再現手順 
