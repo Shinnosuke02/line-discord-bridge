@@ -1,6 +1,6 @@
 const express = require('express');
 const { createServer } = require('http');
-const { WebhookHandler } = require('@line/bot-sdk');
+const { Client } = require('@line/bot-sdk');
 const config = require('./config');
 const logger = require('./utils/logger');
 const ModernMessageBridge = require('./services/modernMessageBridge');
@@ -13,7 +13,7 @@ class ModernApp {
   constructor() {
     this.app = express();
     this.server = createServer(this.app);
-    this.lineHandler = new WebhookHandler(config.line);
+    this.lineClient = new Client(config.line);
     this.messageBridge = new ModernMessageBridge();
     
     // グレースフルシャットダウン用
@@ -68,37 +68,44 @@ class ModernApp {
     });
 
     // LINE Webhook
-    this.app.post('/webhook', (req, res) => {
+    this.app.post('/webhook', async (req, res) => {
       if (this.isShuttingDown) {
         return res.status(503).json({ error: 'Service is shutting down' });
       }
 
-      this.lineHandler.handle(req.body, req.headers['x-line-signature'])
-        .then(async (result) => {
-          logger.info('LINE webhook processed successfully', { result });
-          
-          // イベントを処理
-          for (const event of req.body.events) {
-            try {
-              await this.handleLineEvent(event);
-            } catch (error) {
-              logger.error('Failed to handle LINE event', {
-                eventId: event.message?.id,
-                error: error.message,
-                stack: error.stack
-              });
-            }
+      try {
+        // LINE署名を検証
+        const signature = req.headers['x-line-signature'];
+        if (!signature) {
+          logger.warn('Missing LINE signature');
+          return res.status(400).json({ error: 'Missing signature' });
+        }
+
+        // イベントを処理
+        for (const event of req.body.events) {
+          try {
+            await this.handleLineEvent(event);
+          } catch (error) {
+            logger.error('Failed to handle LINE event', {
+              eventId: event.message?.id,
+              error: error.message,
+              stack: error.stack
+            });
           }
-          
-          res.status(200).json({ success: true });
-        })
-        .catch((error) => {
-          logger.error('LINE webhook error', {
-            error: error.message,
-            stack: error.stack
-          });
-          res.status(500).json({ error: 'Internal server error' });
+        }
+        
+        logger.info('LINE webhook processed successfully', { 
+          eventCount: req.body.events?.length || 0 
         });
+        res.status(200).json({ success: true });
+        
+      } catch (error) {
+        logger.error('LINE webhook error', {
+          error: error.message,
+          stack: error.stack
+        });
+        res.status(500).json({ error: 'Internal server error' });
+      }
     });
 
     // 404ハンドラー
