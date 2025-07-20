@@ -411,6 +411,7 @@ class ModernMessageBridge {
             text: formattedMessage
           });
         }
+        // URLが含まれている場合は、URL処理で送信されるため、テキストメッセージは送信しない
       }
 
       // スタンプを処理
@@ -422,13 +423,7 @@ class ModernMessageBridge {
             stickerDescription: sticker.description
           });
           
-          const stickerInfo = [
-            `**${discordMessage.author.username}** sent a sticker:`,
-            `名前: ${sticker.name}`,
-            `説明: ${sticker.description || '説明なし'}`,
-            `ID: ${sticker.id}`,
-            `(LINE Messaging APIの制限により、スタンプ画像は表示できません)`
-          ].join('\n');
+          const stickerInfo = `**${discordMessage.author.username}** sent a sticker: ${sticker.name}`;
           
           await this.lineService.pushMessage(lineUserId, {
             type: 'text',
