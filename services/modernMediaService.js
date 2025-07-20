@@ -82,8 +82,8 @@ class ModernMediaService {
         contentLength: content.length
       });
       
-      // ModernFileProcessorを使用して画像を処理
-      const result = this.fileProcessor.processLineMedia(message, content, 'image');
+      // ModernFileProcessorを使用して画像を処理（非同期）
+      const result = await this.fileProcessor.processLineMedia(message, content, 'image');
       
       logger.info('ModernFileProcessor result', {
         messageId: message.id,
@@ -129,7 +129,7 @@ class ModernMediaService {
   async processLineVideo(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'video');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'video');
       
       if (!result.success) {
         throw new Error(result.error);
@@ -165,7 +165,7 @@ class ModernMediaService {
   async processLineAudio(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'audio');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'audio');
       
       if (!result.success) {
         throw new Error(result.error);
@@ -201,7 +201,7 @@ class ModernMediaService {
   async processLineFile(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'file');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'file');
       
       if (!result.success) {
         throw new Error(result.error);
@@ -341,7 +341,15 @@ class ModernMediaService {
           continue;
         }
 
-        // ファイルタイプに応じて処理（外部URLを使用）
+        // 一時的にファイル送信を無効化（Discord URLの制限のため）
+        // TODO: ファイルアップロード機能の実装が必要
+        await this.lineService.pushMessage(userId, {
+          type: 'text',
+          text: `**ファイル**: ${attachment.name} (ファイル送信機能は現在無効化されています)`,
+        });
+        results.push({ success: false, reason: 'feature_disabled', filename: attachment.name });
+        
+        /* 外部URLを使用した送信（Discord URLが公開されていないため無効化）
         if (attachment.contentType?.startsWith('image/')) {
           await this.lineService.sendImageByUrl(userId, attachment.url);
           results.push({ success: true, type: 'image', filename: attachment.name });
@@ -359,6 +367,7 @@ class ModernMediaService {
           });
           results.push({ success: true, type: 'url', filename: attachment.name });
         }
+        */
       } catch (error) {
         logger.error('Failed to process Discord attachment', { 
           attachment: attachment.name, 

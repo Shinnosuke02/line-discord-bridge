@@ -1,186 +1,59 @@
 const logger = require('../utils/logger');
+const { fileTypeFromBuffer } = require('file-type');
+const mime = require('mime-types');
 
 /**
  * 近代化されたファイル処理クラス
- * より正確なMIMEタイプ判定とファイル処理を提供
+ * 汎用ライブラリを使用した正確なMIMEタイプ判定とファイル処理を提供
  */
 class ModernFileProcessor {
   constructor() {
-    // 拡張されたMIMEタイプマッピング
-    this.mimeTypeMap = {
-      // 画像
-      'image/jpeg': 'jpg',
-      'image/jpg': 'jpg',
-      'image/png': 'png',
-      'image/gif': 'gif',
-      'image/webp': 'webp',
-      'image/bmp': 'bmp',
-      'image/tiff': 'tiff',
-      'image/svg+xml': 'svg',
-      
-      // 動画
-      'video/mp4': 'mp4',
-      'video/quicktime': 'mov',
-      'video/avi': 'avi',
-      'video/wmv': 'wmv',
-      'video/flv': 'flv',
-      'video/webm': 'webm',
-      'video/mpeg': 'mpg',
-      'video/3gpp': '3gp',
-      'video/x-msvideo': 'avi',
-      
-      // 音声
-      'audio/mpeg': 'mp3',
-      'audio/wav': 'wav',
-      'audio/ogg': 'ogg',
-      'audio/m4a': 'm4a',
-      'audio/aac': 'aac',
-      'audio/flac': 'flac',
-      'audio/webm': 'webm',
-      'audio/x-wav': 'wav',
-      
-      // ドキュメント
-      'application/pdf': 'pdf',
-      'application/msword': 'doc',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-      'application/vnd.ms-excel': 'xls',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-      'application/vnd.ms-powerpoint': 'ppt',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-      'text/plain': 'txt',
-      'text/csv': 'csv',
-      
-      // アーカイブ
-      'application/zip': 'zip',
-      'application/x-rar-compressed': 'rar',
-      'application/x-7z-compressed': '7z',
-      'application/gzip': 'gz',
-    };
-
-    // ファイルシグネチャ（マジックナンバー）
-    this.fileSignatures = {
-      // 画像
-      jpeg: [0xFF, 0xD8],
-      png: [0x89, 0x50, 0x4E, 0x47],
-      gif: [0x47, 0x49, 0x46],
-      webp: [0x52, 0x49, 0x46, 0x46, null, null, null, null, 0x57, 0x45, 0x42, 0x50],
-      bmp: [0x42, 0x4D],
-      
-      // 動画
-      mp4: [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70], // MP4 variant 1
-      mp4_alt: [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70], // MP4 variant 2
-      mov: [0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74], // QuickTime
-      avi: [0x52, 0x49, 0x46, 0x46, null, null, null, null, 0x41, 0x56, 0x49],
-      webm: [0x1A, 0x45, 0xDF, 0xA3],
-      
-      // 音声
-      mp3: [0x49, 0x44, 0x33], // ID3 tag
-      mp3_alt: [0xFF, 0xFB], // MPEG-1 Layer 3
-      wav: [0x52, 0x49, 0x46, 0x46, null, null, null, null, 0x57, 0x41, 0x56, 0x45],
-      m4a: [0x4D, 0x34, 0x41], // M4A
-      flac: [0x66, 0x4C, 0x61, 0x43], // "fLaC"
-      
-      // ドキュメント
-      pdf: [0x25, 0x50, 0x44, 0x46], // "%PDF"
-      zip: [0x50, 0x4B, 0x03, 0x04], // PK\x03\x04
-      zip_alt: [0x50, 0x4B, 0x05, 0x06], // PK\x05\x06 (empty archive)
-      zip_alt2: [0x50, 0x4B, 0x07, 0x08], // PK\x07\x08 (spanned archive)
+    // 期待されるタイプに基づくデフォルトMIMEタイプ
+    this.defaultMimeTypes = {
+      'image': 'image/jpeg',
+      'video': 'video/mp4',
+      'audio': 'audio/m4a',
+      'file': 'application/octet-stream'
     };
   }
 
   /**
-   * ファイルの先頭バイトからMIMEタイプを判定（強化版）
+   * ファイルの先頭バイトからMIMEタイプを判定（汎用ライブラリ使用）
    * @param {Buffer} content - ファイル内容
-   * @returns {string} MIMEタイプ
+   * @returns {Promise<string>} MIMEタイプ
    */
-  detectMimeTypeFromContent(content) {
+  async detectMimeTypeFromContent(content) {
     if (!content || content.length < 4) {
       return 'application/octet-stream';
     }
 
-    const header = content.slice(0, 16);
-    
-    // 画像判定
-    if (this.matchesSignature(header, this.fileSignatures.jpeg)) {
-      return 'image/jpeg';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.png)) {
-      return 'image/png';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.gif)) {
-      return 'image/gif';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.webp)) {
-      return 'image/webp';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.bmp)) {
-      return 'image/bmp';
-    }
-    
-    // 動画判定
-    if (this.matchesSignature(header, this.fileSignatures.mp4) || 
-        this.matchesSignature(header, this.fileSignatures.mp4_alt)) {
-      return 'video/mp4';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.mov)) {
-      return 'video/quicktime';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.avi)) {
-      return 'video/avi';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.webm)) {
-      return 'video/webm';
-    }
-    
-    // 音声判定
-    if (this.matchesSignature(header, this.fileSignatures.mp3) || 
-        this.matchesSignature(header, this.fileSignatures.mp3_alt)) {
-      return 'audio/mpeg';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.wav)) {
-      return 'audio/wav';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.m4a)) {
-      return 'audio/m4a';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.flac)) {
-      return 'audio/flac';
-    }
-    
-    // ドキュメント判定
-    if (this.matchesSignature(header, this.fileSignatures.pdf)) {
-      return 'application/pdf';
-    }
-    if (this.matchesSignature(header, this.fileSignatures.zip) || 
-        this.matchesSignature(header, this.fileSignatures.zip_alt) ||
-        this.matchesSignature(header, this.fileSignatures.zip_alt2)) {
-      return 'application/zip';
-    }
-
-    return 'application/octet-stream';
-  }
-
-  /**
-   * バイトシグネチャの一致を確認（強化版）
-   * @param {Buffer} header - ファイルヘッダー
-   * @param {Array} signature - シグネチャ配列
-   * @returns {boolean} 一致するかどうか
-   */
-  matchesSignature(header, signature) {
-    if (header.length < signature.length) {
-      return false;
-    }
-    
-    for (let i = 0; i < signature.length; i++) {
-      if (signature[i] !== null && header[i] !== signature[i]) {
-        return false;
+    try {
+      // file-typeライブラリを使用してMIMEタイプを判定
+      const fileType = await fileTypeFromBuffer(content);
+      
+      if (fileType) {
+        logger.debug('File type detected by library', {
+          mime: fileType.mime,
+          ext: fileType.ext,
+          contentLength: content.length
+        });
+        return fileType.mime;
       }
+      
+      logger.debug('File type not detected by library, using fallback', {
+        contentLength: content.length
+      });
+      return 'application/octet-stream';
+    } catch (error) {
+      logger.error('Failed to detect MIME type', { error: error.message });
+      return 'application/octet-stream';
     }
-    return true;
   }
 
+
+
   /**
-   * MIMEタイプから拡張子を取得（強化版）
+   * MIMEタイプから拡張子を取得（汎用ライブラリ使用）
    * @param {string} mimeType - MIMEタイプ
    * @returns {string} 拡張子
    */
@@ -191,7 +64,30 @@ class ModernFileProcessor {
     
     // セミコロン以降を除去（charset等のパラメータを無視）
     const baseType = mimeType.split(';')[0].trim().toLowerCase();
-    return this.mimeTypeMap[baseType] || 'bin';
+    
+    // mime-typesライブラリを使用して拡張子を取得
+    const extension = mime.extension(baseType);
+    
+    if (extension) {
+      return extension;
+    }
+    
+    // フォールバック: 一般的な拡張子マッピング
+    const fallbackMap = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'video/mp4': 'mp4',
+      'video/quicktime': 'mov',
+      'audio/mpeg': 'mp3',
+      'audio/m4a': 'm4a',
+      'application/pdf': 'pdf',
+      'application/zip': 'zip'
+    };
+    
+    return fallbackMap[baseType] || 'bin';
   }
 
   /**
@@ -244,13 +140,13 @@ class ModernFileProcessor {
   }
 
   /**
-   * 汎用メディアメッセージの処理（近代化版）
+   * 汎用メディアメッセージの処理（汎用ライブラリ使用版）
    * @param {Object} message - LINEメッセージ
    * @param {Buffer} content - バイナリデータ
    * @param {string} expectedType - 期待されるメッセージタイプ（'image', 'video', 'audio', 'file'）
-   * @returns {Object} 処理結果
+   * @returns {Promise<Object>} 処理結果
    */
-  processLineMedia(message, content, expectedType) {
+  async processLineMedia(message, content, expectedType) {
     try {
       logger.info('=== Modern LINE Media Processing Start ===', {
         messageId: message.id,
@@ -264,8 +160,8 @@ class ModernFileProcessor {
       const originalMimeType = message.contentProvider?.type;
       logger.info('Original MIME type', { originalMimeType });
       
-      // ファイル内容からMIMEタイプを判定
-      const detectedMimeType = this.detectMimeTypeFromContent(content);
+      // ファイル内容からMIMEタイプを判定（非同期）
+      const detectedMimeType = await this.detectMimeTypeFromContent(content);
       logger.info('Detected MIME type', { detectedMimeType });
       
       // 最終的なMIMEタイプを決定（期待されるタイプを優先）
