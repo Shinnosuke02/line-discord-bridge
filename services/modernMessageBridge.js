@@ -422,9 +422,17 @@ class ModernMessageBridge {
             stickerDescription: sticker.description
           });
           
+          const stickerInfo = [
+            `**${discordMessage.author.username}** sent a sticker:`,
+            `名前: ${sticker.name}`,
+            `説明: ${sticker.description || '説明なし'}`,
+            `ID: ${sticker.id}`,
+            `(LINE Messaging APIの制限により、スタンプ画像は表示できません)`
+          ].join('\n');
+          
           await this.lineService.pushMessage(lineUserId, {
             type: 'text',
-            text: `**${discordMessage.author.username}** sent a sticker: ${sticker.name} (${sticker.description || 'No description'})`
+            text: stickerInfo
           });
         }
       }

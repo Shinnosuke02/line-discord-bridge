@@ -341,11 +341,18 @@ class ModernMediaService {
           continue;
         }
 
-        // 一時的にファイル送信を無効化（Discord URLの制限のため）
-        // TODO: ファイルアップロード機能の実装が必要
+        // ファイル情報を詳細に表示
+        const fileInfo = [
+          `**ファイル**: ${attachment.name}`,
+          `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
+          `タイプ: ${attachment.contentType || '不明'}`,
+          `URL: ${attachment.url}`,
+          `(LINE Messaging APIの制限により、ファイル送信機能は現在無効化されています)`
+        ].join('\n');
+        
         await this.lineService.pushMessage(userId, {
           type: 'text',
-          text: `**ファイル**: ${attachment.name} (ファイル送信機能は現在無効化されています)`,
+          text: fileInfo
         });
         results.push({ success: false, reason: 'feature_disabled', filename: attachment.name });
         
@@ -409,7 +416,7 @@ class ModernMediaService {
           // Tenor GIFは直接送信できないため、URLとして送信
           await this.lineService.pushMessage(userId, {
             type: 'text',
-            text: `**GIF**: ${url}`
+            text: `**GIF**: ${url}\n(LINE Messaging APIの制限により、GIFは直接表示できません)`
           });
           results.push({ success: true, type: 'gif_url', url });
           continue;
