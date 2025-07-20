@@ -141,7 +141,11 @@ class ModernMessageBridge {
           logger.info('Processing LINE image message', {
             messageId: event.message.id
           });
-          discordMessage = await this.mediaService.processLineImage(event.message);
+          const imageResult = await this.mediaService.processLineImage(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${imageResult.content}`,
+            files: imageResult.files || []
+          };
           logger.info('Image processing result', {
             messageId: event.message.id,
             hasContent: !!discordMessage?.content,
@@ -151,15 +155,27 @@ class ModernMessageBridge {
           break;
           
         case 'video':
-          discordMessage = await this.mediaService.processLineVideo(event.message);
+          const videoResult = await this.mediaService.processLineVideo(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${videoResult.content}`,
+            files: videoResult.files || []
+          };
           break;
           
         case 'audio':
-          discordMessage = await this.mediaService.processLineAudio(event.message);
+          const audioResult = await this.mediaService.processLineAudio(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${audioResult.content}`,
+            files: audioResult.files || []
+          };
           break;
           
         case 'file':
-          discordMessage = await this.mediaService.processLineFile(event.message);
+          const fileResult = await this.mediaService.processLineFile(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${fileResult.content}`,
+            files: fileResult.files || []
+          };
           break;
           
         case 'sticker':
@@ -168,7 +184,11 @@ class ModernMessageBridge {
             packageId: event.message.packageId,
             stickerId: event.message.stickerId
           });
-          discordMessage = await this.mediaService.processLineSticker(event.message);
+          const stickerResult = await this.mediaService.processLineSticker(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${stickerResult.content}`,
+            files: stickerResult.files || []
+          };
           logger.info('Sticker processing result', {
             messageId: event.message.id,
             hasContent: !!discordMessage?.content,
