@@ -103,16 +103,35 @@ class MediaService {
       let mimeType = message.contentProvider?.type;
       if (!mimeType) {
         // ファイルの先頭バイトからMIMEタイプを推測
-        const header = content.slice(0, 4);
+        const header = content.slice(0, 8); // より多くのバイトを確認
+        
+        // JPEG
         if (header[0] === 0xFF && header[1] === 0xD8) {
           mimeType = 'image/jpeg';
-        } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
-          mimeType = 'image/png';
-        } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
-          mimeType = 'image/gif';
-        } else {
-          mimeType = 'image/jpeg'; // デフォルト
         }
+        // PNG
+        else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+          mimeType = 'image/png';
+        }
+        // GIF
+        else if ((header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) ||
+                 (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38)) {
+          mimeType = 'image/gif';
+        }
+        // WebP
+        else if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46 &&
+                 header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50) {
+          mimeType = 'image/webp';
+        }
+        // デフォルトはJPEG
+        else {
+          mimeType = 'image/jpeg';
+        }
+      }
+      
+      // MIMEタイプが不明な場合は強制的にJPEGに設定
+      if (!mimeType || mimeType === 'application/octet-stream') {
+        mimeType = 'image/jpeg';
       }
       
       const extension = this.getExtensionFromMimeType(mimeType);
@@ -394,14 +413,54 @@ class MediaService {
 
         // ファイルタイプに応じて処理
         if (attachment.contentType?.startsWith('image/')) {
-          await lineService.sendImage(userId, content, attachment.name);
-          results.push({ success: true, type: 'image', filename: attachment.name });
+          try {
+            await lineService.sendImage(userId, content, attachment.name);
+            results.push({ success: true, type: 'image', filename: attachment.name });
+            logger.info('Successfully sent image to LINE', { userId, filename: attachment.name });
+          } catch (imageError) {
+            logger.error('Failed to send image to LINE', { 
+              userId, 
+              filename: attachment.name, 
+              error: imageError.message 
+            });
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**画像**: ${attachment.name} (送信に失敗しました)`,
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
+          }
         } else if (attachment.contentType?.startsWith('video/')) {
-          await lineService.sendVideo(userId, content, attachment.name);
-          results.push({ success: true, type: 'video', filename: attachment.name });
+          try {
+            await lineService.sendVideo(userId, content, attachment.name);
+            results.push({ success: true, type: 'video', filename: attachment.name });
+          } catch (videoError) {
+            logger.error('Failed to send video to LINE', { 
+              userId, 
+              filename: attachment.name, 
+              error: videoError.message 
+            });
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**動画**: ${attachment.name} (送信に失敗しました)`,
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
+          }
         } else if (attachment.contentType?.startsWith('audio/')) {
-          await lineService.sendAudio(userId, content, attachment.name);
-          results.push({ success: true, type: 'audio', filename: attachment.name });
+          try {
+            await lineService.sendAudio(userId, content, attachment.name);
+            results.push({ success: true, type: 'audio', filename: attachment.name });
+          } catch (audioError) {
+            logger.error('Failed to send audio to LINE', { 
+              userId, 
+              filename: attachment.name, 
+              error: audioError.message 
+            });
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**音声**: ${attachment.name} (送信に失敗しました)`,
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
+          }
         } else {
           // その他のファイルはURLとして送信
           await lineService.pushMessage(userId, {

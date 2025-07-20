@@ -189,6 +189,8 @@ class LineService {
    */
   async sendImage(userId, content, filename) {
     try {
+      logger.debug('Sending image to LINE', { userId, filename, size: content.length });
+      
       const messageId = await this.uploadFile(content, filename);
       
       const message = {
@@ -197,9 +199,16 @@ class LineService {
         previewImageUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
       };
       
-      return await this.pushMessage(userId, message);
+      const result = await this.pushMessage(userId, message);
+      logger.info('Image sent to LINE successfully', { userId, filename, messageId });
+      return result;
     } catch (error) {
-      logger.error('Failed to send image to LINE', { filename, error: error.message });
+      logger.error('Failed to send image to LINE', { 
+        userId, 
+        filename, 
+        error: error.message,
+        stack: error.stack 
+      });
       throw error;
     }
   }
