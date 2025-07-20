@@ -100,6 +100,7 @@ class MessageBridge {
    * サーバーのウェイクアップを確認（リトライ機能付き）
    * @returns {Promise<boolean>} ウェイクアップ成功かどうか
    */
+  /*
   async wakeUpServer() {
     const maxRetries = 3;
     const retryDelay = 2000; // 2秒
@@ -148,9 +149,9 @@ class MessageBridge {
       }
     }
     
-    logger.error('All wake up attempts failed');
     return false;
   }
+  */
 
   /**
    * DiscordからLINEへのメッセージ処理（リファクタリング版）
@@ -194,6 +195,7 @@ class MessageBridge {
 
     try {
       // サーバーのウェイクアップを確認
+      /*
       const isServerAwake = await this.wakeUpServer();
       
       if (!isServerAwake) {
@@ -202,6 +204,7 @@ class MessageBridge {
           authorId: parsedMessage.authorId,
         });
       }
+      */
 
       const messages = [];
       const results = [];
