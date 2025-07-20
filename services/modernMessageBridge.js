@@ -274,16 +274,6 @@ class ModernMessageBridge {
     }
 
     try {
-      const options = {};
-      if (message.files && message.files.length > 0) {
-        options.files = message.files;
-        logger.info('Preparing to send files to Discord', {
-          channelId: channel.id,
-          fileCount: message.files.length,
-          fileNames: message.files.map(f => f.name || f.attachment?.name || 'unknown')
-        });
-      }
-
       // メッセージ内容のチェック（ファイルがある場合はcontentが空でもOK）
       if (!message.content || message.content.trim() === '') {
         if (!message.files || message.files.length === 0) {
@@ -301,7 +291,24 @@ class ModernMessageBridge {
         }
       }
 
-      const sentMessage = await channel.send(message.content || '', options);
+      let sentMessage;
+      
+      if (message.files && message.files.length > 0) {
+        logger.info('Preparing to send files to Discord', {
+          channelId: channel.id,
+          fileCount: message.files.length,
+          fileNames: message.files.map(f => f.name || f.attachment?.name || 'unknown')
+        });
+        
+        // ファイル付きメッセージを送信
+        sentMessage = await channel.send({
+          content: message.content || '',
+          files: message.files
+        });
+      } else {
+        // テキストのみのメッセージを送信
+        sentMessage = await channel.send(message.content || '');
+      }
 
       logger.info('Message sent to Discord successfully', {
         channelId: channel.id,
