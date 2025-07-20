@@ -9,6 +9,7 @@ LINEとDiscord間でメッセージを転送するブリッジアプリケーシ
 - **画像、動画、音声、ファイルの双方向転送**
 - **URL埋め込み画像・動画の自動検出と転送**
 - 自動的なDiscordチャンネル作成
+- **永続的なチャンネルマッピング管理（再起動後も維持）**
 - グループチャットとプライベートメッセージのサポート
 - 詳細なログ機能
 - エラーハンドリングとリトライ機能
@@ -82,9 +83,28 @@ DISCORD_GUILD_ID=your_discord_guild_id
 PORT=3000
 NODE_ENV=development
 
+# Render設定（無料プランでのスリープ対策）
+RENDER_EXTERNAL_URL=https://your-app-name.onrender.com
+
 # ログ設定（オプション）
 LOG_LEVEL=info
 ```
+
+### Render無料プランでのスリープ対策
+
+Renderの無料プランでは、一定時間リクエストがないとサービスがスリープ状態になります。この対策として：
+
+1. **Discord → LINE送信時の自動ウェイクアップ**
+   - Discordでメッセージが送信されると、自動的にサーバーのヘルスチェックを実行
+   - スリープ状態の場合は自動的にウェイクアップ（最大3回リトライ）
+   - その後、LINEへのメッセージ送信を実行
+
+2. **LINE → Discord送信時**
+   - LINEのWebhookは失敗時に自動リトライされるため、2回目以降で成功することが多い
+
+3. **推奨設定**
+   - `RENDER_EXTERNAL_URL`環境変数を設定して、正確なURLでウェイクアップを実行
+   - 重要な運用の場合は有料プランの利用を推奨
 
 ### 3. LINE Bot設定
 
@@ -129,6 +149,43 @@ GET /health
   "status": "ok",
   "timestamp": "2023-12-01T12:00:00.000Z",
   "discord": "connected"
+}
+```
+
+### チャンネルマッピング管理
+
+```
+GET /api/mappings
+```
+
+すべてのチャンネルマッピングと統計情報を取得します。
+
+```
+GET /api/mappings/stats
+```
+
+マッピング統計情報のみを取得します。
+
+レスポンス例：
+```json
+{
+  "mappings": [
+    {
+      "id": "mapping_1234567890_abc123",
+      "lineChannelId": "U1234567890abcdef",
+      "discordChannelId": "1234567890123456789",
+      "name": "ユーザー名",
+      "type": "user",
+      "createdAt": "2025-07-20T18:00:00.000Z",
+      "lastUsed": "2025-07-20T18:30:00.000Z"
+    }
+  ],
+  "stats": {
+    "total": 1,
+    "userMappings": 1,
+    "groupMappings": 0,
+    "lastUpdated": "2025-07-20T18:30:00.000Z"
+  }
 }
 ```
 

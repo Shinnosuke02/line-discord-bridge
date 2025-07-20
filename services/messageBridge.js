@@ -4,6 +4,8 @@
 const LineService = require('./lineService');
 const MediaService = require('./mediaService');
 const logger = require('../utils/logger');
+const config = require('../config');
+const fetch = require('node-fetch');
 
 class MessageBridge {
   constructor(discordClient, channelManager) {
@@ -93,7 +95,63 @@ class MessageBridge {
   }
 
   /**
-   * DiscordからLINEへのメッセージ処理
+   * サーバーのウェイクアップを確認（リトライ機能付き）
+   * @returns {Promise<boolean>} ウェイクアップ成功かどうか
+   */
+  async wakeUpServer() {
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2秒
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${config.server.port}`;
+        const healthUrl = `${baseUrl}/health`;
+        
+        logger.debug(`Wake up attempt ${attempt}/${maxRetries}`, { healthUrl });
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+        
+        const response = await fetch(healthUrl, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          logger.info('Server is awake and ready', { attempt });
+          return true;
+        } else {
+          logger.warn('Server health check failed', { 
+            status: response.status, 
+            attempt 
+          });
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          logger.warn('Wake up request timed out', { attempt });
+        } else {
+          logger.error('Failed to wake up server', { 
+            attempt, 
+            error: error.message 
+          });
+        }
+      }
+      
+      // 最後の試行でない場合は待機
+      if (attempt < maxRetries) {
+        logger.debug(`Waiting ${retryDelay}ms before retry`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+    
+    logger.error('All wake up attempts failed');
+    return false;
+  }
+
+  /**
+   * DiscordからLINEへのメッセージ処理（ウェイクアップ対応版）
    * @param {Object} message - Discordメッセージ
    */
   async handleDiscordToLine(message) {
@@ -110,6 +168,17 @@ class MessageBridge {
     }
 
     try {
+      // サーバーのウェイクアップを確認（Render無料プラン対策）
+      const isServerAwake = await this.wakeUpServer();
+      
+      if (!isServerAwake) {
+        logger.warn('Server is not responding, message may be lost', {
+          channelId: message.channel.id,
+          authorId: message.author.id,
+        });
+        // サーバーが応答しない場合でも処理を続行（後でリトライされる可能性）
+      }
+
       const messages = [];
 
       // テキストメッセージの処理
@@ -154,6 +223,7 @@ class MessageBridge {
         authorId: message.author.id,
         authorName: message.author.username,
         messageCount: messages.length,
+        serverAwake: isServerAwake,
       });
     } catch (error) {
       logger.error('Failed to handle Discord to LINE message', error);

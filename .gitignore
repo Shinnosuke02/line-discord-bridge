@@ -64,4 +64,5 @@ Thumbs.db
 
 # Application specific
 userChannelMap.json
-mapping.json 
+mapping.json
+data/channel-mappings.json 

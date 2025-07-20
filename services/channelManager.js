@@ -5,11 +5,16 @@ const fs = require('fs');
 const { ChannelType } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
+const MappingManager = require('./mappingManager');
 
 class ChannelManager {
   constructor(discordClient) {
     this.discordClient = discordClient;
+    this.mappingManager = new MappingManager();
     this.userChannelMap = this.loadUserChannelMap();
+    
+    // 既存のマッピングを新しいシステムに移行
+    this.migrateExistingMappings();
   }
 
   /**
@@ -29,7 +34,28 @@ class ChannelManager {
   }
 
   /**
-   * ユーザーチャンネルマッピングを保存
+   * 既存のマッピングを新しいシステムに移行
+   */
+  migrateExistingMappings() {
+    try {
+      const existingMappings = Object.entries(this.userChannelMap);
+      if (existingMappings.length > 0) {
+        logger.info('Migrating existing mappings to new system', { count: existingMappings.length });
+        
+        existingMappings.forEach(([userId, channelId]) => {
+          // 既存のマッピングを新しいシステムに追加
+          this.mappingManager.addMapping(userId, channelId, `User-${userId}`, 'user');
+        });
+        
+        logger.info('Migration completed');
+      }
+    } catch (error) {
+      logger.error('Failed to migrate existing mappings', error);
+    }
+  }
+
+  /**
+   * ユーザーチャンネルマッピングを保存（後方互換性のため保持）
    */
   saveUserChannelMap() {
     try {
@@ -96,21 +122,30 @@ class ChannelManager {
    * チャンネルを取得または作成
    * @param {string} displayName - 表示名
    * @param {string} userId - ユーザーID
+   * @param {string} type - チャンネルタイプ ('user' | 'group')
    * @returns {Promise<string>} チャンネルID
    */
-  async getOrCreateChannel(displayName, userId) {
+  async getOrCreateChannel(displayName, userId, type = 'user') {
     try {
       const guild = await this.discordClient.guilds.fetch(config.discord.guildId);
       
-      // 既存のチャンネルをチェック
-      if (this.userChannelMap[userId]) {
-        const exists = await this.channelExists(this.userChannelMap[userId], guild);
+      // 新しいマッピングシステムで既存のチャンネルをチェック
+      const existingDiscordChannelId = this.mappingManager.getDiscordChannelId(userId);
+      
+      if (existingDiscordChannelId) {
+        const exists = await this.channelExists(existingDiscordChannelId, guild);
         if (exists) {
-          logger.debug('Using existing channel', { userId, channelId: this.userChannelMap[userId] });
-          return this.userChannelMap[userId];
+          logger.debug('Using existing channel from mapping system', { 
+            userId, 
+            channelId: existingDiscordChannelId 
+          });
+          return existingDiscordChannelId;
         } else {
-          logger.warn('Stored channel not found, removing from map', { userId, channelId: this.userChannelMap[userId] });
-          delete this.userChannelMap[userId];
+          logger.warn('Stored channel not found, removing from mapping', { 
+            userId, 
+            channelId: existingDiscordChannelId 
+          });
+          // マッピングから削除（MappingManagerで実装予定）
         }
       }
 
@@ -119,9 +154,13 @@ class ChannelManager {
       const newChannel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        reason: `LINE user ${displayName}`,
+        reason: `LINE ${type} ${displayName}`,
       });
 
+      // 新しいマッピングシステムに保存
+      this.mappingManager.addMapping(userId, newChannel.id, displayName, type);
+      
+      // 後方互換性のため古いシステムにも保存
       this.userChannelMap[userId] = newChannel.id;
       this.saveUserChannelMap();
 
@@ -130,6 +169,7 @@ class ChannelManager {
         displayName,
         channelId: newChannel.id,
         channelName: newChannel.name,
+        type
       });
 
       return newChannel.id;
@@ -145,6 +185,13 @@ class ChannelManager {
    * @returns {string|null} チャンネルID
    */
   getChannelIdByUserId(userId) {
+    // 新しいマッピングシステムを優先
+    const discordChannelId = this.mappingManager.getDiscordChannelId(userId);
+    if (discordChannelId) {
+      return discordChannelId;
+    }
+    
+    // 後方互換性のため古いシステムもチェック
     return this.userChannelMap[userId] || null;
   }
 
@@ -154,7 +201,30 @@ class ChannelManager {
    * @returns {string|null} ユーザーID
    */
   getUserIdByChannelId(channelId) {
+    // 新しいマッピングシステムを優先
+    const lineChannelId = this.mappingManager.getLineChannelId(channelId);
+    if (lineChannelId) {
+      return lineChannelId;
+    }
+    
+    // 後方互換性のため古いシステムもチェック
     return Object.keys(this.userChannelMap).find(key => this.userChannelMap[key] === channelId) || null;
+  }
+
+  /**
+   * マッピング統計を取得
+   * @returns {Object} 統計情報
+   */
+  getMappingStats() {
+    return this.mappingManager.getStats();
+  }
+
+  /**
+   * すべてのマッピングを取得
+   * @returns {Array} マッピング配列
+   */
+  getAllMappings() {
+    return this.mappingManager.getAllMappings();
   }
 }
 

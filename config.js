@@ -24,6 +24,7 @@ const config = {
   // ファイルパス
   files: {
     userChannelMap: './userChannelMap.json',
+    channelMappings: './data/channel-mappings.json',
   },
   
   // チャンネル名設定

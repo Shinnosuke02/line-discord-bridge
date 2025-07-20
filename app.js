@@ -74,6 +74,28 @@ class LineDiscordBridge {
       });
     });
 
+    // マッピング管理エンドポイント
+    this.app.get('/api/mappings', (req, res) => {
+      try {
+        const mappings = this.channelManager.getAllMappings();
+        const stats = this.channelManager.getMappingStats();
+        res.status(200).json({ mappings, stats });
+      } catch (error) {
+        logger.error('Failed to get mappings', error);
+        res.status(500).json({ error: 'Failed to get mappings' });
+      }
+    });
+
+    this.app.get('/api/mappings/stats', (req, res) => {
+      try {
+        const stats = this.channelManager.getMappingStats();
+        res.status(200).json(stats);
+      } catch (error) {
+        logger.error('Failed to get mapping stats', error);
+        res.status(500).json({ error: 'Failed to get mapping stats' });
+      }
+    });
+
     // Webhookルートを設定（LINE SDKのmiddlewareがリクエストボディを処理）
     this.app.use(setupWebhookRoutes(this.messageBridge));
 
