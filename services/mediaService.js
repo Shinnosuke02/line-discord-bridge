@@ -346,73 +346,70 @@ class MediaService {
   /**
    * Discord添付ファイルをLINE用に変換
    * @param {Array} attachments - Discord添付ファイル配列
-   * @returns {Promise<Array>} LINE用のメッセージ配列
+   * @param {string} userId - LINEユーザーID
+   * @param {Object} lineService - LINEサービスインスタンス
+   * @returns {Promise<Array>} 処理結果の配列
    */
-  async processDiscordAttachments(attachments) {
-    const messages = [];
+  async processDiscordAttachments(attachments, userId, lineService) {
+    const results = [];
     
     for (const attachment of attachments) {
       try {
         const content = await this.downloadFile(attachment.url, attachment.name);
-        const extension = this.getFileExtension(attachment.name);
         
         // ファイルサイズチェック（LINE制限: 10MB）
         if (content.length > 10 * 1024 * 1024) {
-          messages.push({
+          await lineService.pushMessage(userId, {
             type: 'text',
             text: `**ファイル**: ${attachment.name} (サイズが大きすぎます - 10MB以下にしてください)`,
           });
+          results.push({ success: false, reason: 'file_too_large' });
           continue;
         }
 
         // ファイルタイプに応じて処理
         if (attachment.contentType?.startsWith('image/')) {
-          messages.push({
-            type: 'image',
-            originalContentUrl: attachment.url,
-            previewImageUrl: attachment.url,
-          });
+          await lineService.sendImage(userId, content, attachment.name);
+          results.push({ success: true, type: 'image', filename: attachment.name });
         } else if (attachment.contentType?.startsWith('video/')) {
-          messages.push({
-            type: 'video',
-            originalContentUrl: attachment.url,
-            previewImageUrl: attachment.url,
-          });
+          await lineService.sendVideo(userId, content, attachment.name);
+          results.push({ success: true, type: 'video', filename: attachment.name });
         } else if (attachment.contentType?.startsWith('audio/')) {
-          messages.push({
-            type: 'audio',
-            originalContentUrl: attachment.url,
-            duration: 0, // Discordには音声の長さ情報がない
-          });
+          await lineService.sendAudio(userId, content, attachment.name);
+          results.push({ success: true, type: 'audio', filename: attachment.name });
         } else {
           // その他のファイルはURLとして送信
-          messages.push({
+          await lineService.pushMessage(userId, {
             type: 'text',
             text: `**ファイル**: ${attachment.name}\n${attachment.url}`,
           });
+          results.push({ success: true, type: 'url', filename: attachment.name });
         }
       } catch (error) {
         logger.error('Failed to process Discord attachment', { 
           attachment: attachment.name, 
           error: error.message 
         });
-        messages.push({
+        await lineService.pushMessage(userId, {
           type: 'text',
           text: `**ファイル**: ${attachment.name} (処理に失敗しました)`,
         });
+        results.push({ success: false, reason: 'processing_error', filename: attachment.name });
       }
     }
     
-    return messages;
+    return results;
   }
 
   /**
    * URLを検出して埋め込み画像を処理
    * @param {string} text - テキスト
-   * @returns {Promise<Array>} 処理されたメッセージ配列
+   * @param {string} userId - LINEユーザーID
+   * @param {Object} lineService - LINEサービスインスタンス
+   * @returns {Promise<Array>} 処理結果の配列
    */
-  async processUrls(text) {
-    const messages = [];
+  async processUrls(text, userId, lineService) {
+    const results = [];
     const urlRegex = /https?:\/\/[^\s]+/g;
     const urls = text.match(urlRegex) || [];
     
@@ -420,24 +417,43 @@ class MediaService {
       try {
         // 画像URLかどうかをチェック
         if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
-          messages.push({
-            type: 'image',
-            originalContentUrl: url,
-            previewImageUrl: url,
-          });
+          const content = await this.downloadFile(url, `image_${Date.now()}.jpg`);
+          
+          // ファイルサイズチェック（LINE制限: 10MB）
+          if (content.length > 10 * 1024 * 1024) {
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**画像URL**: サイズが大きすぎます - 10MB以下にしてください\n${url}`,
+            });
+            results.push({ success: false, reason: 'file_too_large', url });
+            continue;
+          }
+          
+          await lineService.sendImage(userId, content, `image_${Date.now()}.jpg`);
+          results.push({ success: true, type: 'image', url });
         } else if (url.match(/\.(mp4|mov|avi|wmv|flv|webm)$/i)) {
-          messages.push({
-            type: 'video',
-            originalContentUrl: url,
-            previewImageUrl: url,
-          });
+          const content = await this.downloadFile(url, `video_${Date.now()}.mp4`);
+          
+          // ファイルサイズチェック（LINE制限: 10MB）
+          if (content.length > 10 * 1024 * 1024) {
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**動画URL**: サイズが大きすぎます - 10MB以下にしてください\n${url}`,
+            });
+            results.push({ success: false, reason: 'file_too_large', url });
+            continue;
+          }
+          
+          await lineService.sendVideo(userId, content, `video_${Date.now()}.mp4`);
+          results.push({ success: true, type: 'video', url });
         }
       } catch (error) {
         logger.error('Failed to process URL', { url, error: error.message });
+        results.push({ success: false, reason: 'download_error', url });
       }
     }
     
-    return messages;
+    return results;
   }
 }
 

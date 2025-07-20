@@ -184,8 +184,25 @@ class MessageBridge {
       // テキストメッセージの処理
       if (message.content && message.content.trim()) {
         // URLを検出して埋め込み画像を処理
-        const urlMessages = await this.mediaService.processUrls(message.content);
-        messages.push(...urlMessages);
+        const urlResults = await this.mediaService.processUrls(
+          message.content,
+          userId,
+          this.lineService
+        );
+        
+        // URL処理結果をログに記録
+        const urlSuccessCount = urlResults.filter(r => r.success).length;
+        const urlFailureCount = urlResults.filter(r => !r.success).length;
+        
+        if (urlResults.length > 0) {
+          logger.info('URL processing completed', {
+            userId,
+            totalUrls: urlResults.length,
+            successCount: urlSuccessCount,
+            failureCount: urlFailureCount,
+            results: urlResults
+          });
+        }
 
         // テキストメッセージを追加（URLが含まれている場合は除く）
         const textWithoutUrls = message.content.replace(/https?:\/\/[^\s]+/g, '').trim();
@@ -199,10 +216,23 @@ class MessageBridge {
 
       // 添付ファイルの処理
       if (message.attachments && message.attachments.size > 0) {
-        const attachmentMessages = await this.mediaService.processDiscordAttachments(
-          Array.from(message.attachments.values())
+        const attachmentResults = await this.mediaService.processDiscordAttachments(
+          Array.from(message.attachments.values()),
+          userId,
+          this.lineService
         );
-        messages.push(...attachmentMessages);
+        
+        // 添付ファイルの処理結果をログに記録
+        const successCount = attachmentResults.filter(r => r.success).length;
+        const failureCount = attachmentResults.filter(r => !r.success).length;
+        
+        logger.info('Discord attachments processed', {
+          userId,
+          totalAttachments: message.attachments.size,
+          successCount,
+          failureCount,
+          results: attachmentResults
+        });
       }
 
       // メッセージが空の場合は何もしない

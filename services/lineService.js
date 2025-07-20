@@ -160,6 +160,99 @@ class LineService {
   }
 
   /**
+   * ファイルをLINE APIにアップロード
+   * @param {Buffer} content - ファイル内容
+   * @param {string} filename - ファイル名
+   * @returns {Promise<string>} アップロードされたファイルのID
+   */
+  async uploadFile(content, filename) {
+    try {
+      logger.debug('Uploading file to LINE', { filename, size: content.length });
+      
+      // LINE APIにファイルをアップロード
+      const result = await this.client.uploadContent(content, filename);
+      
+      logger.debug('File uploaded to LINE', { filename, messageId: result.messageId });
+      return result.messageId;
+    } catch (error) {
+      logger.error('Failed to upload file to LINE', { filename, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 画像ファイルをLINEに送信
+   * @param {string} userId - ユーザーID
+   * @param {Buffer} content - 画像データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendImage(userId, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'image',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        previewImageUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+      };
+      
+      return await this.pushMessage(userId, message);
+    } catch (error) {
+      logger.error('Failed to send image to LINE', { filename, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 動画ファイルをLINEに送信
+   * @param {string} userId - ユーザーID
+   * @param {Buffer} content - 動画データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendVideo(userId, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'video',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        previewImageUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+      };
+      
+      return await this.pushMessage(userId, message);
+    } catch (error) {
+      logger.error('Failed to send video to LINE', { filename, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * 音声ファイルをLINEに送信
+   * @param {string} userId - ユーザーID
+   * @param {Buffer} content - 音声データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendAudio(userId, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'audio',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        duration: 0, // Discordには音声の長さ情報がない
+      };
+      
+      return await this.pushMessage(userId, message);
+    } catch (error) {
+      logger.error('Failed to send audio to LINE', { filename, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
    * メッセージをフォーマット（テキストメッセージ用）
    * @param {Object} event - LINEイベント
    * @param {string} displayName - 表示名
