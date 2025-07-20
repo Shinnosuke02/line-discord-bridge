@@ -402,7 +402,7 @@ class ModernMessageBridge {
    */
   async login() {
     try {
-      await this.discord.login(config.discord.token);
+      await this.discord.login(config.discord.botToken);
       logger.info('Modern Discord client logged in successfully');
     } catch (error) {
       logger.error('Failed to login to Discord', { error: error.message });
