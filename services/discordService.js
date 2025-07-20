@@ -1,4 +1,4 @@
-const logger = require('./logger');
+const logger = require('../utils/logger');
 
 /**
  * Discord関連の処理を専門に扱うクラス
