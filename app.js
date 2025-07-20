@@ -1,127 +1,198 @@
-/**
- * LINE-Discord Bridge アプリケーション
- */
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
-
-// 設定とユーティリティ
+const { createServer } = require('http');
+const { WebhookHandler } = require('@line/bot-sdk');
 const config = require('./config');
 const logger = require('./utils/logger');
+const ModernMessageBridge = require('./services/modernMessageBridge');
 
-// サービス
-const ChannelManager = require('./services/channelManager');
-const MessageBridge = require('./services/messageBridge');
-
-// ルート
-const setupWebhookRoutes = require('./routes/webhook');
-
-class LineDiscordBridge {
+/**
+ * 近代化されたLINE-Discordブリッジアプリケーション
+ * LINE Bot API v7対応、より堅牢なエラーハンドリング
+ */
+class ModernApp {
   constructor() {
     this.app = express();
-    this.discordClient = null;
-    this.channelManager = null;
-    this.messageBridge = null;
-  }
-
-  /**
-   * Discordクライアントを初期化
-   */
-  initializeDiscordClient() {
-    this.discordClient = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-      ],
-    });
-
-    // Discord接続イベント
-    this.discordClient.once('ready', () => {
-      logger.info('Discord bot ready', { 
-        username: this.discordClient.user?.username,
-        guildCount: this.discordClient.guilds.cache.size 
-      });
-    });
-
-    // Discordエラーハンドリング
-    this.discordClient.on('error', (error) => {
-      logger.error('Discord client error', error);
-    });
-
-    return this.discordClient;
-  }
-
-  /**
-   * サービスを初期化
-   */
-  initializeServices() {
-    this.channelManager = new ChannelManager(this.discordClient);
-    this.messageBridge = new MessageBridge(this.discordClient, this.channelManager);
+    this.server = createServer(this.app);
+    this.lineHandler = new WebhookHandler(config.line);
+    this.messageBridge = new ModernMessageBridge();
     
-    logger.info('Services initialized');
+    // グレースフルシャットダウン用
+    this.isShuttingDown = false;
+    
+    this.setupMiddleware();
+    this.setupRoutes();
+    this.setupErrorHandling();
+    this.setupGracefulShutdown();
   }
 
   /**
-   * Expressアプリケーションを設定
+   * ミドルウェアを設定
    */
-  setupExpressApp() {
-    // ヘルスチェックエンドポイント
+  setupMiddleware() {
+    // リクエストログ
+    this.app.use((req, res, next) => {
+      logger.info('HTTP Request', {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+      next();
+    });
+
+    // JSONパーサー
+    this.app.use(express.json({ limit: '10mb' }));
+    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+    // セキュリティヘッダー
+    this.app.use((req, res, next) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      next();
+    });
+  }
+
+  /**
+   * ルートを設定
+   */
+  setupRoutes() {
+    // ヘルスチェック
     this.app.get('/health', (req, res) => {
-      res.status(200).json({ 
-        status: 'ok', 
+      res.status(200).json({
+        status: 'healthy',
         timestamp: new Date().toISOString(),
-        discord: this.discordClient?.readyAt ? 'connected' : 'disconnected'
+        uptime: process.uptime(),
+        version: '2.0.0'
       });
     });
 
-    // マッピング管理エンドポイント
-    this.app.get('/api/mappings', (req, res) => {
-      try {
-        const mappings = this.channelManager.getAllMappings();
-        const stats = this.channelManager.getMappingStats();
-        res.status(200).json({ mappings, stats });
-      } catch (error) {
-        logger.error('Failed to get mappings', error);
-        res.status(500).json({ error: 'Failed to get mappings' });
+    // LINE Webhook
+    this.app.post('/webhook', (req, res) => {
+      if (this.isShuttingDown) {
+        return res.status(503).json({ error: 'Service is shutting down' });
       }
+
+      this.lineHandler.handle(req.body, req.headers['x-line-signature'])
+        .then(async (result) => {
+          logger.info('LINE webhook processed successfully', { result });
+          
+          // イベントを処理
+          for (const event of req.body.events) {
+            try {
+              await this.handleLineEvent(event);
+            } catch (error) {
+              logger.error('Failed to handle LINE event', {
+                eventId: event.message?.id,
+                error: error.message,
+                stack: error.stack
+              });
+            }
+          }
+          
+          res.status(200).json({ success: true });
+        })
+        .catch((error) => {
+          logger.error('LINE webhook error', {
+            error: error.message,
+            stack: error.stack
+          });
+          res.status(500).json({ error: 'Internal server error' });
+        });
     });
-
-    this.app.get('/api/mappings/stats', (req, res) => {
-      try {
-        const stats = this.channelManager.getMappingStats();
-        res.status(200).json(stats);
-      } catch (error) {
-        logger.error('Failed to get mapping stats', error);
-        res.status(500).json({ error: 'Failed to get mapping stats' });
-      }
-    });
-
-    // Webhookルートを設定（LINE SDKのmiddlewareがリクエストボディを処理）
-    this.app.use(setupWebhookRoutes(this.messageBridge));
-
-    // その他のルート用のミドルウェア（Webhookエンドポイントには影響しない）
-    this.app.use('/api', express.json());
-    this.app.use('/api', express.urlencoded({ extended: true }));
 
     // 404ハンドラー
     this.app.use('*', (req, res) => {
       res.status(404).json({ error: 'Not found' });
     });
-
-    // グローバルエラーハンドラー
-    this.app.use((err, req, res, next) => {
-      logger.error('Express error', err);
-      res.status(500).json({ error: 'Internal server error' });
-    });
-
-    logger.info('Express app configured');
   }
 
   /**
-   * Discordメッセージリスナーを設定
+   * エラーハンドリングを設定
    */
-  setupDiscordMessageListener() {
-    this.messageBridge.setupDiscordMessageListener();
+  setupErrorHandling() {
+    // グローバルエラーハンドラー
+    this.app.use((error, req, res, next) => {
+      logger.error('Unhandled error', {
+        error: error.message,
+        stack: error.stack,
+        url: req.url,
+        method: req.method
+      });
+      
+      res.status(500).json({ error: 'Internal server error' });
+    });
+
+    // 未処理のPromise拒否
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('Unhandled Rejection', {
+        reason: reason?.message || reason,
+        stack: reason?.stack,
+        promise: promise
+      });
+    });
+
+    // 未処理の例外
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught Exception', {
+        error: error.message,
+        stack: error.stack
+      });
+      
+      // グレースフルシャットダウン
+      this.shutdown();
+    });
+  }
+
+  /**
+   * グレースフルシャットダウンを設定
+   */
+  setupGracefulShutdown() {
+    const shutdown = (signal) => {
+      logger.info(`Received ${signal}, starting graceful shutdown`);
+      this.shutdown();
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  }
+
+  /**
+   * LINEイベントを処理
+   * @param {Object} event - LINEイベント
+   */
+  async handleLineEvent(event) {
+    try {
+      // メッセージイベントのみ処理
+      if (event.type !== 'message') {
+        logger.debug('Skipping non-message event', { eventType: event.type });
+        return;
+      }
+
+      // ボット自身のメッセージは無視
+      if (event.source.type === 'user' && event.source.userId === config.line.channelId) {
+        logger.debug('Skipping bot message');
+        return;
+      }
+
+      logger.info('Processing LINE event', {
+        eventType: event.type,
+        messageType: event.message?.type,
+        sourceType: event.source.type,
+        sourceId: event.source.groupId || event.source.userId,
+        senderId: event.source.userId
+      });
+
+      // MessageBridgeに転送
+      await this.messageBridge.handleLineToDiscord(event);
+
+    } catch (error) {
+      logger.error('Failed to handle LINE event', {
+        eventId: event.message?.id,
+        error: error.message,
+        stack: error.stack
+      });
+    }
   }
 
   /**
@@ -129,86 +200,87 @@ class LineDiscordBridge {
    */
   async start() {
     try {
-      // Discordクライアントを初期化
-      this.initializeDiscordClient();
+      // MessageBridgeを開始
+      await this.messageBridge.start();
       
-      // Discordにログイン
-      await this.discordClient.login(config.discord.botToken);
-      
-      // サービスを初期化
-      this.initializeServices();
-      
-      // Expressアプリケーションを設定
-      this.setupExpressApp();
-      
-      // Discordメッセージリスナーを設定
-      this.setupDiscordMessageListener();
-      
-      // サーバーを開始
-      this.app.listen(config.server.port, () => {
-        logger.info('Server started', { 
-          port: config.server.port,
-          environment: process.env.NODE_ENV || 'development'
+      // HTTPサーバーを開始
+      const port = process.env.PORT || 3000;
+      await new Promise((resolve, reject) => {
+        this.server.listen(port, (error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
         });
       });
 
+      logger.info('Modern LINE-Discord Bridge started successfully', {
+        port,
+        nodeVersion: process.version,
+        platform: process.platform,
+        memoryUsage: process.memoryUsage()
+      });
+
     } catch (error) {
-      logger.error('Failed to start application', error);
-      process.exit(1);
+      logger.error('Failed to start application', { error: error.message });
+      throw error;
     }
   }
 
   /**
    * アプリケーションを停止
    */
-  async stop() {
-    try {
-      if (this.discordClient) {
-        this.discordClient.destroy();
-        logger.info('Discord client destroyed');
-      }
-      
-      logger.info('Application stopped');
-    } catch (error) {
-      logger.error('Error stopping application', error);
+  async shutdown() {
+    if (this.isShuttingDown) {
+      return;
     }
+
+    this.isShuttingDown = true;
+    logger.info('Starting application shutdown');
+
+    try {
+      // HTTPサーバーを停止
+      if (this.server.listening) {
+        await new Promise((resolve) => {
+          this.server.close(resolve);
+        });
+        logger.info('HTTP server stopped');
+      }
+
+      // MessageBridgeを停止
+      await this.messageBridge.stop();
+      logger.info('MessageBridge stopped');
+
+      logger.info('Application shutdown completed');
+      process.exit(0);
+
+    } catch (error) {
+      logger.error('Error during shutdown', { error: error.message });
+      process.exit(1);
+    }
+  }
+
+  /**
+   * アプリケーションの状態を取得
+   */
+  getStatus() {
+    return {
+      isShuttingDown: this.isShuttingDown,
+      serverListening: this.server.listening,
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
+      nodeVersion: process.version
+    };
   }
 }
 
-// プロセス終了時のクリーンアップ
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, shutting down gracefully');
-  if (global.app) {
-    await global.app.stop();
-  }
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, shutting down gracefully');
-  if (global.app) {
-    await global.app.stop();
-  }
-  process.exit(0);
-});
-
-// 未処理のエラーをキャッチ
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught exception', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled rejection', { reason, promise });
-  process.exit(1);
-});
+// アプリケーションインスタンスを作成
+const app = new ModernApp();
 
 // アプリケーションを開始
-const app = new LineDiscordBridge();
-global.app = app; // グローバル参照を保存（クリーンアップ用）
-
 app.start().catch((error) => {
-  logger.error('Failed to start application', error);
+  logger.error('Failed to start application', { error: error.message });
   process.exit(1);
 });
 
