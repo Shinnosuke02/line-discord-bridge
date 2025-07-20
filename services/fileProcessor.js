@@ -161,19 +161,20 @@ class FileProcessor {
   }
 
   /**
-   * LINE画像メッセージの処理
-   * @param {Object} message - LINE画像メッセージ
-   * @param {Buffer} content - 画像データ
+   * 汎用メディアメッセージの処理（画像・動画・音声・ファイル）
+   * @param {Object} message - LINEメッセージ
+   * @param {Buffer} content - バイナリデータ
+   * @param {string} defaultMimeType - デフォルトMIMEタイプ（例: 'image/jpeg', 'video/mp4'）
    * @returns {Object} 処理結果
    */
-  processLineImage(message, content) {
+  processLineMedia(message, content, defaultMimeType) {
     try {
-      // 詳細なデバッグ情報をログ
-      logger.info('=== LINE Image Processing Start ===', {
+      logger.info('=== LINE Media Processing Start ===', {
         messageId: message.id,
         contentLength: content.length,
         messageKeys: Object.keys(message),
-        contentProvider: message.contentProvider
+        contentProvider: message.contentProvider,
+        defaultMimeType
       });
 
       // 元のMIMEタイプを取得
@@ -185,15 +186,20 @@ class FileProcessor {
       logger.info('Detected MIME type', { detectedMimeType });
       
       // 最終的なMIMEタイプを決定
-      const finalMimeType = this.resolveMimeType(originalMimeType, detectedMimeType);
-      logger.info('Final MIME type', { finalMimeType });
+      let finalMimeType = this.resolveMimeType(originalMimeType, detectedMimeType);
+      if (!finalMimeType || finalMimeType === 'application/octet-stream') {
+        finalMimeType = defaultMimeType;
+        logger.info('Fallback to default MIME type', { finalMimeType });
+      } else {
+        logger.info('Final MIME type', { finalMimeType });
+      }
       
       // 拡張子を取得
       const extension = this.getExtensionFromMimeType(finalMimeType);
       logger.info('File extension', { extension });
       
       // ファイル名を生成
-      const filename = `line_image_${message.id}.${extension}`;
+      const filename = `${message.type || 'media'}_${message.id}.${extension}`;
       logger.info('Generated filename', { filename });
       
       // ファイルサイズを検証
@@ -210,14 +216,14 @@ class FileProcessor {
         detectedMimeType
       };
 
-      logger.info('=== LINE Image Processing Complete ===', {
+      logger.info('=== LINE Media Processing Complete ===', {
         messageId: message.id,
         result
       });
 
       return result;
     } catch (error) {
-      logger.error('Failed to process LINE image', {
+      logger.error('Failed to process LINE media', {
         messageId: message.id,
         error: error.message,
         stack: error.stack
@@ -228,6 +234,11 @@ class FileProcessor {
         error: error.message
       };
     }
+  }
+
+  // processLineImageは新メソッドを使う
+  processLineImage(message, content) {
+    return this.processLineMedia(message, content, 'image/jpeg');
   }
 }
 

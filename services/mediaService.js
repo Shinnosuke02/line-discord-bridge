@@ -150,19 +150,12 @@ class MediaService {
     }
   }
 
-  /**
-   * LINE動画メッセージをDiscord用に変換
-   * @param {Object} message - LINE動画メッセージ
-   * @returns {Promise<Object>} Discord用のメッセージオブジェクト
-   */
   async processLineVideo(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const extension = this.getExtensionFromMimeType(message.contentProvider?.type || 'video/mp4');
-      const filename = `line_video_${message.id}.${extension}`;
-      
-      const attachment = new AttachmentBuilder(content, { name: filename });
-      
+      const result = this.fileProcessor.processLineMedia(message, content, 'video/mp4');
+      if (!result.success) throw new Error(result.error);
+      const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
         content: `**動画** (${message.duration}ms)`,
         files: [attachment],
@@ -175,19 +168,12 @@ class MediaService {
     }
   }
 
-  /**
-   * LINE音声メッセージをDiscord用に変換
-   * @param {Object} message - LINE音声メッセージ
-   * @returns {Promise<Object>} Discord用のメッセージオブジェクト
-   */
   async processLineAudio(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const extension = this.getExtensionFromMimeType(message.contentProvider?.type || 'audio/m4a');
-      const filename = `line_audio_${message.id}.${extension}`;
-      
-      const attachment = new AttachmentBuilder(content, { name: filename });
-      
+      const result = this.fileProcessor.processLineMedia(message, content, 'audio/m4a');
+      if (!result.success) throw new Error(result.error);
+      const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
         content: `**音声** (${message.duration}ms)`,
         files: [attachment],
@@ -200,20 +186,14 @@ class MediaService {
     }
   }
 
-  /**
-   * LINEファイルメッセージをDiscord用に変換
-   * @param {Object} message - LINEファイルメッセージ
-   * @returns {Promise<Object>} Discord用のメッセージオブジェクト
-   */
   async processLineFile(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const filename = message.fileName || `line_file_${message.id}.bin`;
-      
-      const attachment = new AttachmentBuilder(content, { name: filename });
-      
+      const result = this.fileProcessor.processLineMedia(message, content, 'application/octet-stream');
+      if (!result.success) throw new Error(result.error);
+      const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
-        content: `**ファイル**: ${filename} (${message.fileSize} bytes)`,
+        content: `**ファイル**: ${result.filename} (${message.fileSize} bytes)`,
         files: [attachment],
       };
     } catch (error) {
