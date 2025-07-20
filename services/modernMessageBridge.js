@@ -423,32 +423,31 @@ class ModernMessageBridge {
             stickerUrl: sticker.url
           });
           
-          // DiscordスタンプのCDN URLを使用してLINEに画像として送信
-          if (sticker.url) {
-            try {
-              await this.lineService.pushMessage(lineUserId, {
-                type: 'image',
-                originalContentUrl: sticker.url,
-                previewImageUrl: sticker.url
-              });
-              logger.info('Discord sticker sent to LINE as image', {
-                stickerId: sticker.id,
-                stickerName: sticker.name
-              });
-            } catch (stickerError) {
-              logger.error('Failed to send Discord sticker as image', {
-                stickerId: sticker.id,
-                error: stickerError.message
-              });
-              // フォールバック: テキストメッセージ
-              const stickerInfo = `sent a sticker: ${sticker.name}`;
-              await this.lineService.pushMessage(lineUserId, {
-                type: 'text',
-                text: stickerInfo
-              });
-            }
-          } else {
-            // URLがない場合はテキストメッセージ
+          // Discordスタンプを処理
+          try {
+            // スタンプの正しい画像URLを取得
+            const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+            
+            logger.info('Processing Discord sticker with image URL', {
+              stickerId: sticker.id,
+              stickerName: sticker.name,
+              originalUrl: sticker.url,
+              imageUrl: stickerImageUrl
+            });
+            
+            // LINEに画像として送信
+            await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
+            
+            logger.info('Discord sticker sent to LINE as image', {
+              stickerId: sticker.id,
+              stickerName: sticker.name
+            });
+          } catch (stickerError) {
+            logger.error('Failed to send Discord sticker as image', {
+              stickerId: sticker.id,
+              error: stickerError.message
+            });
+            // フォールバック: テキストメッセージ
             const stickerInfo = `sent a sticker: ${sticker.name}`;
             await this.lineService.pushMessage(lineUserId, {
               type: 'text',
