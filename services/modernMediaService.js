@@ -435,10 +435,10 @@ class ModernMediaService {
         // Tenor GIFの特別処理
         if (url.includes('tenor.com') && url.includes('gif-')) {
           logger.info('Processing Tenor GIF URL', { url: url.substring(0, 100) + '...' });
-          // Tenor GIFは直接送信できないため、簡潔なメッセージで送信
+          // Tenor GIFは直接送信できないため、URLのみ送信
           await this.lineService.pushMessage(userId, {
             type: 'text',
-            text: `**GIF**: ${url}`
+            text: url
           });
           results.push({ success: true, type: 'gif_url', url });
           continue;
