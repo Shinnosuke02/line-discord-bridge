@@ -435,12 +435,26 @@ class ModernMediaService {
         // Tenor GIFの特別処理
         if (url.includes('tenor.com') && url.includes('gif-')) {
           logger.info('Processing Tenor GIF URL', { url: url.substring(0, 100) + '...' });
-          // Tenor GIFは直接送信できないため、URLのみ送信
-          await this.lineService.pushMessage(userId, {
-            type: 'text',
-            text: url
-          });
-          results.push({ success: true, type: 'gif_url', url });
+          
+          try {
+            // Tenor GIFはURLとして送信（シンプルな方法）
+            await this.lineService.pushMessage(userId, {
+              type: 'text',
+              text: url
+            });
+            
+            logger.info('Tenor GIF sent as URL', {
+              url: url.substring(0, 100) + '...'
+            });
+            
+            results.push({ success: true, type: 'gif_url', url });
+          } catch (gifError) {
+            logger.error('Failed to send Tenor GIF URL', {
+              url: url.substring(0, 100) + '...',
+              error: gifError.message
+            });
+            results.push({ success: false, type: 'gif_error', url });
+          }
           continue;
         }
         
