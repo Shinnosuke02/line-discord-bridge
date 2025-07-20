@@ -341,40 +341,62 @@ class ModernMediaService {
           continue;
         }
 
-        // ファイル情報を詳細に表示
-        const fileInfo = [
-          `**ファイル**: ${attachment.name}`,
-          `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
-          `タイプ: ${attachment.contentType || '不明'}`,
-          `URL: ${attachment.url}`,
-          `(LINE Messaging APIの制限により、ファイル送信機能は現在無効化されています)`
-        ].join('\n');
-        
-        await this.lineService.pushMessage(userId, {
-          type: 'text',
-          text: fileInfo
+        // Discord CDN URLを使用してLINEに送信
+        logger.info('Processing Discord attachment with CDN URL', {
+          filename: attachment.name,
+          contentType: attachment.contentType,
+          size: attachment.size,
+          url: attachment.url.substring(0, 100) + '...'
         });
-        results.push({ success: false, reason: 'feature_disabled', filename: attachment.name });
-        
-        /* 外部URLを使用した送信（Discord URLが公開されていないため無効化）
-        if (attachment.contentType?.startsWith('image/')) {
-          await this.lineService.sendImageByUrl(userId, attachment.url);
-          results.push({ success: true, type: 'image', filename: attachment.name });
-        } else if (attachment.contentType?.startsWith('video/')) {
-          await this.lineService.sendVideoByUrl(userId, attachment.url);
-          results.push({ success: true, type: 'video', filename: attachment.name });
-        } else if (attachment.contentType?.startsWith('audio/')) {
-          await this.lineService.sendAudioByUrl(userId, attachment.url);
-          results.push({ success: true, type: 'audio', filename: attachment.name });
-        } else {
-          // その他のファイルはURLとして送信
+
+        try {
+          if (attachment.contentType?.startsWith('image/')) {
+            await this.lineService.sendImageByUrl(userId, attachment.url, attachment.url);
+            results.push({ success: true, type: 'image', filename: attachment.name });
+          } else if (attachment.contentType?.startsWith('video/')) {
+            await this.lineService.sendVideoByUrl(userId, attachment.url, attachment.url);
+            results.push({ success: true, type: 'video', filename: attachment.name });
+          } else if (attachment.contentType?.startsWith('audio/')) {
+            await this.lineService.sendAudioByUrl(userId, attachment.url);
+            results.push({ success: true, type: 'audio', filename: attachment.name });
+          } else {
+            // その他のファイルは情報付きで送信
+            const fileInfo = [
+              `**ファイル**: ${attachment.name}`,
+              `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
+              `タイプ: ${attachment.contentType || '不明'}`,
+              `URL: ${attachment.url}`
+            ].join('\n');
+            
+            await this.lineService.pushMessage(userId, {
+              type: 'text',
+              text: fileInfo
+            });
+            results.push({ success: true, type: 'url', filename: attachment.name });
+          }
+        } catch (error) {
+          logger.error('Failed to send Discord attachment to LINE', {
+            filename: attachment.name,
+            error: error.message
+          });
+          
+          // フォールバック: ファイル情報を表示
+          const fileInfo = [
+            `**ファイル**: ${attachment.name}`,
+            `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
+            `タイプ: ${attachment.contentType || '不明'}`,
+            `URL: ${attachment.url}`,
+            `(送信に失敗しました: ${error.message})`
+          ].join('\n');
+          
           await this.lineService.pushMessage(userId, {
             type: 'text',
-            text: `**ファイル**: ${attachment.name}\n${attachment.url}`,
+            text: fileInfo
           });
-          results.push({ success: true, type: 'url', filename: attachment.name });
+          results.push({ success: false, reason: 'send_error', filename: attachment.name });
         }
-        */
+        
+
       } catch (error) {
         logger.error('Failed to process Discord attachment', { 
           attachment: attachment.name, 
