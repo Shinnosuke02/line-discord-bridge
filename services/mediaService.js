@@ -6,10 +6,12 @@ const { AttachmentBuilder } = require('discord.js');
 const { Client: LineClient } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
+const FileProcessor = require('./fileProcessor');
 
 class MediaService {
   constructor() {
     this.lineClient = new LineClient(config.line);
+    this.fileProcessor = new FileProcessor();
   }
 
   /**
@@ -99,52 +101,21 @@ class MediaService {
     try {
       const content = await this.getLineContent(message.id);
       
-      // MIMEタイプをより正確に判定
-      let mimeType = message.contentProvider?.type;
-      if (!mimeType) {
-        // ファイルの先頭バイトからMIMEタイプを推測
-        const header = content.slice(0, 8); // より多くのバイトを確認
-        
-        // JPEG
-        if (header[0] === 0xFF && header[1] === 0xD8) {
-          mimeType = 'image/jpeg';
-        }
-        // PNG
-        else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
-          mimeType = 'image/png';
-        }
-        // GIF
-        else if ((header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) ||
-                 (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38)) {
-          mimeType = 'image/gif';
-        }
-        // WebP
-        else if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46 &&
-                 header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50) {
-          mimeType = 'image/webp';
-        }
-        // デフォルトはJPEG
-        else {
-          mimeType = 'image/jpeg';
-        }
+      // FileProcessorを使用して画像を処理
+      const result = this.fileProcessor.processLineImage(message, content);
+      
+      if (!result.success) {
+        throw new Error(result.error);
       }
       
-      // MIMEタイプが不明な場合は強制的にJPEGに設定
-      if (!mimeType || mimeType === 'application/octet-stream') {
-        mimeType = 'image/jpeg';
-      }
+      const attachment = new AttachmentBuilder(content, { name: result.filename });
       
-      const extension = this.getExtensionFromMimeType(mimeType);
-      const filename = `line_image_${message.id}.${extension}`;
-      
-      const attachment = new AttachmentBuilder(content, { name: filename });
-      
-      logger.debug('Processed LINE image', { 
+      logger.info('LINE image processed successfully', { 
         messageId: message.id, 
-        mimeType, 
-        extension, 
-        filename,
-        size: content.length 
+        filename: result.filename,
+        mimeType: result.mimeType,
+        extension: result.extension,
+        size: result.size
       });
       
       return {

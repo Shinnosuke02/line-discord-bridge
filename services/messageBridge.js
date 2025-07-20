@@ -3,6 +3,7 @@
  */
 const LineService = require('./lineService');
 const MediaService = require('./mediaService');
+const DiscordService = require('./discordService');
 const logger = require('../utils/logger');
 const config = require('../config');
 const fetch = require('node-fetch');
@@ -13,6 +14,7 @@ class MessageBridge {
     this.channelManager = channelManager;
     this.lineService = new LineService();
     this.mediaService = new MediaService();
+    this.discordService = new DiscordService();
   }
 
   /**
@@ -151,101 +153,81 @@ class MessageBridge {
   }
 
   /**
-   * DiscordからLINEへのメッセージ処理（ウェイクアップ対応版）
+   * DiscordからLINEへのメッセージ処理（リファクタリング版）
    * @param {Object} message - Discordメッセージ
    */
   async handleDiscordToLine(message) {
-    // ボットメッセージまたはギルド外メッセージを無視
-    if (message.author.bot || !message.guild) {
+    // DiscordServiceを使用してメッセージを解析
+    if (!this.discordService.isValidMessage(message)) {
+      logger.debug('Invalid Discord message, skipping', {
+        channelId: message.channel.id,
+        authorId: message.author.id,
+        isBot: message.author.bot,
+        hasGuild: !!message.guild
+      });
       return;
     }
 
+    const parsedMessage = this.discordService.parseMessage(message);
+    const summary = this.discordService.generateSummary(parsedMessage);
+    
+    logger.info('Processing Discord message', {
+      channelId: parsedMessage.channelId,
+      authorName: parsedMessage.authorName,
+      summary
+    });
+
     // チャンネルに対応するユーザーIDを取得
-    const userId = this.channelManager.getUserIdByChannelId(message.channel.id);
+    const userId = this.channelManager.getUserIdByChannelId(parsedMessage.channelId);
     if (!userId) {
       logger.debug('No user mapping found for channel', { 
-        channelId: message.channel.id,
-        channelName: message.channel.name,
+        channelId: parsedMessage.channelId,
         availableMappings: this.channelManager.getAllMappings().length
       });
       return;
     }
     
     logger.debug('Found user mapping for channel', { 
-      channelId: message.channel.id,
+      channelId: parsedMessage.channelId,
       userId: userId 
     });
 
     try {
-      // サーバーのウェイクアップを確認（Render無料プラン対策）
+      // サーバーのウェイクアップを確認
       const isServerAwake = await this.wakeUpServer();
       
       if (!isServerAwake) {
         logger.warn('Server is not responding, message may be lost', {
-          channelId: message.channel.id,
-          authorId: message.author.id,
+          channelId: parsedMessage.channelId,
+          authorId: parsedMessage.authorId,
         });
-        // サーバーが応答しない場合でも処理を続行（後でリトライされる可能性）
       }
 
       const messages = [];
+      const results = [];
 
       // テキストメッセージの処理
-      if (message.content && message.content.trim()) {
-        // URLを検出して埋め込み画像を処理
-        const urlResults = await this.mediaService.processUrls(
-          message.content,
-          userId,
-          this.lineService
-        );
-        
-        // URL処理結果をログに記録
-        const urlSuccessCount = urlResults.filter(r => r.success).length;
-        const urlFailureCount = urlResults.filter(r => !r.success).length;
-        
-        if (urlResults.length > 0) {
-          logger.info('URL processing completed', {
-            userId,
-            totalUrls: urlResults.length,
-            successCount: urlSuccessCount,
-            failureCount: urlFailureCount,
-            results: urlResults
-          });
-        }
-
-        // テキストメッセージを追加（URLが含まれている場合は除く）
-        const textWithoutUrls = message.content.replace(/https?:\/\/[^\s]+/g, '').trim();
-        if (textWithoutUrls) {
-          messages.push({
-            type: 'text',
-            text: textWithoutUrls,
-          });
-        }
+      if (parsedMessage.hasText) {
+        const textResult = await this.processTextMessage(parsedMessage, userId);
+        messages.push(...textResult.messages);
+        results.push(...textResult.results);
       }
 
       // 添付ファイルの処理
-      if (message.attachments && message.attachments.size > 0) {
-        const attachmentResults = await this.mediaService.processDiscordAttachments(
-          Array.from(message.attachments.values()),
-          userId,
-          this.lineService
-        );
-        
-        // 添付ファイルの処理結果をログに記録
-        const successCount = attachmentResults.filter(r => r.success).length;
-        const failureCount = attachmentResults.filter(r => !r.success).length;
-        
-        logger.info('Discord attachments processed', {
-          userId,
-          totalAttachments: message.attachments.size,
-          successCount,
-          failureCount,
-          results: attachmentResults
-        });
+      if (parsedMessage.hasAttachments) {
+        const attachmentResult = await this.processAttachments(parsedMessage.attachments, userId);
+        results.push(...attachmentResult);
+      }
+
+      // スタンプの処理
+      if (parsedMessage.hasStickers) {
+        const stickerResult = await this.processStickers(parsedMessage.stickers, userId);
+        results.push(...stickerResult);
       }
 
       // メッセージが空の場合は何もしない
       if (messages.length === 0) {
+        logger.debug('No messages to send', { userId });
         return;
       }
 
@@ -256,17 +238,128 @@ class MessageBridge {
         await this.lineService.pushMessages(userId, messages);
       }
 
-      logger.info('Message forwarded from Discord to LINE', {
+      // 結果をログ
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+      
+      logger.info('Discord to LINE processing completed', {
         userId,
-        channelId: message.channel.id,
-        authorId: message.author.id,
-        authorName: message.author.username,
+        channelId: parsedMessage.channelId,
+        authorName: parsedMessage.authorName,
         messageCount: messages.length,
+        successCount,
+        failureCount,
         serverAwake: isServerAwake,
+        results
       });
     } catch (error) {
-      logger.error('Failed to handle Discord to LINE message', error);
+      logger.error('Failed to handle Discord to LINE message', {
+        channelId: parsedMessage.channelId,
+        userId,
+        error: error.message
+      });
     }
+  }
+
+  /**
+   * テキストメッセージを処理
+   * @param {Object} parsedMessage - 解析されたメッセージ
+   * @param {string} userId - LINEユーザーID
+   * @returns {Promise<Object>} 処理結果
+   */
+  async processTextMessage(parsedMessage, userId) {
+    const messages = [];
+    const results = [];
+
+    // URLを検出して埋め込み画像を処理
+    if (parsedMessage.hasUrls) {
+      const urlResults = await this.mediaService.processUrls(
+        parsedMessage.text,
+        userId,
+        this.lineService
+      );
+      results.push(...urlResults);
+    }
+
+    // テキストメッセージを追加（URLが含まれている場合は除く）
+    const textWithoutUrls = parsedMessage.text.replace(/https?:\/\/[^\s]+/g, '').trim();
+    if (textWithoutUrls) {
+      messages.push({
+        type: 'text',
+        text: textWithoutUrls,
+      });
+    }
+
+    return { messages, results };
+  }
+
+  /**
+   * 添付ファイルを処理
+   * @param {Array} attachments - 添付ファイル配列
+   * @param {string} userId - LINEユーザーID
+   * @returns {Promise<Array>} 処理結果
+   */
+  async processAttachments(attachments, userId) {
+    return await this.mediaService.processDiscordAttachments(
+      attachments,
+      userId,
+      this.lineService
+    );
+  }
+
+  /**
+   * スタンプを処理
+   * @param {Array} stickers - スタンプ配列
+   * @param {string} userId - LINEユーザーID
+   * @returns {Promise<Array>} 処理結果
+   */
+  async processStickers(stickers, userId) {
+    const results = [];
+
+    for (const sticker of stickers) {
+      try {
+        // スタンプ画像をダウンロード
+        const content = await this.mediaService.downloadFile(sticker.url, `sticker_${sticker.id}.png`);
+        
+        // LINEにスタンプとして送信
+        await this.lineService.sendImage(userId, content, `sticker_${sticker.id}.png`);
+        
+        results.push({
+          success: true,
+          type: 'sticker',
+          stickerId: sticker.id,
+          stickerName: sticker.name
+        });
+
+        logger.info('Discord sticker sent to LINE', {
+          userId,
+          stickerId: sticker.id,
+          stickerName: sticker.name
+        });
+      } catch (error) {
+        logger.error('Failed to send Discord sticker to LINE', {
+          userId,
+          stickerId: sticker.id,
+          error: error.message
+        });
+        
+        // エラーメッセージを送信
+        await this.lineService.pushMessage(userId, {
+          type: 'text',
+          text: `**スタンプ**: ${sticker.name} (送信に失敗しました)`,
+        });
+
+        results.push({
+          success: false,
+          type: 'sticker',
+          stickerId: sticker.id,
+          stickerName: sticker.name,
+          error: error.message
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -280,6 +373,7 @@ class MessageBridge {
         authorName: message.author.username,
         content: message.content?.substring(0, 100),
         attachments: message.attachments?.size || 0,
+        stickers: message.stickers?.size || 0,
         isBot: message.author.bot,
         hasGuild: !!message.guild
       });
