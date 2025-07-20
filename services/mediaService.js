@@ -99,10 +99,25 @@ class MediaService {
    */
   async processLineImage(message) {
     try {
+      logger.info('=== MediaService: LINE Image Processing Start ===', {
+        messageId: message.id,
+        messageType: message.type
+      });
+
       const content = await this.getLineContent(message.id);
+      
+      logger.info('Content downloaded', {
+        messageId: message.id,
+        contentLength: content.length
+      });
       
       // FileProcessorを使用して画像を処理
       const result = this.fileProcessor.processLineImage(message, content);
+      
+      logger.info('FileProcessor result', {
+        messageId: message.id,
+        result
+      });
       
       if (!result.success) {
         throw new Error(result.error);
@@ -110,12 +125,13 @@ class MediaService {
       
       const attachment = new AttachmentBuilder(content, { name: result.filename });
       
-      logger.info('LINE image processed successfully', { 
+      logger.info('=== MediaService: LINE Image Processing Complete ===', { 
         messageId: message.id, 
         filename: result.filename,
         mimeType: result.mimeType,
         extension: result.extension,
-        size: result.size
+        size: result.size,
+        attachmentName: attachment.name
       });
       
       return {
@@ -123,7 +139,11 @@ class MediaService {
         files: [attachment],
       };
     } catch (error) {
-      logger.error('Failed to process LINE image', { messageId: message.id, error: error.message });
+      logger.error('Failed to process LINE image', { 
+        messageId: message.id, 
+        error: error.message,
+        stack: error.stack
+      });
       return {
         content: `**画像** (ダウンロードに失敗しました)`,
       };

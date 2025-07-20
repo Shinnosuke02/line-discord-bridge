@@ -140,20 +140,33 @@ class FileProcessor {
    */
   processLineImage(message, content) {
     try {
+      // 詳細なデバッグ情報をログ
+      logger.info('=== LINE Image Processing Start ===', {
+        messageId: message.id,
+        contentLength: content.length,
+        messageKeys: Object.keys(message),
+        contentProvider: message.contentProvider
+      });
+
       // 元のMIMEタイプを取得
       const originalMimeType = message.contentProvider?.type;
+      logger.info('Original MIME type', { originalMimeType });
       
       // ファイル内容からMIMEタイプを判定
       const detectedMimeType = this.detectMimeTypeFromContent(content);
+      logger.info('Detected MIME type', { detectedMimeType });
       
       // 最終的なMIMEタイプを決定
       const finalMimeType = this.resolveMimeType(originalMimeType, detectedMimeType);
+      logger.info('Final MIME type', { finalMimeType });
       
       // 拡張子を取得
       const extension = this.getExtensionFromMimeType(finalMimeType);
+      logger.info('File extension', { extension });
       
       // ファイル名を生成
       const filename = `line_image_${message.id}.${extension}`;
+      logger.info('Generated filename', { filename });
       
       // ファイルサイズを検証
       const sizeValidation = this.validateFileSize(content);
@@ -169,16 +182,17 @@ class FileProcessor {
         detectedMimeType
       };
 
-      logger.debug('LINE image processed', {
+      logger.info('=== LINE Image Processing Complete ===', {
         messageId: message.id,
-        ...result
+        result
       });
 
       return result;
     } catch (error) {
       logger.error('Failed to process LINE image', {
         messageId: message.id,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
       
       return {
