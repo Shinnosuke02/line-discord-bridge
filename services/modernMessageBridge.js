@@ -425,84 +425,17 @@ class ModernMessageBridge {
           
           // Discordスタンプを処理
           try {
-            // スタンプの正しい画像URLを取得（サイズ指定付き）
-            const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png?size=512`;
+                        // スタンプの正しい画像URLを取得（元の成功していた方法）
+            const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
             
-                                // DiscordスタンプをDiscordに送信してCDN URLを取得
-          try {
-            logger.info('Starting Discord CDN conversion', {
-              stickerId: sticker.id,
-              stickerName: sticker.name,
-              originalUrl: stickerImageUrl
-            });
-            
-            // 現在のチャンネルにスタンプを送信
-            const channel = await this.discord.channels.fetch(discordMessage.channelId);
-            logger.info('Channel fetched for CDN conversion', {
-              channelId: discordMessage.channelId,
-              channelName: channel.name
-            });
-            
-            // スタンプをダウンロード
-            const stickerBuffer = await this.mediaService.downloadFile(stickerImageUrl, `sticker_${sticker.id}.png`);
-            logger.info('Sticker downloaded for CDN conversion', {
-              stickerId: sticker.id,
-              bufferSize: stickerBuffer.length
-            });
-            
-            const attachment = new (require('discord.js').AttachmentBuilder)(stickerBuffer, { 
-              name: `sticker_${sticker.id}.png` 
-            });
-            
-            const sentMessage = await channel.send({ files: [attachment] });
-            logger.info('Sticker sent to Discord channel', {
-              messageId: sentMessage.id,
-              attachmentCount: sentMessage.attachments.size
-            });
-            
-            const discordCdnUrl = sentMessage.attachments.first()?.url;
-            
-            if (discordCdnUrl) {
-              // Discord CDN URLでLINEに送信
-              await this.lineService.sendImageByUrl(lineUserId, discordCdnUrl);
-              
-              logger.info('Discord sticker sent via Discord CDN', {
-                stickerId: sticker.id,
-                stickerName: sticker.name,
-                originalUrl: stickerImageUrl,
-                discordCdnUrl: discordCdnUrl
-              });
-            } else {
-              logger.warn('No Discord CDN URL found, using fallback', {
-                stickerId: sticker.id,
-                messageId: sentMessage.id
-              });
-              
-              // フォールバック: 元のURLで送信
-              await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
-              
-              logger.info('Discord sticker sent with original URL', {
-                stickerId: sticker.id,
-                stickerName: sticker.name,
-                imageUrl: stickerImageUrl
-              });
-            }
-          } catch (conversionError) {
-            logger.error('Failed to convert sticker via Discord', {
-              stickerId: sticker.id,
-              error: conversionError.message,
-              stack: conversionError.stack
-            });
-            
-            // フォールバック: 元のURLで送信
+            // Discordスタンプを画像として送信（元の成功していた方法）
             await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
             
-            logger.info('Discord sticker sent with fallback URL', {
+            logger.info('Discord sticker sent to LINE as image', {
               stickerId: sticker.id,
               stickerName: sticker.name,
               imageUrl: stickerImageUrl
             });
-          }
                       } catch (stickerError) {
               logger.error('Failed to send Discord sticker', {
                 stickerId: sticker.id,
