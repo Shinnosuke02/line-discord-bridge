@@ -138,7 +138,16 @@ class ModernMessageBridge {
           break;
           
         case 'image':
+          logger.info('Processing LINE image message', {
+            messageId: event.message.id
+          });
           discordMessage = await this.mediaService.processLineImage(event.message);
+          logger.info('Image processing result', {
+            messageId: event.message.id,
+            hasContent: !!discordMessage?.content,
+            hasFiles: !!(discordMessage?.files && discordMessage.files.length > 0),
+            content: discordMessage?.content?.substring(0, 100)
+          });
           break;
           
         case 'video':
@@ -154,7 +163,18 @@ class ModernMessageBridge {
           break;
           
         case 'sticker':
+          logger.info('Processing LINE sticker message', {
+            messageId: event.message.id,
+            packageId: event.message.packageId,
+            stickerId: event.message.stickerId
+          });
           discordMessage = await this.mediaService.processLineSticker(event.message);
+          logger.info('Sticker processing result', {
+            messageId: event.message.id,
+            hasContent: !!discordMessage?.content,
+            hasFiles: !!(discordMessage?.files && discordMessage.files.length > 0),
+            content: discordMessage?.content?.substring(0, 100)
+          });
           break;
           
         case 'location':
@@ -173,10 +193,22 @@ class ModernMessageBridge {
       if (discordMessage) {
         await this.sendToDiscord(mapping.discordChannelId, discordMessage);
         
+        // グループ名称を取得
+        let groupName = null;
+        if (event.source.groupId) {
+          try {
+            const group = await this.lineService.getGroupSummary(event.source.groupId);
+            groupName = group.groupName;
+          } catch (error) {
+            logger.debug('Failed to get group name', { groupId: event.source.groupId });
+          }
+        }
+
         logger.info('Message forwarded from LINE to Discord', {
           sourceId: event.source.groupId || event.source.userId,
           senderId: event.source.userId,
           displayName,
+          groupName,
           channelId: mapping.discordChannelId,
           messageType: event.message?.type || 'unknown'
         });
@@ -240,9 +272,13 @@ class ModernMessageBridge {
 
       await channel.send(message.content || '', options);
 
-      logger.debug('Message sent to Discord', {
+      logger.info('Message sent to Discord successfully', {
         channelId: channel.id,
+        channelName: channel.name,
+        guildName: channel.guild?.name,
         contentLength: message.content?.length || 0,
+        hasFiles: !!(message.files && message.files.length > 0),
+        fileCount: message.files?.length || 0
       });
     } catch (error) {
       logger.error('Failed to send message to Discord', {
@@ -487,11 +523,12 @@ class ModernMessageBridge {
       logger.info('Created new Discord channel', {
         channelId: channel.id,
         channelName: channel.name,
-        guildId: guild.id
+        guildId: guild.id,
+        guildName: guild.name
       });
 
       // マッピングを更新
-      await this.updateMappingChannelId(channelId, channel.id);
+      await this.updateMappingChannelId(channelId, channel.id, channel.name, guild.name);
 
       return channel;
     } catch (error) {
@@ -509,8 +546,10 @@ class ModernMessageBridge {
    * マッピングのチャンネルIDを更新
    * @param {string} oldChannelId - 古いチャンネルID
    * @param {string} newChannelId - 新しいチャンネルID
+   * @param {string} channelName - チャンネル名称（省略可）
+   * @param {string} guildName - サーバー名称（省略可）
    */
-  async updateMappingChannelId(oldChannelId, newChannelId) {
+  async updateMappingChannelId(oldChannelId, newChannelId, channelName = null, guildName = null) {
     try {
       const fs = require('fs').promises;
       const mappingPath = './mapping.json';
@@ -525,12 +564,22 @@ class ModernMessageBridge {
         mapping.discordChannelId = newChannelId;
         mapping.updatedAt = new Date().toISOString();
         
+        // 名称情報を追加
+        if (channelName) {
+          mapping.discordChannelName = channelName;
+        }
+        if (guildName) {
+          mapping.discordGuildName = guildName;
+        }
+        
         // ファイルに保存
         await fs.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
         
         logger.info('Updated mapping channel ID', {
           oldChannelId,
           newChannelId,
+          channelName,
+          guildName,
           mappingId: mapping.id
         });
       } else {
