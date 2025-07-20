@@ -195,9 +195,12 @@ class ModernMessageBridge {
    */
   async sendToDiscord(channelId, message) {
     try {
-      const channel = await this.discord.channels.fetch(channelId);
+      let channel = await this.discord.channels.fetch(channelId);
+      
+      // チャンネルが存在しない場合は新規作成
       if (!channel) {
-        throw new Error(`Channel not found: ${channelId}`);
+        logger.info('Channel not found, creating new channel', { channelId });
+        channel = await this.createChannel(channelId);
       }
 
       const options = {};
@@ -420,6 +423,87 @@ class ModernMessageBridge {
     } catch (error) {
       logger.error('Failed to start Modern MessageBridge', { error: error.message });
       throw error;
+    }
+  }
+
+  /**
+   * Discordチャンネルを作成
+   * @param {string} channelId - チャンネルID（存在しない場合）
+   * @returns {Object} 作成されたチャンネル
+   */
+  async createChannel(channelId) {
+    try {
+      // ギルドを取得
+      const guild = this.discord.guilds.cache.first();
+      if (!guild) {
+        throw new Error('No guild available for channel creation');
+      }
+
+      // チャンネル名を生成
+      const channelName = `line-bridge-${Date.now()}`;
+      
+      // テキストチャンネルを作成
+      const channel = await guild.channels.create({
+        name: channelName,
+        type: 0, // テキストチャンネル
+        reason: 'LINE-Discord Bridge channel creation'
+      });
+
+      logger.info('Created new Discord channel', {
+        channelId: channel.id,
+        channelName: channel.name,
+        guildId: guild.id
+      });
+
+      // マッピングを更新
+      await this.updateMappingChannelId(channelId, channel.id);
+
+      return channel;
+    } catch (error) {
+      logger.error('Failed to create Discord channel', {
+        originalChannelId: channelId,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * マッピングのチャンネルIDを更新
+   * @param {string} oldChannelId - 古いチャンネルID
+   * @param {string} newChannelId - 新しいチャンネルID
+   */
+  async updateMappingChannelId(oldChannelId, newChannelId) {
+    try {
+      const fs = require('fs').promises;
+      const mappingPath = './mapping.json';
+      
+      // マッピングファイルを読み込み
+      const mappingData = await fs.readFile(mappingPath, 'utf8');
+      const mappings = JSON.parse(mappingData);
+      
+      // 該当するマッピングを更新
+      const mapping = mappings.find(m => m.discordChannelId === oldChannelId);
+      if (mapping) {
+        mapping.discordChannelId = newChannelId;
+        mapping.updatedAt = new Date().toISOString();
+        
+        // ファイルに保存
+        await fs.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
+        
+        logger.info('Updated mapping channel ID', {
+          oldChannelId,
+          newChannelId,
+          mappingId: mapping.id
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to update mapping channel ID', {
+        oldChannelId,
+        newChannelId,
+        error: error.message
+      });
     }
   }
 
