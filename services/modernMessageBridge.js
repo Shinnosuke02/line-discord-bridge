@@ -416,9 +416,15 @@ class ModernMessageBridge {
       // スタンプを処理
       if (discordMessage.stickers && discordMessage.stickers.size > 0) {
         for (const sticker of discordMessage.stickers.values()) {
+          logger.info('Processing Discord sticker', {
+            stickerId: sticker.id,
+            stickerName: sticker.name,
+            stickerDescription: sticker.description
+          });
+          
           await this.lineService.pushMessage(lineUserId, {
             type: 'text',
-            text: `**${discordMessage.author.username}** sent a sticker: ${sticker.name}`
+            text: `**${discordMessage.author.username}** sent a sticker: ${sticker.name} (${sticker.description || 'No description'})`
           });
         }
       }

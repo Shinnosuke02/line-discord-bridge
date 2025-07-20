@@ -395,18 +395,46 @@ class ModernMediaService {
     const urlRegex = /https?:\/\/[^\s]+/g;
     const urls = text.match(urlRegex) || [];
     
+    logger.info('Processing URLs in text', {
+      textLength: text.length,
+      urlCount: urls.length,
+      urls: urls.map(url => url.substring(0, 50) + '...')
+    });
+    
     for (const url of urls) {
       try {
+        // Tenor GIFの特別処理
+        if (url.includes('tenor.com') && url.includes('gif-')) {
+          logger.info('Processing Tenor GIF URL', { url: url.substring(0, 100) + '...' });
+          // Tenor GIFは直接送信できないため、URLとして送信
+          await this.lineService.pushMessage(userId, {
+            type: 'text',
+            text: `**GIF**: ${url}`
+          });
+          results.push({ success: true, type: 'gif_url', url });
+          continue;
+        }
+        
         // 画像URLかどうかをチェック
         if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
+          logger.info('Processing image URL', { url: url.substring(0, 100) + '...' });
           await this.lineService.sendImageByUrl(userId, url);
           results.push({ success: true, type: 'image', url });
         } else if (url.match(/\.(mp4|mov|avi|wmv|flv|webm)$/i)) {
+          logger.info('Processing video URL', { url: url.substring(0, 100) + '...' });
           await this.lineService.sendVideoByUrl(userId, url);
           results.push({ success: true, type: 'video', url });
+        } else {
+          // その他のURLはテキストとして送信
+          logger.info('Processing general URL', { url: url.substring(0, 100) + '...' });
+          await this.lineService.pushMessage(userId, {
+            type: 'text',
+            text: `**リンク**: ${url}`
+          });
+          results.push({ success: true, type: 'url', url });
         }
       } catch (error) {
-        logger.error('Failed to process URL', { url, error: error.message });
+        logger.error('Failed to process URL', { url: url.substring(0, 100) + '...', error: error.message });
         results.push({ success: false, reason: 'download_error', url });
       }
     }
