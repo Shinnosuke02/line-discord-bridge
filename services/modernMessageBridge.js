@@ -194,33 +194,42 @@ class ModernMessageBridge {
    * @param {Object} message - メッセージオブジェクト
    */
   async sendToDiscord(channelId, message) {
+    let channel;
     try {
-      let channel = await this.discord.channels.fetch(channelId);
-      
-      // チャンネルが存在しない場合は新規作成
-      if (!channel) {
+      channel = await this.discord.channels.fetch(channelId);
+    } catch (error) {
+      if (error.code === 10003 || (error.message && error.message.includes('Unknown Channel'))) {
         logger.info('Channel not found, creating new channel', { channelId });
         channel = await this.createChannel(channelId);
+        
+        // チャンネル作成に失敗した場合
+        if (!channel) {
+          logger.error('Failed to create channel, cannot send message', { channelId });
+          return;
+        }
+      } else {
+        logger.error('Failed to fetch Discord channel', { channelId, error: error.message });
+        throw error;
       }
+    }
 
+    try {
       const options = {};
       if (message.files && message.files.length > 0) {
         options.files = message.files;
       }
-
       await channel.send(message.content, options);
-      
+
       logger.debug('Message sent to Discord', {
-        channelId,
+        channelId: channel.id,
         contentLength: message.content?.length || 0,
-        hasFiles: !!(message.files && message.files.length > 0)
       });
     } catch (error) {
       logger.error('Failed to send message to Discord', {
         channelId,
-        error: error.message
+        error: error.message,
+        stack: error.stack,
       });
-      throw error;
     }
   }
 
@@ -439,6 +448,12 @@ class ModernMessageBridge {
         throw new Error('No guild available for channel creation');
       }
 
+      // Botの権限を確認
+      const botMember = guild.members.cache.get(this.discord.user.id);
+      if (!botMember || !botMember.permissions.has('ManageChannels')) {
+        throw new Error('Bot does not have permission to create channels');
+      }
+
       // チャンネル名を生成
       const channelName = `line-bridge-${Date.now()}`;
       
@@ -465,7 +480,8 @@ class ModernMessageBridge {
         error: error.message,
         stack: error.stack
       });
-      throw error;
+      // エラーを再throwせず、nullを返して上位で処理
+      return null;
     }
   }
 
@@ -497,6 +513,8 @@ class ModernMessageBridge {
           newChannelId,
           mappingId: mapping.id
         });
+      } else {
+        logger.warn('No mapping found to update', { oldChannelId, newChannelId });
       }
     } catch (error) {
       logger.error('Failed to update mapping channel ID', {
@@ -504,6 +522,7 @@ class ModernMessageBridge {
         newChannelId,
         error: error.message
       });
+      // マッピング更新に失敗してもチャンネル作成は成功しているので、エラーは再throwしない
     }
   }
 
