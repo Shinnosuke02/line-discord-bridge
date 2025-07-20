@@ -428,6 +428,29 @@ class ModernMessageBridge {
             // スタンプの正しい画像URLを取得
             const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
             
+            // URLの有効性をテスト
+            try {
+              const testResponse = await this.mediaService.downloadFile(stickerImageUrl, 'test.png');
+              logger.info('Sticker URL is valid', {
+                stickerId: sticker.id,
+                url: stickerImageUrl,
+                size: testResponse.length
+              });
+            } catch (urlError) {
+              logger.warn('Sticker URL test failed, using fallback', {
+                stickerId: sticker.id,
+                url: stickerImageUrl,
+                error: urlError.message
+              });
+              // フォールバック: テキストメッセージ
+              const stickerInfo = `sent a sticker: ${sticker.name}`;
+              await this.lineService.pushMessage(lineUserId, {
+                type: 'text',
+                text: stickerInfo
+              });
+              continue;
+            }
+            
             logger.info('Processing Discord sticker with image URL', {
               stickerId: sticker.id,
               stickerName: sticker.name,
@@ -436,7 +459,21 @@ class ModernMessageBridge {
             });
             
             // LINEに画像として送信
-            await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
+            try {
+              await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
+            } catch (imageError) {
+              logger.error('Failed to send sticker as image, trying direct URL', {
+                stickerId: sticker.id,
+                error: imageError.message
+              });
+              
+              // フォールバック: 直接URL送信
+              await this.lineService.pushMessage(lineUserId, {
+                type: 'image',
+                originalContentUrl: stickerImageUrl,
+                previewImageUrl: stickerImageUrl
+              });
+            }
             
             logger.info('Discord sticker sent to LINE as image', {
               stickerId: sticker.id,
