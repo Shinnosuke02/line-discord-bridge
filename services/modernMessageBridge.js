@@ -132,7 +132,9 @@ class ModernMessageBridge {
       
       switch (event.message.type) {
         case 'text':
-          discordMessage = this.lineService.formatMessage(event, displayName);
+          discordMessage = {
+            content: this.lineService.formatMessage(event, displayName)
+          };
           break;
           
         case 'image':
@@ -214,6 +216,15 @@ class ModernMessageBridge {
     }
 
     try {
+      // 空メッセージチェック
+      if (!message.content || message.content.trim() === '') {
+        logger.warn('Attempted to send empty message to Discord', {
+          channelId: channel.id,
+          hasFiles: !!(message.files && message.files.length > 0)
+        });
+        return;
+      }
+
       const options = {};
       if (message.files && message.files.length > 0) {
         options.files = message.files;
