@@ -430,14 +430,36 @@ class ModernMessageBridge {
             
                                 // DiscordスタンプをDiscordに送信してCDN URLを取得
           try {
+            logger.info('Starting Discord CDN conversion', {
+              stickerId: sticker.id,
+              stickerName: sticker.name,
+              originalUrl: stickerImageUrl
+            });
+            
             // 現在のチャンネルにスタンプを送信
             const channel = await this.discord.channels.fetch(discordMessage.channelId);
-            const attachment = new (require('discord.js').AttachmentBuilder)(
-              await this.mediaService.downloadFile(stickerImageUrl, `sticker_${sticker.id}.png`),
-              { name: `sticker_${sticker.id}.png` }
-            );
+            logger.info('Channel fetched for CDN conversion', {
+              channelId: discordMessage.channelId,
+              channelName: channel.name
+            });
+            
+            // スタンプをダウンロード
+            const stickerBuffer = await this.mediaService.downloadFile(stickerImageUrl, `sticker_${sticker.id}.png`);
+            logger.info('Sticker downloaded for CDN conversion', {
+              stickerId: sticker.id,
+              bufferSize: stickerBuffer.length
+            });
+            
+            const attachment = new (require('discord.js').AttachmentBuilder)(stickerBuffer, { 
+              name: `sticker_${sticker.id}.png` 
+            });
             
             const sentMessage = await channel.send({ files: [attachment] });
+            logger.info('Sticker sent to Discord channel', {
+              messageId: sentMessage.id,
+              attachmentCount: sentMessage.attachments.size
+            });
+            
             const discordCdnUrl = sentMessage.attachments.first()?.url;
             
             if (discordCdnUrl) {
@@ -451,6 +473,11 @@ class ModernMessageBridge {
                 discordCdnUrl: discordCdnUrl
               });
             } else {
+              logger.warn('No Discord CDN URL found, using fallback', {
+                stickerId: sticker.id,
+                messageId: sentMessage.id
+              });
+              
               // フォールバック: 元のURLで送信
               await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
               
@@ -463,7 +490,8 @@ class ModernMessageBridge {
           } catch (conversionError) {
             logger.error('Failed to convert sticker via Discord', {
               stickerId: sticker.id,
-              error: conversionError.message
+              error: conversionError.message,
+              stack: conversionError.stack
             });
             
             // フォールバック: 元のURLで送信
