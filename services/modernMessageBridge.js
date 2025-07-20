@@ -216,20 +216,29 @@ class ModernMessageBridge {
     }
 
     try {
-      // 空メッセージチェック
-      if (!message.content || message.content.trim() === '') {
-        logger.warn('Attempted to send empty message to Discord', {
-          channelId: channel.id,
-          hasFiles: !!(message.files && message.files.length > 0)
-        });
-        return;
-      }
-
       const options = {};
       if (message.files && message.files.length > 0) {
         options.files = message.files;
       }
-      await channel.send(message.content, options);
+
+      // メッセージ内容のチェック（ファイルがある場合はcontentが空でもOK）
+      if (!message.content || message.content.trim() === '') {
+        if (!message.files || message.files.length === 0) {
+          logger.warn('Attempted to send empty message to Discord', {
+            channelId: channel.id,
+            hasFiles: false
+          });
+          return;
+        } else {
+          // ファイルがある場合は空のcontentでも送信
+          logger.debug('Sending file-only message to Discord', {
+            channelId: channel.id,
+            fileCount: message.files.length
+          });
+        }
+      }
+
+      await channel.send(message.content || '', options);
 
       logger.debug('Message sent to Discord', {
         channelId: channel.id,
