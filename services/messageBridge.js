@@ -163,9 +163,18 @@ class MessageBridge {
     // チャンネルに対応するユーザーIDを取得
     const userId = this.channelManager.getUserIdByChannelId(message.channel.id);
     if (!userId) {
-      logger.debug('No user mapping found for channel', { channelId: message.channel.id });
+      logger.debug('No user mapping found for channel', { 
+        channelId: message.channel.id,
+        channelName: message.channel.name,
+        availableMappings: this.channelManager.getAllMappings().length
+      });
       return;
     }
+    
+    logger.debug('Found user mapping for channel', { 
+      channelId: message.channel.id,
+      userId: userId 
+    });
 
     try {
       // サーバーのウェイクアップを確認（Render無料プラン対策）
@@ -265,6 +274,16 @@ class MessageBridge {
    */
   setupDiscordMessageListener() {
     this.discordClient.on('messageCreate', async (message) => {
+      logger.debug('Discord message received', {
+        channelId: message.channel.id,
+        authorId: message.author.id,
+        authorName: message.author.username,
+        content: message.content?.substring(0, 100),
+        attachments: message.attachments?.size || 0,
+        isBot: message.author.bot,
+        hasGuild: !!message.guild
+      });
+      
       await this.handleDiscordToLine(message);
     });
 

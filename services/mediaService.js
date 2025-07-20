@@ -98,10 +98,35 @@ class MediaService {
   async processLineImage(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const extension = this.getExtensionFromMimeType(message.contentProvider?.type || 'image/jpeg');
+      
+      // MIMEタイプをより正確に判定
+      let mimeType = message.contentProvider?.type;
+      if (!mimeType) {
+        // ファイルの先頭バイトからMIMEタイプを推測
+        const header = content.slice(0, 4);
+        if (header[0] === 0xFF && header[1] === 0xD8) {
+          mimeType = 'image/jpeg';
+        } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+          mimeType = 'image/png';
+        } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
+          mimeType = 'image/gif';
+        } else {
+          mimeType = 'image/jpeg'; // デフォルト
+        }
+      }
+      
+      const extension = this.getExtensionFromMimeType(mimeType);
       const filename = `line_image_${message.id}.${extension}`;
       
       const attachment = new AttachmentBuilder(content, { name: filename });
+      
+      logger.debug('Processed LINE image', { 
+        messageId: message.id, 
+        mimeType, 
+        extension, 
+        filename,
+        size: content.length 
+      });
       
       return {
         content: `**画像**`,
