@@ -428,42 +428,23 @@ class ModernMessageBridge {
             // スタンプの正しい画像URLを取得（サイズ指定付き）
             const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png?size=512`;
             
-                                // Discordスタンプを画像として送信（元の成功方法に戻す）
-          try {
-            await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
-            
-            logger.info('Discord sticker sent to LINE as image', {
-              stickerId: sticker.id,
-              stickerName: sticker.name,
-              imageUrl: stickerImageUrl
-            });
-          } catch (imageError) {
-            logger.error('Failed to send sticker as image, trying alternative URL', {
-              stickerId: sticker.id,
-              error: imageError.message
-            });
-            
-            // 代替URLを試行（サイズ指定なし）
-            const alternativeUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
-            await this.lineService.sendImageByUrl(lineUserId, alternativeUrl);
-            
-            logger.info('Discord sticker sent with alternative URL', {
-              stickerId: sticker.id,
-              alternativeUrl: alternativeUrl
-            });
-          }
-          } catch (stickerError) {
-            logger.error('Failed to send Discord sticker as image', {
-              stickerId: sticker.id,
-              error: stickerError.message
-            });
-            // フォールバック: テキストメッセージ
-            const stickerInfo = `sent a sticker: ${sticker.name}`;
-            await this.lineService.pushMessage(lineUserId, {
-              type: 'text',
-              text: stickerInfo
-            });
-          }
+                                // Discordスタンプをテキストメッセージとして送信（確実な方法）
+          const stickerInfo = `sent a sticker: ${sticker.name}`;
+          await this.lineService.pushMessage(lineUserId, {
+            type: 'text',
+            text: stickerInfo
+          });
+          
+          logger.info('Discord sticker sent as text message', {
+            stickerId: sticker.id,
+            stickerName: sticker.name
+          });
+                      } catch (stickerError) {
+              logger.error('Failed to send Discord sticker', {
+                stickerId: sticker.id,
+                error: stickerError.message
+              });
+            }
         }
       }
 
