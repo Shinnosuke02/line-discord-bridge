@@ -1,6 +1,7 @@
 const logger = require('../utils/logger');
 const { fileTypeFromBuffer } = require('file-type');
-const mime = require('mime-types');
+const FileUtils = require('../utils/fileUtils');
+const config = require('../config/fileProcessing');
 
 /**
  * 近代化されたファイル処理クラス
@@ -8,13 +9,8 @@ const mime = require('mime-types');
  */
 class ModernFileProcessor {
   constructor() {
-    // 期待されるタイプに基づくデフォルトMIMEタイプ
-    this.defaultMimeTypes = {
-      'image': 'image/jpeg',
-      'video': 'video/mp4',
-      'audio': 'audio/m4a',
-      'file': 'application/octet-stream'
-    };
+    // 設定からデフォルトMIMEタイプを取得
+    this.defaultMimeTypes = config.defaultMimeTypes;
   }
 
   /**
@@ -41,13 +37,15 @@ class ModernFileProcessor {
       }
       
       // デバッグ用: ファイルの先頭バイトを出力
-      const header = content.slice(0, 32);
-      logger.debug('File type not detected by library, analyzing header', {
-        contentLength: content.length,
-        headerHex: header.toString('hex'),
-        headerArray: Array.from(header),
-        headerString: header.toString('utf8', 0, Math.min(16, header.length))
-      });
+      if (config.debug.logFileHeaders) {
+        const header = content.slice(0, config.debug.headerAnalysisLength);
+        logger.debug('File type not detected by library, analyzing header', {
+          contentLength: content.length,
+          headerHex: header.toString('hex'),
+          headerArray: Array.from(header),
+          headerString: header.toString('utf8', 0, Math.min(16, header.length))
+        });
+      }
       
       return 'application/octet-stream';
     } catch (error) {
@@ -59,41 +57,12 @@ class ModernFileProcessor {
 
 
   /**
-   * MIMEタイプから拡張子を取得（汎用ライブラリ使用）
+   * MIMEタイプから拡張子を取得（ユーティリティを使用）
    * @param {string} mimeType - MIMEタイプ
    * @returns {string} 拡張子
    */
   getExtensionFromMimeType(mimeType) {
-    if (!mimeType || typeof mimeType !== 'string') {
-      return 'bin';
-    }
-    
-    // セミコロン以降を除去（charset等のパラメータを無視）
-    const baseType = mimeType.split(';')[0].trim().toLowerCase();
-    
-    // mime-typesライブラリを使用して拡張子を取得
-    const extension = mime.extension(baseType);
-    
-    if (extension) {
-      return extension;
-    }
-    
-    // フォールバック: 一般的な拡張子マッピング
-    const fallbackMap = {
-      'image/jpeg': 'jpg',
-      'image/jpg': 'jpg',
-      'image/png': 'png',
-      'image/gif': 'gif',
-      'image/webp': 'webp',
-      'video/mp4': 'mp4',
-      'video/quicktime': 'mov',
-      'audio/mpeg': 'mp3',
-      'audio/m4a': 'm4a',
-      'application/pdf': 'pdf',
-      'application/zip': 'zip'
-    };
-    
-    return fallbackMap[baseType] || 'bin';
+    return FileUtils.getExtensionFromMimeType(mimeType);
   }
 
   /**
@@ -102,12 +71,7 @@ class ModernFileProcessor {
    * @returns {string} 拡張子
    */
   getExtensionFromFilename(filename) {
-    if (!filename || typeof filename !== 'string') {
-      return '';
-    }
-    
-    const match = filename.match(/\.([^.]+)$/);
-    return match ? match[1].toLowerCase() : '';
+    return FileUtils.getExtensionFromFilename(filename);
   }
 
   /**
@@ -116,15 +80,8 @@ class ModernFileProcessor {
    * @param {number} maxSize - 最大サイズ（バイト）
    * @returns {Object} 検証結果
    */
-  validateFileSize(content, maxSize = 10 * 1024 * 1024) {
-    const size = content.length;
-    return {
-      isValid: size <= maxSize,
-      size,
-      maxSize,
-      formattedSize: this.formatFileSize(size),
-      formattedMaxSize: this.formatFileSize(maxSize)
-    };
+  validateFileSize(content, maxSize = config.maxFileSize) {
+    return FileUtils.validateFileSize(content, maxSize);
   }
 
   /**
@@ -133,16 +90,7 @@ class ModernFileProcessor {
    * @returns {string} フォーマットされたサイズ
    */
   formatFileSize(bytes) {
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    
-    return `${size.toFixed(2)} ${units[unitIndex]}`;
+    return FileUtils.formatFileSize(bytes);
   }
 
   /**
@@ -178,12 +126,10 @@ class ModernFileProcessor {
       const extension = this.getExtensionFromMimeType(finalMimeType);
       logger.info('File extension', { extension });
       
-      // ファイル名を生成（実際のMIMEタイプに基づく）
-      const actualType = finalMimeType.split('/')[0]; // 'image', 'video', 'audio', 'application'
-      const filename = `${actualType}_${message.id}.${extension}`;
+      // ファイル名を生成（ユーティリティを使用）
+      const filename = FileUtils.generateFilename(finalMimeType, message.id, expectedType);
       logger.info('Generated filename', { 
         filename, 
-        actualType, 
         expectedType, 
         finalMimeType 
       });
@@ -286,21 +232,7 @@ class ModernFileProcessor {
    * @returns {boolean} 一致するかどうか
    */
   isValidMimeTypeForExpectedType(mimeType, expectedType) {
-    const validPrefixes = {
-      'image': 'image/',
-      'video': 'video/',
-      'audio': 'audio/',
-      'file': ['application/', 'text/']
-    };
-    
-    const prefix = validPrefixes[expectedType];
-    if (!prefix) return true; // 不明なタイプの場合は許可
-    
-    if (Array.isArray(prefix)) {
-      return prefix.some(p => mimeType.startsWith(p));
-    }
-    
-    return mimeType.startsWith(prefix);
+    return FileUtils.isValidMimeTypeForExpectedType(mimeType, expectedType);
   }
 
   // 後方互換性のためのメソッド
