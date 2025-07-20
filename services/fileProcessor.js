@@ -79,12 +79,40 @@ class FileProcessor {
   }
 
   /**
+   * MIMEタイプの解決（優先順位付き）
+   * @param {string} originalMimeType - 元のMIMEタイプ
+   * @param {string} detectedMimeType - 検出されたMIMEタイプ
+   * @returns {string} 最終的なMIMEタイプ
+   */
+  resolveMimeType(originalMimeType, detectedMimeType) {
+    // originalMimeTypeが'image/'で始まる場合のみ優先
+    if (
+      typeof originalMimeType === 'string' &&
+      originalMimeType.startsWith('image/') &&
+      originalMimeType !== 'application/octet-stream'
+    ) {
+      return originalMimeType;
+    }
+    // detectedMimeTypeが有効な場合は使用
+    if (
+      typeof detectedMimeType === 'string' &&
+      detectedMimeType !== 'application/octet-stream'
+    ) {
+      return detectedMimeType;
+    }
+    // デフォルトはJPEG
+    return 'image/jpeg';
+  }
+
+  /**
    * MIMEタイプから拡張子を取得
    * @param {string} mimeType - MIMEタイプ
    * @returns {string} 拡張子
    */
   getExtensionFromMimeType(mimeType) {
-    return this.mimeTypeMap[mimeType] || 'bin';
+    if (!mimeType || typeof mimeType !== 'string') return 'bin';
+    const baseType = mimeType.split(';')[0].trim();
+    return this.mimeTypeMap[baseType] || 'bin';
   }
 
   /**
@@ -200,27 +228,6 @@ class FileProcessor {
         error: error.message
       };
     }
-  }
-
-  /**
-   * MIMEタイプの解決（優先順位付き）
-   * @param {string} originalMimeType - 元のMIMEタイプ
-   * @param {string} detectedMimeType - 検出されたMIMEタイプ
-   * @returns {string} 最終的なMIMEタイプ
-   */
-  resolveMimeType(originalMimeType, detectedMimeType) {
-    // 元のMIMEタイプが有効な場合は使用
-    if (originalMimeType && originalMimeType !== 'application/octet-stream') {
-      return originalMimeType;
-    }
-    
-    // 検出されたMIMEタイプが有効な場合は使用
-    if (detectedMimeType && detectedMimeType !== 'application/octet-stream') {
-      return detectedMimeType;
-    }
-    
-    // デフォルトはJPEG
-    return 'image/jpeg';
   }
 }
 
