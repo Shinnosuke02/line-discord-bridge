@@ -193,7 +193,13 @@ class ModernMessageBridge {
             messageId: event.message.id,
             hasContent: !!discordMessage?.content,
             hasFiles: !!(discordMessage?.files && discordMessage.files.length > 0),
-            content: discordMessage?.content?.substring(0, 100)
+            content: discordMessage?.content?.substring(0, 100),
+            fileCount: discordMessage?.files?.length || 0,
+            stickerResult: {
+              hasContent: !!stickerResult?.content,
+              hasFiles: !!(stickerResult?.files && stickerResult.files.length > 0),
+              content: stickerResult?.content?.substring(0, 100)
+            }
           });
           break;
           
@@ -271,6 +277,11 @@ class ModernMessageBridge {
       const options = {};
       if (message.files && message.files.length > 0) {
         options.files = message.files;
+        logger.info('Preparing to send files to Discord', {
+          channelId: channel.id,
+          fileCount: message.files.length,
+          fileNames: message.files.map(f => f.name || f.attachment?.name || 'unknown')
+        });
       }
 
       // メッセージ内容のチェック（ファイルがある場合はcontentが空でもOK）
@@ -290,15 +301,17 @@ class ModernMessageBridge {
         }
       }
 
-      await channel.send(message.content || '', options);
+      const sentMessage = await channel.send(message.content || '', options);
 
       logger.info('Message sent to Discord successfully', {
         channelId: channel.id,
+        channelId: sentMessage.id,
         channelName: channel.name,
         guildName: channel.guild?.name,
         contentLength: message.content?.length || 0,
         hasFiles: !!(message.files && message.files.length > 0),
-        fileCount: message.files?.length || 0
+        fileCount: message.files?.length || 0,
+        sentMessageAttachments: sentMessage.attachments?.size || 0
       });
     } catch (error) {
       logger.error('Failed to send message to Discord', {
