@@ -2,45 +2,40 @@
 
 LINE Bot API v7対応の近代化されたLINE-Discordブリッジアプリケーションです。
 
-## 🚀 新機能
+---
 
-### LINE Bot API v7対応
-- `uploadContent`の削除に対応
-- 外部URLを使用したメディア送信
-- より堅牢なエラーハンドリング
+## 🖥️ 動作確認済みサーバ環境
 
-### 正確なファイル処理
-- バイナリヘッダーによる正確なMIMEタイプ判定
-- 動画・音声ファイルの適切な拡張子設定
-- ファイルシグネチャ（マジックナンバー）による判定
+- サーバ: Oracle Cloud Free Tier
+- OS: Ubuntu 24.04.2 LTS (Noble Numbat)
+- カーネル: 6.8.0-1028-oracle
+- CPU: AMD EPYC 7551 32-Core Processor
+- メモリ: 約1GB
+- Node.js: v20.19.4
+- npm: 10.8.2
+- pm2: 6.0.8
 
-### 近代化されたアーキテクチャ
-- マイクロサービス指向の設計
-- 単一責任原則に基づくサービス分離
-- レート制限対策とメッセージキュー
-- グレースフルシャットダウン
+---
 
-### 強化されたログ機能
-- 構造化ログ（JSON形式）
-- ログローテーション
-- 詳細なデバッグ情報
+## 🛠️ Ubuntu系サーバへのインストールガイド
 
-## 📋 要件
-
-- Node.js 18.0.0以上
-- npm 8.0.0以上
-- LINE Bot API v7対応のチャンネル
-- Discord Bot Token
-
-## 🛠️ セットアップ
-
-### 1. 依存関係のインストール
+### 1. 必要パッケージのインストール
 
 ```bash
+sudo apt update
+sudo apt install -y nodejs npm nginx certbot python3-certbot-nginx git
+sudo npm install -g pm2
+```
+
+### 2. リポジトリのクローンとセットアップ
+
+```bash
+git clone <YOUR_REPO_URL>
+cd line-discord-bridge
 npm install
 ```
 
-### 2. 設定ファイルの作成
+### 3. 設定ファイルの作成
 
 `config.js`を作成し、以下の内容を設定してください：
 
@@ -58,9 +53,7 @@ module.exports = {
 };
 ```
 
-### 3. マッピングファイルの設定
-
-`mapping.json`を作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
+`mapping.json`も作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
 
 ```json
 [
@@ -71,164 +64,149 @@ module.exports = {
 ]
 ```
 
-### 4. 環境変数の設定（オプション）
+### 4. ファイアウォール（iptables）設定例
 
 ```bash
-export PORT=3000
-export NODE_ENV=production
+# 80, 443, 22（SSH）を許可
+sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+# 既存の許可ルールを確認
+sudo iptables -L
+# 設定を保存（Ubuntu 24.04例）
+sudo apt install -y iptables-persistent
+sudo netfilter-persistent save
 ```
 
-## 🚀 起動方法
+### 5. Nginxリバースプロキシ設定
 
-### 開発環境
+- `/etc/nginx/sites-available/line-discord-bridge` を作成し、下記を記載
 
-```bash
-npm run dev
-```
+```nginx
+server {
+    listen 80;
+    server_name example.com;
 
-### 本番環境
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
 
-```bash
-# 直接起動
-npm start
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
 
-# PM2を使用
-npm run pm2:start
-```
+server {
+    listen 443 ssl;
+    server_name example.com;
 
-### PM2コマンド
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
 
-```bash
-# ステータス確認
-npm run pm2:status
-
-# ログ確認
-npm run pm2:logs
-
-# 再起動
-npm run pm2:restart
-
-# 停止
-npm run pm2:stop
-```
-
-## 📁 ファイル構成
-
-```
-├── modernApp.js              # メインアプリケーション
-├── services/
-│   ├── modernLineService.js  # LINE Bot API v7対応サービス
-│   ├── modernMediaService.js # メディア処理サービス
-│   ├── modernFileProcessor.js # ファイル処理サービス
-│   └── modernMessageBridge.js # メッセージブリッジ
-├── utils/
-│   └── logger.js             # ログユーティリティ
-├── config.js                 # 設定ファイル
-├── mapping.json              # チャンネルマッピング
-└── package.json
-```
-
-## 🔧 機能詳細
-
-### LINE→Discord転送
-
-- **テキストメッセージ**: そのまま転送
-- **画像**: 適切な拡張子で保存・転送
-- **動画**: MP4形式で保存・転送
-- **音声**: M4A形式で保存・転送
-- **ファイル**: 元の形式を保持して転送
-- **スタンプ**: PNG画像として転送
-- **位置情報**: テキストとして転送
-
-### Discord→LINE転送
-
-- **テキストメッセージ**: そのまま転送
-- **画像**: 外部URLを使用して転送
-- **動画**: 外部URLを使用して転送
-- **音声**: 外部URLを使用して転送
-- **ファイル**: URLとして転送
-- **スタンプ**: テキストとして転送
-
-### ファイル処理の改善
-
-- **正確なMIME判定**: バイナリヘッダーによる判定
-- **適切な拡張子**: ファイル内容に基づく拡張子設定
-- **サイズ制限**: 10MB制限の適用
-- **エラーハンドリング**: 堅牢なエラー処理
-
-## 📊 ログ
-
-### ログレベル
-
-- `ERROR`: エラー情報
-- `WARN`: 警告情報
-- `INFO`: 一般情報
-- `DEBUG`: デバッグ情報
-
-### ログ形式
-
-```json
-{
-  "timestamp": "2025-01-20T10:30:00.000Z",
-  "level": "INFO",
-  "message": "Message forwarded from LINE to Discord",
-  "metadata": {
-    "sourceId": "U1234567890abcdef",
-    "senderId": "U1234567890abcdef",
-    "displayName": "ユーザー名",
-    "channelId": "1234567890123456789",
-    "messageType": "image"
-  }
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
-## 🔍 トラブルシューティング
-
-### よくある問題
-
-1. **LINE Bot API v7エラー**
-   - `uploadContent is not a function`エラーが発生した場合、新しいバージョンを使用してください
-
-2. **ファイル拡張子が.binになる**
-   - 新しいFileProcessorが正しい拡張子を設定します
-
-3. **Discord→LINEの画像送信エラー**
-   - 外部URLを使用するため、DiscordのURLが公開されている必要があります
-
-### デバッグ方法
+- 有効化・再起動
 
 ```bash
-# 詳細ログを有効化
-export LOG_LEVEL=debug
-npm start
-
-# PM2ログの確認
-npm run pm2:logs
+sudo ln -s /etc/nginx/sites-available/line-discord-bridge /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-## 🔄 アップグレード
+### 6. Let's EncryptでSSL証明書取得
 
-### 1.xから2.xへの移行
+```bash
+sudo certbot --nginx -d example.com
+```
 
-1. 新しい依存関係をインストール
-2. 設定ファイルを更新
-3. 新しいアプリケーションファイルを使用
-4. データベースの移行（必要に応じて）
+### 7. アプリ起動
 
-## 📝 ライセンス
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+---
+
+## 🚀 新機能・特徴
+
+- LINE Bot API v7対応
+- 外部URLを使用したメディア送信
+- 正確なファイル処理（MIME判定・拡張子）
+- マイクロサービス指向設計
+- 構造化ログ・詳細なデバッグ
+- レート制限対策とメッセージキュー
+- グレースフルシャットダウン
+
+---
+
+## 📋 アプリ要件
+
+- Node.js 18.0.0以上
+- npm 8.0.0以上
+- LINE Bot API v7対応のチャンネル
+- Discord Bot Token
+- Nginx/Let's Encrypt必須
+
+---
+
+## 🔧 機能詳細
+
+- **LINE→Discord転送**: テキスト・画像・動画・音声・ファイル・スタンプ・位置情報
+- **Discord→LINE転送**: テキスト・画像・動画・音声・ファイル・スタンプ
+- **ファイル処理**: MIME判定・拡張子・10MB制限・堅牢なエラー処理
+
+---
+
+## 📁 ディレクトリ構成
+
+```
+├── app.js                  # メインアプリケーション
+├── services/
+│   ├── modernLineService.js
+│   ├── modernMediaService.js
+│   ├── modernFileProcessor.js
+│   └── modernMessageBridge.js
+├── utils/
+│   └── logger.js
+├── config.js
+├── mapping.json
+└── package.json
+```
+
+---
+
+## 🚦 注意点・セキュリティ
+
+- Node.jsアプリのポート（例: 3000）は外部公開しない（Nginx経由のみアクセス）
+- iptablesやUFWで不要なポートは閉じる
+- Let's Encrypt証明書は自動更新設定を推奨
+
+---
+
+## 📊 ログ・トラブルシューティング
+
+- 詳細ログ: `export LOG_LEVEL=debug` で有効化
+- PM2ログ: `npm run pm2:logs`
+- よくある問題・デバッグ方法も記載
+
+---
+
+## 📝 ライセンス・コントリビューション
 
 MIT License
 
-## 🤝 コントリビューション
-
-1. フォークを作成
-2. フィーチャーブランチを作成
-3. 変更をコミット
-4. プルリクエストを作成
+---
 
 ## 📞 サポート
-
-問題が発生した場合は、以下の情報を含めて報告してください：
 
 - Node.jsバージョン
 - エラーログ
