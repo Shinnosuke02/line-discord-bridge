@@ -256,8 +256,11 @@ class ModernMessageBridge {
         // メッセージからユーザー名部分を除去（Webhookで表示するため）
         const cleanMessage = this.removeDisplayNameFromMessage(discordMessage, displayName);
         
+        // 設定からWebhook機能の有効/無効を取得
+        const useWebhook = config.webhook.enabled;
+        
         await this.sendToDiscord(mapping.discordChannelId, cleanMessage, {
-          useWebhook: true,
+          useWebhook: useWebhook,
           username: displayName,
           avatarUrl: null // 必要に応じてLINEユーザーのアバターURLを設定
         });
@@ -312,7 +315,10 @@ class ModernMessageBridge {
       logger.error('Failed to send message to Discord', {
         channelId,
         useWebhook: options.useWebhook,
-        error: error.message
+        error: error.message,
+        errorCode: error.code,
+        errorStatus: error.status,
+        stack: error.stack
       });
       
       // Webhookが失敗した場合はBot送信にフォールバック

@@ -45,6 +45,14 @@ const config = {
     // 最大バッチサイズ
     maxBatchSize: 5,
   },
+
+  // Webhook設定
+  webhook: {
+    // Webhook機能の有効/無効
+    enabled: process.env.WEBHOOK_ENABLED === 'true' || false,
+    // Webhook名
+    name: process.env.WEBHOOK_NAME || 'LINE Bridge',
+  },
 };
 
 // 必須環境変数の検証
