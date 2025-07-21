@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const ModernLineService = require('./modernLineService');
 const ModernMediaService = require('./modernMediaService');
 const ModernFileProcessor = require('./modernFileProcessor');
+const ChannelManager = require('./channelManager');
 
 /**
  * 近代化されたメッセージブリッジ
@@ -22,6 +23,7 @@ class ModernMessageBridge {
     this.lineService = new ModernLineService();
     this.mediaService = new ModernMediaService();
     this.fileProcessor = new ModernFileProcessor();
+    this.channelManager = null; // Discordログイン後に初期化
     
     // レート制限対策
     this.messageQueue = [];
@@ -42,6 +44,9 @@ class ModernMessageBridge {
         user: this.discord.user.tag,
         guilds: this.discord.guilds.cache.size
       });
+      
+      // ChannelManagerを初期化
+      this.channelManager = new ChannelManager(this.discord);
     });
 
     // Discordメッセージ受信
@@ -79,9 +84,15 @@ class ModernMessageBridge {
       return;
     }
 
-    // マッピングを確認
-    const mapping = await this.getMapping(message.channelId);
-    if (!mapping) {
+    // ChannelManagerが初期化されていない場合は待機
+    if (!this.channelManager) {
+      logger.warn('ChannelManager not initialized, skipping message', { messageId: message.id });
+      return;
+    }
+
+    // LINEユーザーIDを取得
+    const lineUserId = await this.channelManager.getLineUserId(message.channelId);
+    if (!lineUserId) {
       return;
     }
 
@@ -96,7 +107,7 @@ class ModernMessageBridge {
       await this.queueMessage({
         type: 'discord_to_line',
         discordMessage: message,
-        lineUserId: mapping.lineUserId
+        lineUserId: lineUserId
       });
     } catch (error) {
       logger.error('Failed to queue Discord message', {
@@ -112,23 +123,21 @@ class ModernMessageBridge {
    */
   async handleLineToDiscord(event) {
     try {
-      // マッピングを確認
-      let mapping = await this.getMappingByLineUserId(event.source.userId);
-      
-      // マッピングが存在しない場合は新規作成
+      // ChannelManagerが初期化されていない場合は待機
+      if (!this.channelManager) {
+        logger.warn('ChannelManager not initialized, skipping LINE message', { 
+          lineUserId: event.source.userId 
+        });
+        return;
+      }
+
+      // チャンネルを取得または作成
+      const mapping = await this.channelManager.getOrCreateChannel(event.source.userId);
       if (!mapping) {
-        logger.info('No mapping found for LINE user, creating new mapping', {
+        logger.error('Failed to get or create channel for LINE user', {
           lineUserId: event.source.userId
         });
-        
-        mapping = await this.createMappingForLineUser(event.source.userId);
-        
-        if (!mapping) {
-          logger.error('Failed to create mapping for LINE user', {
-            lineUserId: event.source.userId
-          });
-          return;
-        }
+        return;
       }
 
       logger.info('Processing LINE message', {
@@ -267,25 +276,9 @@ class ModernMessageBridge {
    * @param {Object} message - メッセージオブジェクト
    */
   async sendToDiscord(channelId, message) {
-    let channel;
     try {
-      channel = await this.discord.channels.fetch(channelId);
-    } catch (error) {
-      if (error.code === 10003 || (error.message && error.message.includes('Unknown Channel'))) {
-        logger.info('Channel not found, creating new channel', { channelId });
-        channel = await this.createChannel(channelId);
-        
-        if (!channel) {
-          logger.error('Failed to create channel', { channelId });
-          return;
-        }
-      } else {
-        logger.error('Failed to fetch Discord channel', { channelId, error: error.message });
-        throw error;
-      }
-    }
-
-    try {
+      const channel = await this.discord.channels.fetch(channelId);
+      
       // シンプルな送信
       const sentMessage = await channel.send({
         content: message.content || '',
@@ -427,35 +420,7 @@ class ModernMessageBridge {
     return parts.join(', ') || 'empty message';
   }
 
-  /**
-   * DiscordチャンネルIDからマッピングを取得
-   * @param {string} discordChannelId - DiscordチャンネルID
-   * @returns {Object|null} マッピング情報
-   */
-  async getMapping(discordChannelId) {
-    try {
-      const mapping = require('../mapping.json');
-      return mapping.find(m => m.discordChannelId === discordChannelId) || null;
-    } catch (error) {
-      logger.error('Failed to get mapping', { discordChannelId, error: error.message });
-      return null;
-    }
-  }
 
-  /**
-   * LINEユーザーIDからマッピングを取得
-   * @param {string} lineUserId - LINEユーザーID
-   * @returns {Object|null} マッピング情報
-   */
-  async getMappingByLineUserId(lineUserId) {
-    try {
-      const mapping = require('../mapping.json');
-      return mapping.find(m => m.lineUserId === lineUserId) || null;
-    } catch (error) {
-      logger.error('Failed to get mapping by LINE user ID', { lineUserId, error: error.message });
-      return null;
-    }
-  }
 
   /**
    * Discordクライアントにログイン
@@ -483,164 +448,11 @@ class ModernMessageBridge {
     }
   }
 
-  /**
-   * Discordチャンネルを作成
-   * @param {string} channelId - チャンネルID（存在しない場合）
-   * @returns {Object} 作成されたチャンネル
-   */
-  async createChannel(channelId) {
-    try {
-      // ギルドを取得
-      const guild = this.discord.guilds.cache.first();
-      if (!guild) {
-        throw new Error('No guild available for channel creation');
-      }
-
-      // Botの権限を確認
-      const botMember = guild.members.cache.get(this.discord.user.id);
-      if (!botMember || !botMember.permissions.has('ManageChannels')) {
-        throw new Error('Bot does not have permission to create channels');
-      }
-
-      // チャンネル名を生成
-      const channelName = `line-bridge-${Date.now()}`;
-      
-      // テキストチャンネルを作成
-      const channel = await guild.channels.create({
-        name: channelName,
-        type: 0, // テキストチャンネル
-        reason: 'LINE-Discord Bridge channel creation'
-      });
-
-      logger.info('Created new Discord channel', {
-        channelId: channel.id,
-        channelName: channel.name,
-        guildId: guild.id,
-        guildName: guild.name
-      });
-
-      // マッピングを更新
-      await this.updateMappingChannelId(channelId, channel.id, channel.name, guild.name);
-
-      return channel;
-    } catch (error) {
-      logger.error('Failed to create Discord channel', {
-        originalChannelId: channelId,
-        error: error.message,
-        stack: error.stack
-      });
-      // エラーを再throwせず、nullを返して上位で処理
-      return null;
-    }
-  }
 
 
 
-  /**
-   * LINEユーザー用の新規マッピングを作成
-   * @param {string} lineUserId - LINEユーザーID
-   * @returns {Promise<Object|null>} 作成されたマッピング
-   */
-  async createMappingForLineUser(lineUserId) {
-    try {
-      // 新しいDiscordチャンネルを作成
-      const channel = await this.createChannel(`new_user_${Date.now()}`);
-      
-      if (!channel) {
-        logger.error('Failed to create Discord channel for new LINE user', { lineUserId });
-        return null;
-      }
 
-      // マッピングファイルに新規エントリを追加
-      const fs = require('fs').promises;
-      const mappingPath = './mapping.json';
-      
-      const mappingData = await fs.readFile(mappingPath, 'utf8');
-      const mappings = JSON.parse(mappingData);
-      
-      const newMapping = {
-        id: `mapping_${Date.now()}`,
-        lineUserId: lineUserId,
-        discordChannelId: channel.id,
-        discordChannelName: channel.name,
-        discordGuildName: channel.guild?.name,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      mappings.push(newMapping);
-      
-      await fs.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
-      
-      logger.info('Created new mapping for LINE user', {
-        lineUserId,
-        discordChannelId: channel.id,
-        discordChannelName: channel.name,
-        mappingId: newMapping.id
-      });
-      
-      return newMapping;
-    } catch (error) {
-      logger.error('Failed to create mapping for LINE user', {
-        lineUserId,
-        error: error.message
-      });
-      return null;
-    }
-  }
 
-  /**
-   * マッピングのチャンネルIDを更新
-   * @param {string} oldChannelId - 古いチャンネルID
-   * @param {string} newChannelId - 新しいチャンネルID
-   * @param {string} channelName - チャンネル名称（省略可）
-   * @param {string} guildName - サーバー名称（省略可）
-   */
-  async updateMappingChannelId(oldChannelId, newChannelId, channelName = null, guildName = null) {
-    try {
-      const fs = require('fs').promises;
-      const mappingPath = './mapping.json';
-      
-      // マッピングファイルを読み込み
-      const mappingData = await fs.readFile(mappingPath, 'utf8');
-      const mappings = JSON.parse(mappingData);
-      
-      // 該当するマッピングを更新
-      const mapping = mappings.find(m => m.discordChannelId === oldChannelId);
-      if (mapping) {
-        mapping.discordChannelId = newChannelId;
-        mapping.updatedAt = new Date().toISOString();
-        
-        // 名称情報を追加
-        if (channelName) {
-          mapping.discordChannelName = channelName;
-        }
-        if (guildName) {
-          mapping.discordGuildName = guildName;
-        }
-        
-        // ファイルに保存
-        await fs.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
-        
-        logger.info('Updated mapping channel ID', {
-          oldChannelId,
-          newChannelId,
-          channelName,
-          guildName,
-          mappingId: mapping.id
-        });
-      } else {
-        logger.warn('No mapping found to update', { oldChannelId, newChannelId });
-      }
-    } catch (error) {
-      logger.error('Failed to update mapping channel ID', {
-        oldChannelId,
-        newChannelId,
-        error: error.message
-      });
-      // マッピング更新に失敗してもチャンネル作成は成功しているので、エラーは再throwしない
-    }
-  }
 
   /**
    * ブリッジを停止

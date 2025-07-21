@@ -1,230 +1,215 @@
 /**
  * Discordチャンネル管理サービス
  */
-const fs = require('fs');
-const { ChannelType } = require('discord.js');
+const logger = require('./logger');
 const config = require('../config');
-const logger = require('../utils/logger');
-const MappingManager = require('./mappingManager');
 
 class ChannelManager {
   constructor(discordClient) {
-    this.discordClient = discordClient;
-    this.mappingManager = new MappingManager();
-    this.userChannelMap = this.loadUserChannelMap();
-    
-    // 既存のマッピングを新しいシステムに移行
-    this.migrateExistingMappings();
+    this.discord = discordClient;
+    this.mappings = new Map(); // メモリ内キャッシュ
+    this.mappingPath = './mapping.json';
+    this.loadMappings();
   }
 
   /**
-   * ユーザーチャンネルマッピングを読み込み
-   * @returns {Object} ユーザーチャンネルマッピング
+   * マッピングファイルを読み込み
    */
-  loadUserChannelMap() {
+  async loadMappings() {
     try {
-      if (fs.existsSync(config.files.userChannelMap)) {
-        const data = fs.readFileSync(config.files.userChannelMap, 'utf8');
-        return JSON.parse(data);
-      }
-    } catch (error) {
-      logger.error('Failed to load user channel map', error);
-    }
-    return {};
-  }
-
-  /**
-   * 既存のマッピングを新しいシステムに移行
-   */
-  migrateExistingMappings() {
-    try {
-      const existingMappings = Object.entries(this.userChannelMap);
-      if (existingMappings.length > 0) {
-        logger.info('Migrating existing mappings to new system', { count: existingMappings.length });
-        
-        existingMappings.forEach(([userId, channelId]) => {
-          // 既存のマッピングを新しいシステムに追加
-          this.mappingManager.addMapping(userId, channelId, `User-${userId}`, 'user');
-        });
-        
-        logger.info('Migration completed');
-      }
-    } catch (error) {
-      logger.error('Failed to migrate existing mappings', error);
-    }
-  }
-
-  /**
-   * ユーザーチャンネルマッピングを保存（後方互換性のため保持）
-   */
-  saveUserChannelMap() {
-    try {
-      fs.writeFileSync(
-        config.files.userChannelMap,
-        JSON.stringify(this.userChannelMap, null, 2)
-      );
-      logger.debug('User channel map saved');
-    } catch (error) {
-      logger.error('Failed to save user channel map', error);
-    }
-  }
-
-  /**
-   * チャンネル名を正規化
-   * @param {string} displayName - 表示名
-   * @returns {string} 正規化されたチャンネル名
-   */
-  normalizeChannelName(displayName) {
-    return displayName
-      .replace(/[^\p{L}\p{N}_\-]/gu, '-')
-      .slice(0, config.channel.maxLength);
-  }
-
-  /**
-   * 利用可能なチャンネル名を生成
-   * @param {string} baseName - ベース名
-   * @param {Object} guild - Discordギルド
-   * @returns {string} 利用可能なチャンネル名
-   */
-  generateAvailableChannelName(baseName, guild) {
-    const normalizedName = this.normalizeChannelName(baseName);
-    
-    for (let i = 1; i <= config.channel.maxSuffix; i++) {
-      const suffix = `-${String(i).padStart(config.channel.suffixPadding, '0')}`;
-      const proposedName = `${normalizedName}${suffix}`;
+      const fs = require('fs').promises;
+      const data = await fs.readFile(this.mappingPath, 'utf8');
+      const mappings = JSON.parse(data);
       
-      if (!guild.channels.cache.find(channel => channel.name === proposedName)) {
-        return proposedName;
-      }
-    }
-    
-    // 最大数に達した場合のフォールバック
-    const timestamp = Date.now().toString().slice(-6);
-    return `${normalizedName}-${timestamp}`;
-  }
-
-  /**
-   * チャンネルが存在するかチェック
-   * @param {string} channelId - チャンネルID
-   * @param {Object} guild - Discordギルド
-   * @returns {Promise<boolean>} チャンネルが存在するかどうか
-   */
-  async channelExists(channelId, guild) {
-    try {
-      await guild.channels.fetch(channelId);
-      return true;
-    } catch {
-      return false;
+      // メモリ内キャッシュに格納
+      this.mappings.clear();
+      mappings.forEach(mapping => {
+        this.mappings.set(mapping.lineUserId, mapping);
+        this.mappings.set(mapping.discordChannelId, mapping);
+      });
+      
+      logger.info('Mappings loaded', { count: mappings.length });
+    } catch (error) {
+      logger.warn('Failed to load mappings, starting with empty cache', { error: error.message });
+      this.mappings.clear();
     }
   }
 
   /**
-   * チャンネルを取得または作成
-   * @param {string} displayName - 表示名
-   * @param {string} userId - ユーザーID
-   * @param {string} type - チャンネルタイプ ('user' | 'group')
-   * @returns {Promise<string>} チャンネルID
+   * マッピングファイルを保存
    */
-  async getOrCreateChannel(displayName, userId, type = 'user') {
+  async saveMappings() {
     try {
-      const guild = await this.discordClient.guilds.fetch(config.discord.guildId);
+      const fs = require('fs').promises;
+      const mappings = [];
       
-      // 新しいマッピングシステムで既存のチャンネルをチェック
-      const existingDiscordChannelId = this.mappingManager.getDiscordChannelId(userId);
-      
-      if (existingDiscordChannelId) {
-        const exists = await this.channelExists(existingDiscordChannelId, guild);
-        if (exists) {
-          logger.debug('Using existing channel from mapping system', { 
-            userId, 
-            channelId: existingDiscordChannelId 
-          });
-          return existingDiscordChannelId;
-        } else {
-          logger.warn('Stored channel not found, removing from mapping', { 
-            userId, 
-            channelId: existingDiscordChannelId 
-          });
-          // マッピングから削除（MappingManagerで実装予定）
+      // ユニークなマッピングを収集
+      const seen = new Set();
+      for (const mapping of this.mappings.values()) {
+        if (!seen.has(mapping.id)) {
+          seen.add(mapping.id);
+          mappings.push(mapping);
         }
       }
-
-      // 新しいチャンネルを作成
-      const channelName = this.generateAvailableChannelName(displayName, guild);
-      const newChannel = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        reason: `LINE ${type} ${displayName}`,
-      });
-
-      // 新しいマッピングシステムに保存
-      this.mappingManager.addMapping(userId, newChannel.id, displayName, type);
       
-      // 後方互換性のため古いシステムにも保存
-      this.userChannelMap[userId] = newChannel.id;
-      this.saveUserChannelMap();
+      await fs.writeFile(this.mappingPath, JSON.stringify(mappings, null, 2));
+      logger.debug('Mappings saved', { count: mappings.length });
+    } catch (error) {
+      logger.error('Failed to save mappings', { error: error.message });
+    }
+  }
 
-      logger.info('Created new Discord channel', {
-        userId,
-        displayName,
-        channelId: newChannel.id,
-        channelName: newChannel.name,
-        type
+  /**
+   * LINEユーザーIDからチャンネルを取得（存在しない場合は作成）
+   * @param {string} lineUserId - LINEユーザーID
+   * @returns {Promise<Object>} チャンネル情報
+   */
+  async getOrCreateChannel(lineUserId) {
+    // 既存マッピングを確認
+    let mapping = this.mappings.get(lineUserId);
+    
+    if (mapping) {
+      // チャンネルが存在するか確認
+      try {
+        await this.discord.channels.fetch(mapping.discordChannelId);
+        return mapping;
+      } catch (error) {
+        if (error.code === 10003) {
+          logger.info('Channel not found, will create new one', { 
+            lineUserId, 
+            oldChannelId: mapping.discordChannelId 
+          });
+          // チャンネルが存在しない場合は新規作成
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    // 新規チャンネル作成
+    return await this.createNewChannel(lineUserId);
+  }
+
+  /**
+   * DiscordチャンネルIDからLINEユーザーIDを取得
+   * @param {string} discordChannelId - DiscordチャンネルID
+   * @returns {Promise<string|null>} LINEユーザーID
+   */
+  async getLineUserId(discordChannelId) {
+    const mapping = this.mappings.get(discordChannelId);
+    return mapping ? mapping.lineUserId : null;
+  }
+
+  /**
+   * 新しいチャンネルを作成
+   * @param {string} lineUserId - LINEユーザーID
+   * @returns {Promise<Object>} 作成されたマッピング
+   */
+  async createNewChannel(lineUserId) {
+    try {
+      // ギルドを取得
+      const guild = this.discord.guilds.cache.first();
+      if (!guild) {
+        throw new Error('No guild available for channel creation');
+      }
+
+      // Botの権限を確認
+      const botMember = guild.members.cache.get(this.discord.user.id);
+      if (!botMember || !botMember.permissions.has('ManageChannels')) {
+        throw new Error('Bot does not have permission to create channels');
+      }
+
+      // チャンネル名を生成
+      const channelName = `line-bridge-${Date.now()}`;
+      
+      // テキストチャンネルを作成
+      const channel = await guild.channels.create({
+        name: channelName,
+        type: 0, // テキストチャンネル
+        reason: 'LINE-Discord Bridge channel creation'
       });
 
-      return newChannel.id;
+      // 新しいマッピングを作成
+      const newMapping = {
+        id: `mapping_${Date.now()}`,
+        lineUserId: lineUserId,
+        discordChannelId: channel.id,
+        discordChannelName: channel.name,
+        discordGuildName: guild.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // メモリ内キャッシュに追加
+      this.mappings.set(lineUserId, newMapping);
+      this.mappings.set(channel.id, newMapping);
+
+      // ファイルに保存
+      await this.saveMappings();
+
+      logger.info('Created new channel and mapping', {
+        lineUserId,
+        channelId: channel.id,
+        channelName: channel.name,
+        mappingId: newMapping.id
+      });
+
+      return newMapping;
     } catch (error) {
-      logger.error('Failed to get or create channel', error);
+      logger.error('Failed to create new channel', {
+        lineUserId,
+        error: error.message
+      });
       throw error;
     }
   }
 
   /**
-   * ユーザーIDからチャンネルIDを取得
-   * @param {string} userId - ユーザーID
-   * @returns {string|null} チャンネルID
+   * チャンネルIDを更新（チャンネルが削除された場合）
+   * @param {string} oldChannelId - 古いチャンネルID
+   * @param {string} newChannelId - 新しいチャンネルID
    */
-  getChannelIdByUserId(userId) {
-    // 新しいマッピングシステムを優先
-    const discordChannelId = this.mappingManager.getDiscordChannelId(userId);
-    if (discordChannelId) {
-      return discordChannelId;
+  async updateChannelId(oldChannelId, newChannelId) {
+    const mapping = this.mappings.get(oldChannelId);
+    if (!mapping) {
+      logger.warn('No mapping found to update', { oldChannelId, newChannelId });
+      return;
     }
-    
-    // 後方互換性のため古いシステムもチェック
-    return this.userChannelMap[userId] || null;
+
+    // マッピングを更新
+    mapping.discordChannelId = newChannelId;
+    mapping.updatedAt = new Date().toISOString();
+
+    // キャッシュを更新
+    this.mappings.delete(oldChannelId);
+    this.mappings.set(newChannelId, mapping);
+
+    // ファイルに保存
+    await this.saveMappings();
+
+    logger.info('Updated channel ID in mapping', {
+      oldChannelId,
+      newChannelId,
+      mappingId: mapping.id
+    });
   }
 
   /**
-   * チャンネルIDからユーザーIDを取得
-   * @param {string} channelId - チャンネルID
-   * @returns {string|null} ユーザーID
-   */
-  getUserIdByChannelId(channelId) {
-    // 新しいマッピングシステムを優先
-    const lineChannelId = this.mappingManager.getLineChannelId(channelId);
-    if (lineChannelId) {
-      return lineChannelId;
-    }
-    
-    // 後方互換性のため古いシステムもチェック
-    return Object.keys(this.userChannelMap).find(key => this.userChannelMap[key] === channelId) || null;
-  }
-
-  /**
-   * マッピング統計を取得
-   * @returns {Object} 統計情報
-   */
-  getMappingStats() {
-    return this.mappingManager.getStats();
-  }
-
-  /**
-   * すべてのマッピングを取得
-   * @returns {Array} マッピング配列
+   * 全マッピングを取得
+   * @returns {Array} マッピング一覧
    */
   getAllMappings() {
-    return this.mappingManager.getAllMappings();
+    const mappings = [];
+    const seen = new Set();
+    
+    for (const mapping of this.mappings.values()) {
+      if (!seen.has(mapping.id)) {
+        seen.add(mapping.id);
+        mappings.push(mapping);
+      }
+    }
+    
+    return mappings;
   }
 }
 
