@@ -113,9 +113,22 @@ class ModernMessageBridge {
   async handleLineToDiscord(event) {
     try {
       // マッピングを確認
-      const mapping = await this.getMappingByLineUserId(event.source.userId);
+      let mapping = await this.getMappingByLineUserId(event.source.userId);
+      
+      // マッピングが存在しない場合は新規作成
       if (!mapping) {
-        return;
+        logger.info('No mapping found for LINE user, creating new mapping', {
+          lineUserId: event.source.userId
+        });
+        
+        mapping = await this.createMappingForLineUser(event.source.userId);
+        
+        if (!mapping) {
+          logger.error('Failed to create mapping for LINE user', {
+            lineUserId: event.source.userId
+          });
+          return;
+        }
       }
 
       logger.info('Processing LINE message', {
@@ -522,6 +535,59 @@ class ModernMessageBridge {
   }
 
 
+
+  /**
+   * LINEユーザー用の新規マッピングを作成
+   * @param {string} lineUserId - LINEユーザーID
+   * @returns {Promise<Object|null>} 作成されたマッピング
+   */
+  async createMappingForLineUser(lineUserId) {
+    try {
+      // 新しいDiscordチャンネルを作成
+      const channel = await this.createChannel(`new_user_${Date.now()}`);
+      
+      if (!channel) {
+        logger.error('Failed to create Discord channel for new LINE user', { lineUserId });
+        return null;
+      }
+
+      // マッピングファイルに新規エントリを追加
+      const fs = require('fs').promises;
+      const mappingPath = './mapping.json';
+      
+      const mappingData = await fs.readFile(mappingPath, 'utf8');
+      const mappings = JSON.parse(mappingData);
+      
+      const newMapping = {
+        id: `mapping_${Date.now()}`,
+        lineUserId: lineUserId,
+        discordChannelId: channel.id,
+        discordChannelName: channel.name,
+        discordGuildName: channel.guild?.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      mappings.push(newMapping);
+      
+      await fs.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
+      
+      logger.info('Created new mapping for LINE user', {
+        lineUserId,
+        discordChannelId: channel.id,
+        discordChannelName: channel.name,
+        mappingId: newMapping.id
+      });
+      
+      return newMapping;
+    } catch (error) {
+      logger.error('Failed to create mapping for LINE user', {
+        lineUserId,
+        error: error.message
+      });
+      return null;
+    }
+  }
 
   /**
    * マッピングのチャンネルIDを更新
