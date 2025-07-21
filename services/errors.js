@@ -2,6 +2,7 @@
  * 統一されたエラークラス
  * アプリケーション全体で一貫したエラーハンドリングを提供
  */
+const logger = require('../utils/logger');
 
 class ChannelManagerError extends Error {
   constructor(message, code = 'UNKNOWN') {

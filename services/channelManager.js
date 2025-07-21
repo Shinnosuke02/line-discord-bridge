@@ -1,7 +1,7 @@
 /**
  * Discordチャンネル管理サービス
  */
-const logger = require('./logger');
+const logger = require('../utils/logger');
 const config = require('../config');
 const { ChannelManagerError, ErrorCodes } = require('./errors');
 
