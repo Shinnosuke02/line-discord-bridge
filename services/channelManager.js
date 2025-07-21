@@ -4,10 +4,12 @@
 const logger = require('../utils/logger');
 const config = require('../config');
 const { ChannelManagerError, ErrorCodes } = require('./errors');
+const ModernLineService = require('./modernLineService');
 
 class ChannelManager {
-  constructor(discordClient) {
+  constructor(discordClient, lineService) {
     this.discord = discordClient;
+    this.lineService = lineService;
     this.mappings = new Map(); // メモリ内キャッシュ
     this.mappingPath = './mapping.json';
     this.isInitialized = false;
@@ -138,7 +140,6 @@ class ChannelManager {
         ErrorCodes.CHANNEL_MANAGER_NOT_INITIALIZED
       );
     }
-
     try {
       // ギルドを取得
       const guild = this.discord.guilds.cache.first();
@@ -148,7 +149,6 @@ class ChannelManager {
           ErrorCodes.NO_GUILD_AVAILABLE
         );
       }
-
       // Botの権限を確認
       const botMember = guild.members.cache.get(this.discord.user.id);
       if (!botMember || !botMember.permissions.has('ManageChannels')) {
@@ -157,13 +157,32 @@ class ChannelManager {
           ErrorCodes.INSUFFICIENT_PERMISSIONS
         );
       }
-
-      // チャンネル名を生成（グループかユーザーかを区別）
-      const isGroup = lineUserId.startsWith('C') || lineUserId.startsWith('G');
-      const channelName = isGroup 
-        ? `line-group-${Date.now()}`
-        : `line-user-${Date.now()}`;
-      
+      // --- ここから追加: LINE名取得 ---
+      let rawName = null;
+      let isGroup = lineUserId.startsWith('C') || lineUserId.startsWith('G');
+      try {
+        if (isGroup) {
+          const group = await this.lineService.getGroupSummary(lineUserId);
+          rawName = group.groupName;
+        } else {
+          const profile = await this.lineService.getUserProfile(lineUserId);
+          rawName = profile.displayName;
+        }
+      } catch (e) {
+        rawName = null;
+      }
+      // チャンネル名を整形（英数字・ハイフンのみ、32文字以内）
+      function toDiscordChannelName(name, fallback) {
+        if (!name) return fallback;
+        // 日本語・記号を除去し、英小文字・数字・ハイフンのみ
+        let ascii = name.normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/[\s_]+/g, '-').toLowerCase();
+        ascii = ascii.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+        if (!ascii) ascii = fallback;
+        return ascii.slice(0, 32);
+      }
+      const fallback = isGroup ? `line-group-${Date.now()}` : `line-user-${Date.now()}`;
+      const channelName = toDiscordChannelName(rawName, fallback);
+      // --- ここまで追加 ---
       // テキストチャンネルを作成
       const channel = await guild.channels.create({
         name: channelName,

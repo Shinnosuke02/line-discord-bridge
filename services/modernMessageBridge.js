@@ -44,7 +44,7 @@ class ModernMessageBridge {
       });
       
       // ChannelManagerを初期化
-      this.channelManager = new ChannelManager(this.discord);
+      this.channelManager = new ChannelManager(this.discord, this.lineService);
       await this.channelManager.initialize();
       
       // WebhookManagerを初期化
