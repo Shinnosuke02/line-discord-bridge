@@ -3,6 +3,7 @@
  */
 const logger = require('./logger');
 const config = require('../config');
+const { ChannelManagerError, ErrorCodes } = require('./errors');
 
 class ChannelManager {
   constructor(discordClient) {
@@ -75,7 +76,10 @@ class ChannelManager {
    */
   async getOrCreateChannel(lineUserId) {
     if (!this.isInitialized) {
-      throw new Error('ChannelManager not initialized');
+      throw new ChannelManagerError(
+        'ChannelManager not initialized',
+        ErrorCodes.CHANNEL_MANAGER_NOT_INITIALIZED
+      );
     }
 
     // 既存マッピングを確認
@@ -129,20 +133,29 @@ class ChannelManager {
    */
   async createNewChannel(lineUserId) {
     if (!this.isInitialized) {
-      throw new Error('ChannelManager not initialized');
+      throw new ChannelManagerError(
+        'ChannelManager not initialized',
+        ErrorCodes.CHANNEL_MANAGER_NOT_INITIALIZED
+      );
     }
 
     try {
       // ギルドを取得
       const guild = this.discord.guilds.cache.first();
       if (!guild) {
-        throw new Error('No guild available for channel creation');
+        throw new ChannelManagerError(
+          'No guild available for channel creation',
+          ErrorCodes.NO_GUILD_AVAILABLE
+        );
       }
 
       // Botの権限を確認
       const botMember = guild.members.cache.get(this.discord.user.id);
       if (!botMember || !botMember.permissions.has('ManageChannels')) {
-        throw new Error('Bot does not have permission to create channels');
+        throw new ChannelManagerError(
+          'Bot does not have permission to create channels',
+          ErrorCodes.INSUFFICIENT_PERMISSIONS
+        );
       }
 
       // チャンネル名を生成

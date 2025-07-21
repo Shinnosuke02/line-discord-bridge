@@ -3,7 +3,6 @@ const config = require('../config');
 const logger = require('../utils/logger');
 const ModernLineService = require('./modernLineService');
 const ModernMediaService = require('./modernMediaService');
-const ModernFileProcessor = require('./modernFileProcessor');
 const ChannelManager = require('./channelManager');
 
 /**
@@ -22,14 +21,11 @@ class ModernMessageBridge {
     
     this.lineService = new ModernLineService();
     this.mediaService = new ModernMediaService();
-    this.fileProcessor = new ModernFileProcessor();
     this.channelManager = null; // Discordログイン後に初期化
     
-    // レート制限対策
-    this.messageQueue = [];
-    this.isProcessingQueue = false;
-    this.lastMessageTime = 0;
-    this.minMessageInterval = 1000; // 1秒間隔
+    // 初期化中のメッセージキュー
+    this.pendingMessages = [];
+    this.isInitialized = false;
     
     this.setupEventHandlers();
   }
@@ -48,6 +44,12 @@ class ModernMessageBridge {
       // ChannelManagerを初期化
       this.channelManager = new ChannelManager(this.discord);
       await this.channelManager.initialize();
+      
+      // 初期化完了
+      this.isInitialized = true;
+      
+      // 保留中のメッセージを処理
+      await this.processPendingMessages();
     });
 
     // Discordメッセージ受信
@@ -85,9 +87,10 @@ class ModernMessageBridge {
       return;
     }
 
-    // ChannelManagerが初期化されていない場合は待機
-    if (!this.channelManager || !this.channelManager.isInitialized) {
-      logger.warn('ChannelManager not initialized, skipping message', { messageId: message.id });
+    // 初期化されていない場合はキューに追加
+    if (!this.isInitialized || !this.channelManager || !this.channelManager.isInitialized) {
+      logger.info('System not initialized, queuing Discord message', { messageId: message.id });
+      this.pendingMessages.push({ type: 'discord', message });
       return;
     }
 
@@ -124,11 +127,12 @@ class ModernMessageBridge {
    */
   async handleLineToDiscord(event) {
     try {
-      // ChannelManagerが初期化されていない場合は待機
-      if (!this.channelManager || !this.channelManager.isInitialized) {
-        logger.warn('ChannelManager not initialized, skipping LINE message', { 
+      // 初期化されていない場合はキューに追加
+      if (!this.isInitialized || !this.channelManager || !this.channelManager.isInitialized) {
+        logger.info('System not initialized, queuing LINE message', { 
           lineUserId: event.source.userId 
         });
+        this.pendingMessages.push({ type: 'line', event });
         return;
       }
 
@@ -454,6 +458,37 @@ class ModernMessageBridge {
 
 
 
+
+  /**
+   * 保留中のメッセージを処理
+   */
+  async processPendingMessages() {
+    if (this.pendingMessages.length === 0) {
+      return;
+    }
+
+    logger.info('Processing pending messages', { count: this.pendingMessages.length });
+
+    const messages = [...this.pendingMessages];
+    this.pendingMessages = [];
+
+    for (const pendingMessage of messages) {
+      try {
+        if (pendingMessage.type === 'discord') {
+          await this.handleDiscordToLine(pendingMessage.message);
+        } else if (pendingMessage.type === 'line') {
+          await this.handleLineToDiscord(pendingMessage.event);
+        }
+      } catch (error) {
+        logger.error('Failed to process pending message', {
+          type: pendingMessage.type,
+          error: error.message
+        });
+      }
+    }
+
+    logger.info('Pending messages processed', { processedCount: messages.length });
+  }
 
   /**
    * ブリッジを停止

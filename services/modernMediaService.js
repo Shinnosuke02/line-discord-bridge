@@ -4,7 +4,6 @@ const { Client: LineClient } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
 const ModernFileProcessor = require('./modernFileProcessor');
-const ModernLineService = require('./modernLineService');
 
 /**
  * 近代化されたメディア処理サービス
@@ -14,7 +13,6 @@ class ModernMediaService {
   constructor() {
     this.lineClient = new LineClient(config.line);
     this.fileProcessor = new ModernFileProcessor();
-    this.lineService = new ModernLineService();
   }
 
   /**
