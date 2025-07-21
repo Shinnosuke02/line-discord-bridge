@@ -35,25 +35,33 @@ cd line-discord-bridge
 npm install
 ```
 
-### 3. 設定ファイルの作成
+### 3. 環境変数ファイル（.env）の作成
 
-`config.js`を作成し、以下の内容を設定してください：
+**重要：APIキーやシークレットなどの値は`.env`ファイルで管理してください。`config.js`に直接記載しないでください。**
 
-```javascript
-module.exports = {
-  line: {
-    channelId: 'YOUR_LINE_CHANNEL_ID',
-    channelSecret: 'YOUR_LINE_CHANNEL_SECRET',
-    channelAccessToken: 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'
-  },
-  discord: {
-    token: 'YOUR_DISCORD_BOT_TOKEN'
-  },
-  port: process.env.PORT || 3000
-};
+`.env`ファイル例：
+
+```env
+LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LINE_CHANNEL_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DISCORD_BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DISCORD_GUILD_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+PORT=3000
+WEBHOOK_ENABLED=true
+WEBHOOK_NAME=LINE Bridge
+LOG_LEVEL=info
 ```
 
-`mapping.json`も作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
+- `.env`ファイルはリポジトリには含めず、各サーバで個別に作成してください。
+- `.env`の内容は`config.js`経由で自動的に読み込まれます。
+
+### 4. 設定ファイルの確認
+
+`config.js`は環境変数を参照する形になっています。値を直接書かず、必ず`.env`で管理してください。
+
+### 5. マッピングファイルの作成
+
+`mapping.json`を作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
 
 ```json
 [
@@ -64,7 +72,7 @@ module.exports = {
 ]
 ```
 
-### 4. ファイアウォール（iptables）設定例
+### 6. ファイアウォール（iptables）設定例
 
 ```bash
 # 80, 443, 22（SSH）を許可
@@ -78,7 +86,7 @@ sudo apt install -y iptables-persistent
 sudo netfilter-persistent save
 ```
 
-### 5. Nginxリバースプロキシ設定
+### 7. Nginxリバースプロキシ設定
 
 - `/etc/nginx/sites-available/line-discord-bridge` を作成し、下記を記載
 
@@ -121,13 +129,13 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### 6. Let's EncryptでSSL証明書取得
+### 8. Let's EncryptでSSL証明書取得
 
 ```bash
 sudo certbot --nginx -d example.com
 ```
 
-### 7. アプリ起動
+### 9. アプリ起動
 
 ```bash
 pm2 start ecosystem.config.js
@@ -189,6 +197,7 @@ pm2 save
 - Node.jsアプリのポート（例: 3000）は外部公開しない（Nginx経由のみアクセス）
 - iptablesやUFWで不要なポートは閉じる
 - Let's Encrypt証明書は自動更新設定を推奨
+- `.env`ファイルは必ず`.gitignore`に含め、公開しないこと
 
 ---
 
