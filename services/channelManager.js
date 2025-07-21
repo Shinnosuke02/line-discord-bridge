@@ -9,7 +9,16 @@ class ChannelManager {
     this.discord = discordClient;
     this.mappings = new Map(); // メモリ内キャッシュ
     this.mappingPath = './mapping.json';
-    this.loadMappings();
+    this.isInitialized = false;
+  }
+
+  /**
+   * 初期化（非同期）
+   */
+  async initialize() {
+    await this.loadMappings();
+    this.isInitialized = true;
+    logger.info('ChannelManager initialized successfully');
   }
 
   /**
@@ -65,6 +74,10 @@ class ChannelManager {
    * @returns {Promise<Object>} チャンネル情報
    */
   async getOrCreateChannel(lineUserId) {
+    if (!this.isInitialized) {
+      throw new Error('ChannelManager not initialized');
+    }
+
     // 既存マッピングを確認
     let mapping = this.mappings.get(lineUserId);
     
@@ -81,6 +94,10 @@ class ChannelManager {
           });
           // チャンネルが存在しない場合は新規作成
         } else {
+          logger.error('Failed to fetch Discord channel', {
+            channelId: mapping.discordChannelId,
+            error: error.message
+          });
           throw error;
         }
       }
@@ -96,6 +113,11 @@ class ChannelManager {
    * @returns {Promise<string|null>} LINEユーザーID
    */
   async getLineUserId(discordChannelId) {
+    if (!this.isInitialized) {
+      logger.warn('ChannelManager not initialized, returning null for lineUserId');
+      return null;
+    }
+    
     const mapping = this.mappings.get(discordChannelId);
     return mapping ? mapping.lineUserId : null;
   }
@@ -106,6 +128,10 @@ class ChannelManager {
    * @returns {Promise<Object>} 作成されたマッピング
    */
   async createNewChannel(lineUserId) {
+    if (!this.isInitialized) {
+      throw new Error('ChannelManager not initialized');
+    }
+
     try {
       // ギルドを取得
       const guild = this.discord.guilds.cache.first();
@@ -158,7 +184,8 @@ class ChannelManager {
     } catch (error) {
       logger.error('Failed to create new channel', {
         lineUserId,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
       throw error;
     }

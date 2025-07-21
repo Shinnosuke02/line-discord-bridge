@@ -39,7 +39,7 @@ class ModernMessageBridge {
    */
   setupEventHandlers() {
     // Discord準備完了
-    this.discord.once('ready', () => {
+    this.discord.once('ready', async () => {
       logger.info('Modern Discord client is ready', {
         user: this.discord.user.tag,
         guilds: this.discord.guilds.cache.size
@@ -47,6 +47,7 @@ class ModernMessageBridge {
       
       // ChannelManagerを初期化
       this.channelManager = new ChannelManager(this.discord);
+      await this.channelManager.initialize();
     });
 
     // Discordメッセージ受信
@@ -85,7 +86,7 @@ class ModernMessageBridge {
     }
 
     // ChannelManagerが初期化されていない場合は待機
-    if (!this.channelManager) {
+    if (!this.channelManager || !this.channelManager.isInitialized) {
       logger.warn('ChannelManager not initialized, skipping message', { messageId: message.id });
       return;
     }
@@ -124,7 +125,7 @@ class ModernMessageBridge {
   async handleLineToDiscord(event) {
     try {
       // ChannelManagerが初期化されていない場合は待機
-      if (!this.channelManager) {
+      if (!this.channelManager || !this.channelManager.isInitialized) {
         logger.warn('ChannelManager not initialized, skipping LINE message', { 
           lineUserId: event.source.userId 
         });
