@@ -174,8 +174,8 @@ class ChannelManager {
       // チャンネル名を整形（英数字・ハイフンのみ、32文字以内）
       function toDiscordChannelName(name, fallback) {
         if (!name) return fallback;
-        // 日本語・記号を除去し、英小文字・数字・ハイフンのみ
-        let ascii = name.normalize('NFKD').replace(/[^\w\s-]/g, '').replace(/[\s_]+/g, '-').toLowerCase();
+        // 日本語・英数字・ハイフンのみ許可（記号や絵文字は除去）
+        let ascii = name.normalize('NFKC').replace(/[^\p{L}\p{N}-]/gu, '').replace(/\s+/g, '-').toLowerCase();
         ascii = ascii.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
         if (!ascii) ascii = fallback;
         return ascii.slice(0, 32);
