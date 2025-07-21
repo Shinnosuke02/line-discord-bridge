@@ -162,7 +162,24 @@ class ModernMessageBridge {
 
       // 表示名を取得
       const displayName = await this.lineService.getDisplayName(event);
-      
+
+      // --- ここから追加: LINEアイコン取得 ---
+      let avatarUrl = null;
+      try {
+        // グループの場合はグループメンバープロフィール、個人の場合はユーザープロフィール
+        if (event.source.groupId) {
+          const memberProfile = await this.lineService.getGroupMemberProfile(event.source.groupId, event.source.userId);
+          avatarUrl = memberProfile.pictureUrl || null;
+        } else {
+          const userProfile = await this.lineService.getUserProfile(event.source.userId);
+          avatarUrl = userProfile.pictureUrl || null;
+        }
+      } catch (e) {
+        logger.debug('Failed to get LINE profile pictureUrl', { error: e.message });
+        avatarUrl = null; // 失敗してもnullで続行
+      }
+      // --- ここまで追加 ---
+
       // メッセージタイプに応じて処理
       let discordMessage = null;
       
@@ -262,7 +279,7 @@ class ModernMessageBridge {
         await this.sendToDiscord(mapping.discordChannelId, cleanMessage, {
           useWebhook: useWebhook,
           username: displayName,
-          avatarUrl: null // 必要に応じてLINEユーザーのアバターURLを設定
+          avatarUrl: avatarUrl // ここでLINEアイコンを渡す
         });
         
         // グループ名称を取得
