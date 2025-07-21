@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const ModernLineService = require('./modernLineService');
 const ModernMediaService = require('./modernMediaService');
 const ChannelManager = require('./channelManager');
+const WebhookManager = require('./webhookManager');
 
 /**
  * 近代化されたメッセージブリッジ
@@ -22,6 +23,7 @@ class ModernMessageBridge {
     this.lineService = new ModernLineService();
     this.mediaService = new ModernMediaService();
     this.channelManager = null; // Discordログイン後に初期化
+    this.webhookManager = null; // Discordログイン後に初期化
     
     // 初期化中のメッセージキュー
     this.pendingMessages = [];
@@ -44,6 +46,10 @@ class ModernMessageBridge {
       // ChannelManagerを初期化
       this.channelManager = new ChannelManager(this.discord);
       await this.channelManager.initialize();
+      
+      // WebhookManagerを初期化
+      this.webhookManager = new WebhookManager(this.discord);
+      await this.webhookManager.initialize();
       
       // 初期化完了
       this.isInitialized = true;
@@ -245,9 +251,16 @@ class ModernMessageBridge {
           };
       }
 
-      // Discordに送信
+      // Discordに送信（Webhookを使用してLINEユーザー名で表示）
       if (discordMessage) {
-        await this.sendToDiscord(mapping.discordChannelId, discordMessage);
+        // メッセージからユーザー名部分を除去（Webhookで表示するため）
+        const cleanMessage = this.removeDisplayNameFromMessage(discordMessage, displayName);
+        
+        await this.sendToDiscord(mapping.discordChannelId, cleanMessage, {
+          useWebhook: true,
+          username: displayName,
+          avatarUrl: null // 必要に応じてLINEユーザーのアバターURLを設定
+        });
         
         // グループ名称を取得
         let groupName = null;
@@ -282,28 +295,126 @@ class ModernMessageBridge {
    * Discordにメッセージを送信
    * @param {string} channelId - DiscordチャンネルID
    * @param {Object} message - メッセージオブジェクト
+   * @param {Object} options - 送信オプション
+   * @param {string} options.username - 表示するユーザー名（Webhook使用時）
+   * @param {string} options.avatarUrl - アバターURL（Webhook使用時）
+   * @param {boolean} options.useWebhook - Webhookを使用するかどうか
    */
-  async sendToDiscord(channelId, message) {
+  async sendToDiscord(channelId, message, options = {}) {
+    try {
+      // Webhookオプションが有効で、ユーザー名が指定されている場合
+      if (options.useWebhook && options.username && this.webhookManager) {
+        return await this.sendViaWebhook(channelId, message, options.username, options.avatarUrl);
+      } else {
+        return await this.sendAsBot(channelId, message);
+      }
+    } catch (error) {
+      logger.error('Failed to send message to Discord', {
+        channelId,
+        useWebhook: options.useWebhook,
+        error: error.message
+      });
+      
+      // Webhookが失敗した場合はBot送信にフォールバック
+      if (options.useWebhook) {
+        logger.info('Falling back to bot message', { channelId });
+        return await this.sendAsBot(channelId, message);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Webhookを使用してメッセージを送信
+   * @param {string} channelId - チャンネルID
+   * @param {Object} message - メッセージオブジェクト
+   * @param {string} username - 表示するユーザー名
+   * @param {string} avatarUrl - アバターURL
+   */
+  async sendViaWebhook(channelId, message, username, avatarUrl = null) {
+    try {
+      const sentMessage = await this.webhookManager.sendMessage(
+        channelId, 
+        message, 
+        username, 
+        avatarUrl
+      );
+
+      logger.info('Message sent via webhook', {
+        channelId,
+        messageId: sentMessage.id,
+        username,
+        contentLength: message.content?.length || 0,
+        fileCount: message.files?.length || 0
+      });
+
+      return sentMessage;
+    } catch (error) {
+      logger.error('Failed to send message via webhook', {
+        channelId,
+        username,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * メッセージからユーザー名部分を除去
+   * @param {Object} message - メッセージオブジェクト
+   * @param {string} displayName - 表示名
+   * @returns {Object} クリーンなメッセージオブジェクト
+   */
+  removeDisplayNameFromMessage(message, displayName) {
+    const cleanMessage = { ...message };
+    
+    if (cleanMessage.content) {
+      // "**ユーザー名**: メッセージ" の形式を除去
+      const namePattern = new RegExp(`^\\*\\*${displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*:\\s*`, 'i');
+      cleanMessage.content = cleanMessage.content.replace(namePattern, '');
+      
+      // "**ユーザー名** sent a ..." の形式を除去
+      const sentPattern = new RegExp(`^\\*\\*${displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*\\s+sent\\s+a\\s+.*?message\\.?\\s*`, 'i');
+      cleanMessage.content = cleanMessage.content.replace(sentPattern, '');
+      
+      // 空になった場合は適切なメッセージを設定
+      if (!cleanMessage.content.trim()) {
+        cleanMessage.content = 'メッセージを送信しました';
+      }
+    }
+    
+    return cleanMessage;
+  }
+
+  /**
+   * Botとしてメッセージを送信（フォールバック用）
+   * @param {string} channelId - チャンネルID
+   * @param {Object} message - メッセージオブジェクト
+   */
+  async sendAsBot(channelId, message) {
     try {
       const channel = await this.discord.channels.fetch(channelId);
       
-      // シンプルな送信
       const sentMessage = await channel.send({
         content: message.content || '',
         files: message.files || []
       });
 
-      logger.info('Message sent to Discord', {
+      logger.info('Message sent as bot', {
         channelId: channel.id,
         messageId: sentMessage.id,
         contentLength: message.content?.length || 0,
         fileCount: message.files?.length || 0
       });
+
+      return sentMessage;
     } catch (error) {
-      logger.error('Failed to send message to Discord', {
+      logger.error('Failed to send message as bot', {
         channelId,
         error: error.message
       });
+      throw error;
     }
   }
 
@@ -498,6 +609,16 @@ class ModernMessageBridge {
    */
   async stop() {
     try {
+      // WebhookManagerを停止
+      if (this.webhookManager) {
+        await this.webhookManager.stop();
+      }
+      
+      // ChannelManagerを停止
+      if (this.channelManager) {
+        await this.channelManager.stop();
+      }
+      
       await this.discord.destroy();
       logger.info('Modern MessageBridge stopped successfully');
     } catch (error) {

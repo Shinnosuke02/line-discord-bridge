@@ -255,6 +255,22 @@ class ChannelManager {
     
     return mappings;
   }
+
+  /**
+   * ChannelManagerを停止
+   */
+  async stop() {
+    try {
+      logger.info('Stopping ChannelManager');
+      this.mappings.clear();
+      this.isInitialized = false;
+      logger.info('ChannelManager stopped successfully');
+    } catch (error) {
+      logger.error('Failed to stop ChannelManager', {
+        error: error.message
+      });
+    }
+  }
 }
 
 module.exports = ChannelManager; 
