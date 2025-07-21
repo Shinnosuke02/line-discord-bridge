@@ -414,7 +414,7 @@ class ModernMediaService {
   }
 
   /**
-   * URLを検出して埋め込み画像を処理（外部URL使用版）
+   * URLを検出して送信（シンプル版）
    * @param {string} text - テキスト
    * @param {string} userId - LINEユーザーID
    * @returns {Promise<Array>} 処理結果の配列
@@ -426,59 +426,21 @@ class ModernMediaService {
     
     logger.info('Processing URLs in text', {
       textLength: text.length,
-      urlCount: urls.length,
-      urls: urls.map(url => url.substring(0, 50) + '...')
+      urlCount: urls.length
     });
     
     for (const url of urls) {
       try {
-        // Tenor GIFの特別処理
-        if (url.includes('tenor.com') && url.includes('gif-')) {
-          logger.info('Processing Tenor GIF URL', { url: url.substring(0, 100) + '...' });
-          
-          try {
-            // Tenor GIFはURLとして送信（シンプルな方法）
-            await this.lineService.pushMessage(userId, {
-              type: 'text',
-              text: url
-            });
-            
-            logger.info('Tenor GIF sent as URL', {
-              url: url.substring(0, 100) + '...'
-            });
-            
-            results.push({ success: true, type: 'gif_url', url });
-          } catch (gifError) {
-            logger.error('Failed to send Tenor GIF URL', {
-              url: url.substring(0, 100) + '...',
-              error: gifError.message
-            });
-            results.push({ success: false, type: 'gif_error', url });
-          }
-          continue;
-        }
+        // すべてのURLをシンプルに送信
+        await this.lineService.pushMessage(userId, {
+          type: 'text',
+          text: url
+        });
         
-        // 画像URLかどうかをチェック
-        if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
-          logger.info('Processing image URL', { url: url.substring(0, 100) + '...' });
-          await this.lineService.sendImageByUrl(userId, url);
-          results.push({ success: true, type: 'image', url });
-        } else if (url.match(/\.(mp4|mov|avi|wmv|flv|webm)$/i)) {
-          logger.info('Processing video URL', { url: url.substring(0, 100) + '...' });
-          await this.lineService.sendVideoByUrl(userId, url);
-          results.push({ success: true, type: 'video', url });
-        } else {
-          // その他のURLはテキストとして送信
-          logger.info('Processing general URL', { url: url.substring(0, 100) + '...' });
-          await this.lineService.pushMessage(userId, {
-            type: 'text',
-            text: `**リンク**: ${url}`
-          });
-          results.push({ success: true, type: 'url', url });
-        }
+        results.push({ success: true, type: 'url', url });
       } catch (error) {
-        logger.error('Failed to process URL', { url: url.substring(0, 100) + '...', error: error.message });
-        results.push({ success: false, reason: 'download_error', url });
+        logger.error('Failed to send URL', { url: url.substring(0, 100) + '...', error: error.message });
+        results.push({ success: false, type: 'error', url });
       }
     }
     

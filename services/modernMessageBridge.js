@@ -262,9 +262,8 @@ class ModernMessageBridge {
         logger.info('Channel not found, creating new channel', { channelId });
         channel = await this.createChannel(channelId);
         
-        // チャンネル作成に失敗した場合
         if (!channel) {
-          logger.error('Failed to create channel, cannot send message', { channelId });
+          logger.error('Failed to create channel', { channelId });
           return;
         }
       } else {
@@ -274,57 +273,22 @@ class ModernMessageBridge {
     }
 
     try {
-      // メッセージ内容のチェック（ファイルがある場合はcontentが空でもOK）
-      if (!message.content || message.content.trim() === '') {
-        if (!message.files || message.files.length === 0) {
-          logger.warn('Attempted to send empty message to Discord', {
-            channelId: channel.id,
-            hasFiles: false
-          });
-          return;
-        } else {
-          // ファイルがある場合は空のcontentでも送信
-          logger.debug('Sending file-only message to Discord', {
-            channelId: channel.id,
-            fileCount: message.files.length
-          });
-        }
-      }
+      // シンプルな送信
+      const sentMessage = await channel.send({
+        content: message.content || '',
+        files: message.files || []
+      });
 
-      let sentMessage;
-      
-      if (message.files && message.files.length > 0) {
-        logger.info('Preparing to send files to Discord', {
-          channelId: channel.id,
-          fileCount: message.files.length,
-          fileNames: message.files.map(f => f.name || f.attachment?.name || 'unknown')
-        });
-        
-        // ファイル付きメッセージを送信
-        sentMessage = await channel.send({
-          content: message.content || '',
-          files: message.files
-        });
-      } else {
-        // テキストのみのメッセージを送信
-        sentMessage = await channel.send(message.content || '');
-      }
-
-      logger.info('Message sent to Discord successfully', {
+      logger.info('Message sent to Discord', {
         channelId: channel.id,
-        channelId: sentMessage.id,
-        channelName: channel.name,
-        guildName: channel.guild?.name,
+        messageId: sentMessage.id,
         contentLength: message.content?.length || 0,
-        hasFiles: !!(message.files && message.files.length > 0),
-        fileCount: message.files?.length || 0,
-        sentMessageAttachments: sentMessage.attachments?.size || 0
+        fileCount: message.files?.length || 0
       });
     } catch (error) {
       logger.error('Failed to send message to Discord', {
         channelId,
-        error: error.message,
-        stack: error.stack,
+        error: error.message
       });
     }
   }
@@ -334,53 +298,7 @@ class ModernMessageBridge {
    * @param {Object} messageData - メッセージデータ
    */
   async queueMessage(messageData) {
-    this.messageQueue.push(messageData);
-    
-    if (!this.isProcessingQueue) {
-      await this.processMessageQueue();
-    }
-  }
-
-  /**
-   * メッセージキューを処理
-   */
-  async processMessageQueue() {
-    if (this.isProcessingQueue || this.messageQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-
-    try {
-      while (this.messageQueue.length > 0) {
-        const messageData = this.messageQueue.shift();
-        
-        // レート制限対策
-        const now = Date.now();
-        const timeSinceLastMessage = now - this.lastMessageTime;
-        
-        if (timeSinceLastMessage < this.minMessageInterval) {
-          await new Promise(resolve => 
-            setTimeout(resolve, this.minMessageInterval - timeSinceLastMessage)
-          );
-        }
-
-        try {
-          if (messageData.type === 'discord_to_line') {
-            await this.processDiscordToLineMessage(messageData);
-          }
-        } catch (error) {
-          logger.error('Failed to process queued message', {
-            type: messageData.type,
-            error: error.message
-          });
-        }
-
-        this.lastMessageTime = Date.now();
-      }
-    } finally {
-      this.isProcessingQueue = false;
-    }
+    await this.processDiscordToLineMessage(messageData);
   }
 
   /**
@@ -461,11 +379,10 @@ class ModernMessageBridge {
   async processAttachments(attachments, lineUserId) {
     try {
       const attachmentArray = Array.from(attachments.values());
-      const results = await this.mediaService.processDiscordAttachments(attachmentArray, lineUserId);
+      await this.mediaService.processDiscordAttachments(attachmentArray, lineUserId);
       
       logger.info('Discord attachments processed', {
-        attachmentCount: attachmentArray.length,
-        results: results.map(r => ({ success: r.success, type: r.type }))
+        attachmentCount: attachmentArray.length
       });
     } catch (error) {
       logger.error('Failed to process Discord attachments', {
