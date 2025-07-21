@@ -6,6 +6,7 @@ LINEを使いたくなさ過ぎて、LINEユーザーとDiscordでやりとり�
 ---
 必要なもの
 - LINE公式アカウント（LINE Messaging API利用のために必要）
+- 独自ドメイン（Let's Encryptを利用したSSL通信のため。運用はサブドメイン設定で問題なし）
 
 ---
 
