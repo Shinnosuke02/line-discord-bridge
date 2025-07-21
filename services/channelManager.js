@@ -70,8 +70,8 @@ class ChannelManager {
   }
 
   /**
-   * LINEユーザーIDからチャンネルを取得（存在しない場合は作成）
-   * @param {string} lineUserId - LINEユーザーID
+   * LINEユーザーIDまたはグループIDからチャンネルを取得（存在しない場合は作成）
+   * @param {string} lineUserId - LINEユーザーIDまたはグループID
    * @returns {Promise<Object>} チャンネル情報
    */
   async getOrCreateChannel(lineUserId) {
@@ -158,8 +158,11 @@ class ChannelManager {
         );
       }
 
-      // チャンネル名を生成
-      const channelName = `line-bridge-${Date.now()}`;
+      // チャンネル名を生成（グループかユーザーかを区別）
+      const isGroup = lineUserId.startsWith('C') || lineUserId.startsWith('G');
+      const channelName = isGroup 
+        ? `line-group-${Date.now()}`
+        : `line-user-${Date.now()}`;
       
       // テキストチャンネルを作成
       const channel = await guild.channels.create({
@@ -172,6 +175,7 @@ class ChannelManager {
       const newMapping = {
         id: `mapping_${Date.now()}`,
         lineUserId: lineUserId,
+        lineUserType: isGroup ? 'group' : 'user',
         discordChannelId: channel.id,
         discordChannelName: channel.name,
         discordGuildName: guild.name,

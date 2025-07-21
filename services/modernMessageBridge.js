@@ -102,6 +102,7 @@ class ModernMessageBridge {
 
     logger.info('Processing Discord message', {
       channelId: message.channelId,
+      lineUserId: lineUserId,
       authorName: message.author.username,
       summary: this.summarizeMessage(message)
     });
@@ -136,11 +137,13 @@ class ModernMessageBridge {
         return;
       }
 
-      // チャンネルを取得または作成
-      const mapping = await this.channelManager.getOrCreateChannel(event.source.userId);
+      // チャンネルを取得または作成（グループIDを優先）
+      const sourceId = event.source.groupId || event.source.userId;
+      const mapping = await this.channelManager.getOrCreateChannel(sourceId);
       if (!mapping) {
         logger.error('Failed to get or create channel for LINE user', {
-          lineUserId: event.source.userId
+          lineUserId: event.source.userId,
+          sourceId: sourceId
         });
         return;
       }
