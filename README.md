@@ -1,6 +1,7 @@
 # LINE-Discord Bridge (Modern Version 2.0.0)
 
-LINE Bot API v7対応の近代化されたLINE-Discordブリッジアプリケーションです。
+LINEを使いたくなさ過ぎて、LINEユーザーとDiscordでやりとり出来るアプリ作りました。
+ただ、LINEを最初の「公式アカウント」作成のために、一度は使わないとならない…。
 
 ---
 
