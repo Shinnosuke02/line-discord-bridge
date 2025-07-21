@@ -326,88 +326,81 @@ class ModernMediaService {
    */
   async processDiscordAttachments(attachments, userId) {
     const results = [];
-    
     for (const attachment of attachments) {
       try {
+        // ファイルを一度ダウンロード
+        const content = await this.downloadFile(attachment.url, attachment.name);
         // ファイルサイズチェック（LINE制限: 10MB）
-        if (attachment.size > 10 * 1024 * 1024) {
-          await this.lineService.pushMessage(userId, {
+        if (!content || content.length > 10 * 1024 * 1024) {
+          await this.lineClient.pushMessage(userId, {
             type: 'text',
-            text: `**ファイル**: ${attachment.name} (サイズが大きすぎます - 10MB以下にしてください)`,
+            text: `**ファイル**: ${attachment.name} (サイズが大きすぎます - 10MB以下にしてください)`
           });
           results.push({ success: false, reason: 'file_too_large' });
           continue;
         }
-
-        // Discord CDN URLを使用してLINEに送信
-        logger.info('Processing Discord attachment with CDN URL', {
-          filename: attachment.name,
-          contentType: attachment.contentType,
-          size: attachment.size,
-          url: attachment.url.substring(0, 100) + '...'
-        });
-
-        try {
-          if (attachment.contentType?.startsWith('image/')) {
-            await this.lineService.sendImageByUrl(userId, attachment.url, attachment.url);
+        // ファイルタイプに応じて処理
+        if (attachment.contentType?.startsWith('image/')) {
+          try {
+            await this.lineClient.sendImage(userId, content, attachment.name);
             results.push({ success: true, type: 'image', filename: attachment.name });
-          } else if (attachment.contentType?.startsWith('video/')) {
-            await this.lineService.sendVideoByUrl(userId, attachment.url, attachment.url);
-            results.push({ success: true, type: 'video', filename: attachment.name });
-          } else if (attachment.contentType?.startsWith('audio/')) {
-            await this.lineService.sendAudioByUrl(userId, attachment.url);
-            results.push({ success: true, type: 'audio', filename: attachment.name });
-          } else {
-            // その他のファイルは情報付きで送信
-            const fileInfo = [
-              `**ファイル**: ${attachment.name}`,
-              `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
-              `タイプ: ${attachment.contentType || '不明'}`,
-              `URL: ${attachment.url}`
-            ].join('\n');
-            
-            await this.lineService.pushMessage(userId, {
+            logger.info('Successfully sent image to LINE', { userId, filename: attachment.name });
+          } catch (imageError) {
+            logger.error('Failed to send image to LINE', { userId, filename: attachment.name, error: imageError.message });
+            await this.lineClient.pushMessage(userId, {
               type: 'text',
-              text: fileInfo
+              text: `**画像**: ${attachment.name} (送信に失敗しました)`
             });
-            results.push({ success: true, type: 'url', filename: attachment.name });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
           }
-        } catch (error) {
-          logger.error('Failed to send Discord attachment to LINE', {
-            filename: attachment.name,
-            error: error.message
-          });
-          
-          // フォールバック: ファイル情報を表示
+        } else if (attachment.contentType?.startsWith('video/')) {
+          try {
+            await this.lineClient.sendVideo(userId, content, attachment.name);
+            results.push({ success: true, type: 'video', filename: attachment.name });
+            logger.info('Successfully sent video to LINE', { userId, filename: attachment.name });
+          } catch (videoError) {
+            logger.error('Failed to send video to LINE', { userId, filename: attachment.name, error: videoError.message });
+            await this.lineClient.pushMessage(userId, {
+              type: 'text',
+              text: `**動画**: ${attachment.name} (送信に失敗しました)`
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
+          }
+        } else if (attachment.contentType?.startsWith('audio/')) {
+          try {
+            await this.lineClient.sendAudio(userId, content, attachment.name);
+            results.push({ success: true, type: 'audio', filename: attachment.name });
+            logger.info('Successfully sent audio to LINE', { userId, filename: attachment.name });
+          } catch (audioError) {
+            logger.error('Failed to send audio to LINE', { userId, filename: attachment.name, error: audioError.message });
+            await this.lineClient.pushMessage(userId, {
+              type: 'text',
+              text: `**音声**: ${attachment.name} (送信に失敗しました)`
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
+          }
+        } else {
+          // その他のファイルは情報付きで送信
           const fileInfo = [
             `**ファイル**: ${attachment.name}`,
-            `サイズ: ${(attachment.size / 1024).toFixed(1)} KB`,
-            `タイプ: ${attachment.contentType || '不明'}`,
-            `URL: ${attachment.url}`,
-            `(送信に失敗しました: ${error.message})`
+            `サイズ: ${(content.length / 1024).toFixed(1)} KB`,
+            `タイプ: ${attachment.contentType || '不明'}`
           ].join('\n');
-          
-          await this.lineService.pushMessage(userId, {
+          await this.lineClient.pushMessage(userId, {
             type: 'text',
             text: fileInfo
           });
-          results.push({ success: false, reason: 'send_error', filename: attachment.name });
+          results.push({ success: true, type: 'url', filename: attachment.name });
         }
-        
-
       } catch (error) {
-        logger.error('Failed to process Discord attachment', { 
-          attachment: attachment.name, 
-          error: error.message 
-        });
-        await this.lineService.pushMessage(userId, {
+        logger.error('Failed to process Discord attachment', { attachment: attachment.name, error: error.message });
+        await this.lineClient.pushMessage(userId, {
           type: 'text',
-          text: `**ファイル**: ${attachment.name} (処理に失敗しました)`,
+          text: `**ファイル**: ${attachment.name} (処理に失敗しました)`
         });
         results.push({ success: false, reason: 'processing_error', filename: attachment.name });
       }
     }
-    
     return results;
   }
 
@@ -430,7 +423,7 @@ class ModernMediaService {
     for (const url of urls) {
       try {
         // すべてのURLをシンプルに送信
-        await this.lineService.pushMessage(userId, {
+        await this.lineClient.pushMessage(userId, {
           type: 'text',
           text: url
         });
