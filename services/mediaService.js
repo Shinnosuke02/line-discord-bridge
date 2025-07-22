@@ -15,7 +15,12 @@ cloudinary.config({
   api_secret: config.cloudinary.apiSecret,
 });
 
-// Cloudinary画像アップロードをPromiseでラップ
+// 画像ダウンロード
+async function downloadImage(url, filename) {
+  const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+  return Buffer.from(response.data);
+}
+// Cloudinaryアップロード
 function uploadToCloudinary(buffer, filename) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -26,16 +31,42 @@ function uploadToCloudinary(buffer, filename) {
         overwrite: true
       },
       (error, result) => {
-        if (error) {
-          logger.error('Cloudinary upload failed', { filename, error: error.message, details: error });
-          return reject(error);
-        }
+        if (error) return reject(error);
         logger.info('Cloudinary upload URL', { url: result.secure_url });
         resolve(result.secure_url);
       }
     );
     stream.end(buffer);
   });
+}
+// LINE送信
+async function sendImageToLine(userId, imageUrl, lineService) {
+  if (typeof lineService.sendImageByUrl === 'function') {
+    await lineService.sendImageByUrl(userId, imageUrl);
+  } else {
+    await lineService.pushMessage(userId, {
+      type: 'image',
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+    });
+  }
+}
+// 添付画像処理のメイン
+async function processDiscordImageAttachment(attachment, userId, lineService) {
+  try {
+    const buffer = await downloadImage(attachment.url, attachment.name);
+    const cloudUrl = await uploadToCloudinary(buffer, attachment.name);
+    await sendImageToLine(userId, cloudUrl, lineService);
+    logger.info('画像送信成功', { userId, cloudUrl });
+    return { success: true, type: 'image', filename: attachment.name };
+  } catch (error) {
+    logger.error('画像送信失敗', { filename: attachment.name, error: error.message, details: error });
+    await lineService.pushMessage(userId, {
+      type: 'text',
+      text: `**画像**: ${attachment.name} (送信に失敗しました)`
+    });
+    return { success: false, reason: 'send_error', filename: attachment.name };
+  }
 }
 
 class MediaService {
@@ -399,53 +430,9 @@ class MediaService {
     const results = [];
     
     for (const attachment of attachments) {
-      try {
-        // ファイルタイプに応じて処理
-        if (attachment.contentType?.startsWith('image/')) {
-          // 画像
-          let cloudinaryUrl = null;
-          try {
-            // Discord CDNから画像をダウンロード
-            const imageBuffer = await this.downloadFile(attachment.url, attachment.name);
-            // Cloudinaryにアップロード
-            cloudinaryUrl = await uploadToCloudinary(imageBuffer, attachment.name);
-          } catch (err) {
-            logger.error('Cloudinary upload failed', { filename: attachment.name, error: err.message, details: err });
-            await lineService.pushMessage(userId, {
-              type: 'text',
-              text: `**画像**: ${attachment.name} (Cloudinaryアップロードに失敗しました)`
-            });
-            results.push({ success: false, reason: 'cloudinary_upload_error', filename: attachment.name });
-            continue;
-          }
-          try {
-            if (typeof lineService.sendImageByUrl === 'function') {
-              await lineService.sendImageByUrl(userId, cloudinaryUrl);
-              logger.info('Successfully sent image to LINE via sendImageByUrl (Cloudinary)', { userId, filename: attachment.name });
-            } else {
-              const message = {
-                type: 'image',
-                originalContentUrl: cloudinaryUrl,
-                previewImageUrl: cloudinaryUrl,
-              };
-              await lineService.pushMessage(userId, message);
-              logger.info('Successfully sent image to LINE via pushMessage fallback (Cloudinary)', { userId, filename: attachment.name });
-            }
-            results.push({ success: true, type: 'image', filename: attachment.name });
-          } catch (error) {
-            logger.error('Failed to send image to LINE', {
-              filename: attachment.name,
-              error: error.message,
-              full: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-              response: error.response?.data
-            });
-            await lineService.pushMessage(userId, {
-              type: 'text',
-              text: `**画像**: ${attachment.name} (LINE送信に失敗しました)`
-            });
-            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
-          }
-        } else if (attachment.contentType?.startsWith('video/')) {
+      if (attachment.contentType?.startsWith('image/')) {
+        results.push(await processDiscordImageAttachment(attachment, userId, lineService));
+      } else if (attachment.contentType?.startsWith('video/')) {
           // 動画
           if (typeof lineService.sendVideoByUrl === 'function') {
             await lineService.sendVideoByUrl(userId, attachment.url);
@@ -483,17 +470,6 @@ class MediaService {
           });
           results.push({ success: true, type: 'url', filename: attachment.name });
         }
-      } catch (error) {
-        logger.error('Failed to process Discord attachment', { 
-          attachment: attachment.name, 
-          error: error.message 
-        });
-        await lineService.pushMessage(userId, {
-          type: 'text',
-          text: `**ファイル**: ${attachment.name} (処理に失敗しました)`,
-        });
-        results.push({ success: false, reason: 'processing_error', filename: attachment.name });
-      }
     }
     
     return results;
