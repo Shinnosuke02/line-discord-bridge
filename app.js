@@ -130,13 +130,25 @@ class ModernApp {
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        const ext = path.extname(req.file.originalname).toLowerCase();
-        const allowedImages = ['.jpg', '.jpeg', '.png', '.webp'];
-        const isImage = allowedImages.includes(ext);
-        let buffer = req.file.buffer;
+        // 拡張子判定（MIMEタイプ優先）
+        const mimeToExt = {
+          'image/jpeg': '.jpg',
+          'image/jpg': '.jpg',
+          'image/png': '.png',
+          'image/webp': '.webp',
+          'image/gif': '.gif',
+          'image/bmp': '.bmp',
+          'image/svg+xml': '.svg',
+          'application/pdf': '.pdf',
+          'video/mp4': '.mp4',
+          'audio/mpeg': '.mp3',
+          'audio/wav': '.wav',
+          'audio/ogg': '.ogg',
+        };
+        let ext = mimeToExt[req.file.mimetype] || path.extname(req.file.originalname).toLowerCase() || '.bin';
         let filename = uuidv4() + ext;
         // 画像の場合は10MB超なら圧縮
-        if (isImage && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
+        if (ext.startsWith('.') && ext.slice(1) === 'jpg' && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
           let quality = 80;
           let compressed;
           do {
@@ -149,7 +161,7 @@ class ModernApp {
           buffer = compressed;
         }
         // 画像以外で10MB超はエラー
-        if (!isImage && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
+        if (!ext.startsWith('.') && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
           return res.status(400).json({ error: 'File too large (max 10MB)' });
         }
         const filePath = path.join(uploadDir, filename);
