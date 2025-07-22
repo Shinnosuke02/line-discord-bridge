@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 const ModernLineService = require('./modernLineService');
-const ModernMediaService = require('./modernMediaService');
+const MediaService = require('./mediaService');
 const ChannelManager = require('./channelManager');
 const WebhookManager = require('./webhookManager');
 
@@ -21,7 +21,7 @@ class ModernMessageBridge {
     });
     
     this.lineService = new ModernLineService();
-    this.mediaService = new ModernMediaService();
+    this.mediaService = new MediaService();
     this.channelManager = null; // Discordログイン後に初期化
     this.webhookManager = null; // Discordログイン後に初期化
     
