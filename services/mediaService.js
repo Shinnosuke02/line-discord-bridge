@@ -11,6 +11,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const fileType = require('file-type');
+const sharp = require('sharp');
 
 // 画像ダウンロード
 async function downloadImage(url, filename) {
@@ -101,10 +102,18 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
     const buffer = await downloadImage(url, name);
     const type = await fileType.fromBuffer(buffer);
     logger.info('スタンプ画像ダウンロード', { url, name, mime: type?.mime, ext: type?.ext });
-    const selfUrl = await uploadToSelf(buffer, name);
+    let processedBuffer = buffer;
+    let uploadName = name;
+    // apngの場合はsharpでpng静止画に変換
+    if (type && type.mime === 'image/apng') {
+      processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
+      uploadName = name.replace(/\.apng$/i, '.png');
+      logger.info('apng→png静止画変換', { original: name, converted: uploadName });
+    }
+    const selfUrl = await uploadToSelf(processedBuffer, uploadName);
     await sendImageToLine(userId, selfUrl, lineService);
     logger.info('スタンプ送信成功', { userId, selfUrl });
-    return { success: true, type: 'sticker', filename: name };
+    return { success: true, type: 'sticker', filename: uploadName };
   } catch (error) {
     logger.error('スタンプ送信失敗', {
       filename: sticker.name,
