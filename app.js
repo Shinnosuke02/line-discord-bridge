@@ -147,6 +147,7 @@ class ModernApp {
         };
         let ext = mimeToExt[req.file.mimetype] || path.extname(req.file.originalname).toLowerCase() || '.bin';
         let filename = uuidv4() + ext;
+        let buffer = req.file.buffer;
         // 画像の場合は10MB超なら圧縮
         if (ext.startsWith('.') && ext.slice(1) === 'jpg' && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
           let quality = 80;
