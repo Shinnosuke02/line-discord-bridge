@@ -1,6 +1,6 @@
 {
   "name": "line-discord-bridge-modern",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Modern LINE-Discord Bridge with LINE Bot API v7 support",
   "main": "app.js",
   "scripts": {

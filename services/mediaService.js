@@ -15,6 +15,29 @@ cloudinary.config({
   api_secret: config.cloudinary.apiSecret,
 });
 
+// Cloudinary画像アップロードをPromiseでラップ
+function uploadToCloudinary(buffer, filename) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'line-discord-bridge',
+        resource_type: 'image',
+        public_id: filename.replace(/\.[^.]+$/, ''),
+        overwrite: true
+      },
+      (error, result) => {
+        if (error) {
+          logger.error('Cloudinary upload failed', { filename, error: error.message, details: error });
+          return reject(error);
+        }
+        logger.info('Cloudinary upload URL', { url: result.secure_url });
+        resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
 class MediaService {
   constructor() {
     this.lineClient = new LineClient(config.line);
@@ -385,29 +408,9 @@ class MediaService {
             // Discord CDNから画像をダウンロード
             const imageBuffer = await this.downloadFile(attachment.url, attachment.name);
             // Cloudinaryにアップロード
-            const uploadResult = await cloudinary.uploader.upload_stream({
-              folder: 'line-discord-bridge',
-              resource_type: 'image',
-              public_id: attachment.name.replace(/\.[^.]+$/, ''),
-              overwrite: true
-            }, (error, result) => {
-              if (error) throw error;
-              cloudinaryUrl = result.secure_url;
-              logger.info('Cloudinary upload URL', { url: cloudinaryUrl });
-            });
-            // upload_streamはストリームなので、バッファを流し込む
-            const stream = uploadResult;
-            stream.end(imageBuffer);
-            // cloudinaryUrlがセットされるまで待機
-            await new Promise((resolve, reject) => {
-              const check = () => {
-                if (cloudinaryUrl) return resolve();
-                setTimeout(check, 50);
-              };
-              check();
-            });
+            cloudinaryUrl = await uploadToCloudinary(imageBuffer, attachment.name);
           } catch (err) {
-            logger.error('Cloudinary upload failed', { filename: attachment.name, error: err.message });
+            logger.error('Cloudinary upload failed', { filename: attachment.name, error: err.message, details: err });
             await lineService.pushMessage(userId, {
               type: 'text',
               text: `**画像**: ${attachment.name} (Cloudinaryアップロードに失敗しました)`
@@ -433,6 +436,7 @@ class MediaService {
             logger.error('Failed to send image to LINE', {
               filename: attachment.name,
               error: error.message,
+              full: JSON.stringify(error, Object.getOwnPropertyNames(error)),
               response: error.response?.data
             });
             await lineService.pushMessage(userId, {
