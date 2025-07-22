@@ -73,7 +73,10 @@ async function processDiscordImageAttachment(attachment, userId, lineService) {
       filename: attachment.name,
       error: error.message,
       response: error.response?.data,
-      stack: error.stack
+      status: error.response?.status,
+      headers: error.response?.headers,
+      stack: error.stack,
+      full: JSON.stringify(error, Object.getOwnPropertyNames(error))
     });
     await lineService.pushMessage(userId, {
       type: 'text',
@@ -99,7 +102,10 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
       filename: sticker.name,
       error: error.message,
       response: error.response?.data,
-      stack: error.stack
+      status: error.response?.status,
+      headers: error.response?.headers,
+      stack: error.stack,
+      full: JSON.stringify(error, Object.getOwnPropertyNames(error))
     });
     await lineService.pushMessage(userId, {
       type: 'text',
