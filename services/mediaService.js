@@ -20,24 +20,25 @@ async function downloadImage(url, filename) {
   const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
   return Buffer.from(response.data);
 }
-// Cloudinaryアップロード
-function uploadToCloudinary(buffer, filename) {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
+// Cloudinaryアップロード（シンプル版）
+async function uploadToCloudinary(buffer, filename) {
+  try {
+    const ext = filename.split('.').pop();
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:image/${ext};base64,${buffer.toString('base64')}`,
       {
         folder: 'line-discord-bridge',
-        resource_type: 'image',
         public_id: filename.replace(/\.[^.]+$/, ''),
-        overwrite: true
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        logger.info('Cloudinary upload URL', { url: result.secure_url });
-        resolve(result.secure_url);
+        overwrite: true,
+        resource_type: 'image',
       }
     );
-    stream.end(buffer);
-  });
+    logger.info('Cloudinary upload URL', { url: uploadResult.secure_url });
+    return uploadResult.secure_url;
+  } catch (error) {
+    logger.error('Cloudinary upload failed', { filename, error: error.message, details: error });
+    throw error;
+  }
 }
 // LINE送信
 async function sendImageToLine(userId, imageUrl, lineService) {
