@@ -10,6 +10,7 @@ const FileProcessor = require('./fileProcessor');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const fileType = require('file-type');
 
 // 画像ダウンロード
 async function downloadImage(url, filename) {
@@ -90,10 +91,11 @@ async function processDiscordImageAttachment(attachment, userId, lineService) {
 // Discordスタンプ画像もアップローダ経由で送信
 async function processDiscordStickerAttachment(sticker, userId, lineService) {
   try {
-    // スタンプ画像URL（png/gif）をダウンロード
     const url = sticker.url || sticker.stickerUrl;
     const name = sticker.name || `sticker_${sticker.id || sticker.stickerId}.png`;
     const buffer = await downloadImage(url, name);
+    const type = await fileType.fromBuffer(buffer);
+    logger.info('スタンプ画像ダウンロード', { url, name, mime: type?.mime, ext: type?.ext });
     const selfUrl = await uploadToSelf(buffer, name);
     await sendImageToLine(userId, selfUrl, lineService);
     logger.info('スタンプ送信成功', { userId, selfUrl });
