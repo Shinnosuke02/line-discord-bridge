@@ -155,7 +155,8 @@ class ModernApp {
         const filePath = path.join(uploadDir, filename);
         fs.writeFileSync(filePath, buffer);
         // 公開URL生成
-        const publicUrl = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+        const publicBase = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+        const publicUrl = `${publicBase}/uploads/${filename}`;
         res.status(200).json({ url: publicUrl });
       } catch (error) {
         logger.error('Upload failed', { error: error.message, stack: error.stack });
