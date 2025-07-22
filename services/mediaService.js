@@ -4,42 +4,49 @@
 const axios = require('axios');
 const { AttachmentBuilder } = require('discord.js');
 const { Client: LineClient } = require('@line/bot-sdk');
-const cloudinary = require('cloudinary').v2;
 const config = require('../config');
 const logger = require('../utils/logger');
 const FileProcessor = require('./fileProcessor');
-
-cloudinary.config({
-  cloud_name: config.cloudinary.cloudName,
-  api_key: config.cloudinary.apiKey,
-  api_secret: config.cloudinary.apiSecret,
-});
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
 
 // 画像ダウンロード
 async function downloadImage(url, filename) {
   const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
   return Buffer.from(response.data);
 }
-// Cloudinaryアップロード（シンプル版）
-async function uploadToCloudinary(buffer, filename) {
+
+// 自前アップローダAPIに画像をアップロード
+async function uploadToSelf(buffer, filename) {
   try {
-    const ext = filename.split('.').pop();
-    const uploadResult = await cloudinary.uploader.upload(
-      `data:image/${ext};base64,${buffer.toString('base64')}`,
+    const form = new FormData();
+    form.append('file', buffer, filename);
+    const res = await axios.post(
+      process.env.UPLOAD_API_URL || 'http://localhost:3000/upload',
+      form,
       {
-        folder: 'line-discord-bridge',
-        public_id: filename.replace(/\.[^.]+$/, ''),
-        overwrite: true,
-        resource_type: 'image',
+        headers: {
+          ...form.getHeaders(),
+          'x-api-key': process.env.UPLOAD_API_KEY,
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 30000,
       }
     );
-    logger.info('Cloudinary upload URL', { url: uploadResult.secure_url });
-    return uploadResult.secure_url;
+    if (res.data && res.data.url) {
+      logger.info('Self uploader URL', { url: res.data.url });
+      return res.data.url;
+    } else {
+      throw new Error('No url returned from uploader');
+    }
   } catch (error) {
-    logger.error('Cloudinary upload failed', { filename, error: error.message, details: error });
+    logger.error('Self upload failed', { filename, error: error.message, details: error });
     throw error;
   }
 }
+
 // LINE送信
 async function sendImageToLine(userId, imageUrl, lineService) {
   if (typeof lineService.sendImageByUrl === 'function') {
@@ -52,13 +59,14 @@ async function sendImageToLine(userId, imageUrl, lineService) {
     });
   }
 }
+
 // 添付画像処理のメイン
 async function processDiscordImageAttachment(attachment, userId, lineService) {
   try {
     const buffer = await downloadImage(attachment.url, attachment.name);
-    const cloudUrl = await uploadToCloudinary(buffer, attachment.name);
-    await sendImageToLine(userId, cloudUrl, lineService);
-    logger.info('画像送信成功', { userId, cloudUrl });
+    const selfUrl = await uploadToSelf(buffer, attachment.name);
+    await sendImageToLine(userId, selfUrl, lineService);
+    logger.info('画像送信成功', { userId, selfUrl });
     return { success: true, type: 'image', filename: attachment.name };
   } catch (error) {
     logger.error('画像送信失敗', { filename: attachment.name, error: error.message, details: error });
@@ -434,35 +442,12 @@ class MediaService {
       if (attachment.contentType?.startsWith('image/')) {
         results.push(await processDiscordImageAttachment(attachment, userId, lineService));
       } else if (attachment.contentType?.startsWith('video/')) {
-          // 動画
-          if (typeof lineService.sendVideoByUrl === 'function') {
-            await lineService.sendVideoByUrl(userId, attachment.url);
-            logger.info('Successfully sent video to LINE via sendVideoByUrl', { userId, filename: attachment.name });
-          } else {
-            const message = {
-              type: 'video',
-              originalContentUrl: attachment.url,
-              previewImageUrl: attachment.url,
-            };
-            await lineService.pushMessage(userId, message);
-            logger.info('Successfully sent video to LINE via pushMessage fallback', { userId, filename: attachment.name });
-          }
-          results.push({ success: true, type: 'video', filename: attachment.name });
-        } else if (attachment.contentType?.startsWith('audio/')) {
-          // 音声
-          if (typeof lineService.sendAudioByUrl === 'function') {
-            await lineService.sendAudioByUrl(userId, attachment.url, 0);
-            logger.info('Successfully sent audio to LINE via sendAudioByUrl', { userId, filename: attachment.name });
-          } else {
-            const message = {
-              type: 'audio',
-              originalContentUrl: attachment.url,
-              duration: 0,
-            };
-            await lineService.pushMessage(userId, message);
-            logger.info('Successfully sent audio to LINE via pushMessage fallback', { userId, filename: attachment.name });
-          }
-          results.push({ success: true, type: 'audio', filename: attachment.name });
+          // 動画も同様に自前アップローダ経由で送信したい場合はここで実装
+          await lineService.pushMessage(userId, {
+            type: 'text',
+            text: `**動画**: ${attachment.name} (現状は未対応)`
+          });
+          results.push({ success: false, type: 'video', filename: attachment.name });
         } else {
           // その他のファイルはURLとしてテキスト送信
           await lineService.pushMessage(userId, {
