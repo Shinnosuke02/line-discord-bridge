@@ -91,7 +91,12 @@ async function processDiscordImageAttachment(attachment, userId, lineService) {
 // Discordスタンプ画像もアップローダ経由で送信
 async function processDiscordStickerAttachment(sticker, userId, lineService) {
   try {
-    const url = sticker.url || sticker.stickerUrl;
+    let url = sticker.url || sticker.stickerUrl;
+    if (url && url.endsWith('.json')) {
+      url = url.replace('.json', '.png');
+    } else if (!url && sticker.id) {
+      url = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+    }
     const name = sticker.name || `sticker_${sticker.id || sticker.stickerId}.png`;
     const buffer = await downloadImage(url, name);
     const type = await fileType.fromBuffer(buffer);
