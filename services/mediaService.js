@@ -69,7 +69,12 @@ async function processDiscordImageAttachment(attachment, userId, lineService) {
     logger.info('画像送信成功', { userId, selfUrl });
     return { success: true, type: 'image', filename: attachment.name };
   } catch (error) {
-    logger.error('画像送信失敗', { filename: attachment.name, error: error.message, details: error });
+    logger.error('画像送信失敗', {
+      filename: attachment.name,
+      error: error.message,
+      response: error.response?.data,
+      stack: error.stack
+    });
     await lineService.pushMessage(userId, {
       type: 'text',
       text: `**画像**: ${attachment.name} (送信に失敗しました)`
@@ -90,7 +95,12 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
     logger.info('スタンプ送信成功', { userId, selfUrl });
     return { success: true, type: 'sticker', filename: name };
   } catch (error) {
-    logger.error('スタンプ送信失敗', { filename: sticker.name, error: error.message, details: error });
+    logger.error('スタンプ送信失敗', {
+      filename: sticker.name,
+      error: error.message,
+      response: error.response?.data,
+      stack: error.stack
+    });
     await lineService.pushMessage(userId, {
       type: 'text',
       text: `**スタンプ**: ${sticker.name} (送信に失敗しました)`
