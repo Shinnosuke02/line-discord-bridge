@@ -393,6 +393,7 @@ class MediaService {
             }, (error, result) => {
               if (error) throw error;
               cloudinaryUrl = result.secure_url;
+              logger.info('Cloudinary upload URL', { url: cloudinaryUrl });
             });
             // upload_streamはストリームなので、バッファを流し込む
             const stream = uploadResult;
@@ -414,19 +415,32 @@ class MediaService {
             results.push({ success: false, reason: 'cloudinary_upload_error', filename: attachment.name });
             continue;
           }
-          if (typeof lineService.sendImageByUrl === 'function') {
-            await lineService.sendImageByUrl(userId, cloudinaryUrl);
-            logger.info('Successfully sent image to LINE via sendImageByUrl (Cloudinary)', { userId, filename: attachment.name });
-          } else {
-            const message = {
-              type: 'image',
-              originalContentUrl: cloudinaryUrl,
-              previewImageUrl: cloudinaryUrl,
-            };
-            await lineService.pushMessage(userId, message);
-            logger.info('Successfully sent image to LINE via pushMessage fallback (Cloudinary)', { userId, filename: attachment.name });
+          try {
+            if (typeof lineService.sendImageByUrl === 'function') {
+              await lineService.sendImageByUrl(userId, cloudinaryUrl);
+              logger.info('Successfully sent image to LINE via sendImageByUrl (Cloudinary)', { userId, filename: attachment.name });
+            } else {
+              const message = {
+                type: 'image',
+                originalContentUrl: cloudinaryUrl,
+                previewImageUrl: cloudinaryUrl,
+              };
+              await lineService.pushMessage(userId, message);
+              logger.info('Successfully sent image to LINE via pushMessage fallback (Cloudinary)', { userId, filename: attachment.name });
+            }
+            results.push({ success: true, type: 'image', filename: attachment.name });
+          } catch (error) {
+            logger.error('Failed to send image to LINE', {
+              filename: attachment.name,
+              error: error.message,
+              response: error.response?.data
+            });
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**画像**: ${attachment.name} (LINE送信に失敗しました)`
+            });
+            results.push({ success: false, reason: 'line_send_error', filename: attachment.name });
           }
-          results.push({ success: true, type: 'image', filename: attachment.name });
         } else if (attachment.contentType?.startsWith('video/')) {
           // 動画
           if (typeof lineService.sendVideoByUrl === 'function') {
