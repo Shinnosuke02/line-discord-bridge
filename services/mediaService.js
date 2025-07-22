@@ -399,9 +399,8 @@ class MediaService {
         const attachment = new AttachmentBuilder(content, { 
           name: `sticker_${message.stickerId}.png` 
         });
-        
+        // テキストも一切表示しない（画像のみ）
         return {
-          content: `**スタンプ** (${message.packageId}/${message.stickerId})`,
           files: [attachment],
         };
       } else {
