@@ -399,9 +399,9 @@ class MediaService {
         const attachment = new AttachmentBuilder(content, { 
           name: `sticker_${message.stickerId}.png` 
         });
-        // テキストも一切表示しない（画像のみ）
+        // contentプロパティ自体を含めない
         return {
-          files: [attachment],
+          files: [attachment]
         };
       } else {
         // すべてのURLが失敗した場合、フォールバック
