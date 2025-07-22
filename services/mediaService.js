@@ -107,7 +107,12 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
     // apngの場合はsharpでpng静止画に変換
     if (type && type.mime === 'image/apng') {
       processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
-      uploadName = name.replace(/\.apng$/i, '.png');
+      // 拡張子が無い場合も含め、必ず.pngを付与
+      if (!/\.png$/i.test(name)) {
+        uploadName = name.replace(/(\.[^.]+)?$/, '.png');
+      } else {
+        uploadName = name;
+      }
       logger.info('apng→png静止画変換', { original: name, converted: uploadName });
     }
     const selfUrl = await uploadToSelf(processedBuffer, uploadName);
