@@ -4,6 +4,12 @@ const { Client } = require('@line/bot-sdk');
 const config = require('./config');
 const logger = require('./utils/logger');
 const ModernMessageBridge = require('./services/modernMessageBridge');
+const multer = require('multer');
+const sharp = require('sharp');
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
 
 /**
  * 近代化されたLINE-Discordブリッジアプリケーション
@@ -105,6 +111,55 @@ class ModernApp {
           stack: error.stack
         });
         res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    // アップロードAPI
+    const upload = multer({ storage: multer.memoryStorage() });
+    this.app.post('/upload', upload.single('file'), async (req, res) => {
+      try {
+        // 認証
+        const apiKey = req.headers['x-api-key'];
+        if (!apiKey || apiKey !== process.env.UPLOAD_API_KEY) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (!req.file) {
+          return res.status(400).json({ error: 'No file uploaded' });
+        }
+        const uploadDir = process.env.UPLOAD_DIR || '/var/www/uploads';
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        const allowedImages = ['.jpg', '.jpeg', '.png', '.webp'];
+        const isImage = allowedImages.includes(ext);
+        let buffer = req.file.buffer;
+        let filename = uuidv4() + ext;
+        // 画像の場合は10MB超なら圧縮
+        if (isImage && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
+          let quality = 80;
+          let compressed;
+          do {
+            compressed = await sharp(buffer)
+              .toFormat(ext.replace('.', ''))
+              .jpeg({ quality })
+              .toBuffer();
+            quality -= 10;
+          } while (compressed.length > Number(process.env.MAX_IMAGE_SIZE || 10485760) && quality > 10);
+          buffer = compressed;
+        }
+        // 画像以外で10MB超はエラー
+        if (!isImage && buffer.length > Number(process.env.MAX_IMAGE_SIZE || 10485760)) {
+          return res.status(400).json({ error: 'File too large (max 10MB)' });
+        }
+        const filePath = path.join(uploadDir, filename);
+        fs.writeFileSync(filePath, buffer);
+        // 公開URL生成
+        const publicUrl = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+        res.status(200).json({ url: publicUrl });
+      } catch (error) {
+        logger.error('Upload failed', { error: error.message, stack: error.stack });
+        res.status(500).json({ error: 'Upload failed' });
       }
     });
 
