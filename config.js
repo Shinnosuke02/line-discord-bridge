@@ -53,6 +53,13 @@ const config = {
     // Webhook名
     name: process.env.WEBHOOK_NAME || 'LINE Bridge',
   },
+
+  // Cloudinary設定
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    apiSecret: process.env.CLOUDINARY_API_SECRET,
+  },
 };
 
 // 必須環境変数の検証
@@ -61,6 +68,9 @@ const requiredEnvVars = [
   'LINE_CHANNEL_SECRET',
   'DISCORD_BOT_TOKEN',
   'DISCORD_GUILD_ID',
+  'CLOUDINARY_CLOUD_NAME',
+  'CLOUDINARY_API_KEY',
+  'CLOUDINARY_API_SECRET',
 ];
 
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);

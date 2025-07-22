@@ -4,9 +4,16 @@
 const axios = require('axios');
 const { AttachmentBuilder } = require('discord.js');
 const { Client: LineClient } = require('@line/bot-sdk');
+const cloudinary = require('cloudinary').v2;
 const config = require('../config');
 const logger = require('../utils/logger');
 const FileProcessor = require('./fileProcessor');
+
+cloudinary.config({
+  cloud_name: config.cloudinary.cloudName,
+  api_key: config.cloudinary.apiKey,
+  api_secret: config.cloudinary.apiSecret,
+});
 
 class MediaService {
   constructor() {
@@ -373,18 +380,51 @@ class MediaService {
         // ファイルタイプに応じて処理
         if (attachment.contentType?.startsWith('image/')) {
           // 画像
+          let cloudinaryUrl = null;
+          try {
+            // Discord CDNから画像をダウンロード
+            const imageBuffer = await this.downloadFile(attachment.url, attachment.name);
+            // Cloudinaryにアップロード
+            const uploadResult = await cloudinary.uploader.upload_stream({
+              folder: 'line-discord-bridge',
+              resource_type: 'image',
+              public_id: attachment.name.replace(/\.[^.]+$/, ''),
+              overwrite: true
+            }, (error, result) => {
+              if (error) throw error;
+              cloudinaryUrl = result.secure_url;
+            });
+            // upload_streamはストリームなので、バッファを流し込む
+            const stream = uploadResult;
+            stream.end(imageBuffer);
+            // cloudinaryUrlがセットされるまで待機
+            await new Promise((resolve, reject) => {
+              const check = () => {
+                if (cloudinaryUrl) return resolve();
+                setTimeout(check, 50);
+              };
+              check();
+            });
+          } catch (err) {
+            logger.error('Cloudinary upload failed', { filename: attachment.name, error: err.message });
+            await lineService.pushMessage(userId, {
+              type: 'text',
+              text: `**画像**: ${attachment.name} (Cloudinaryアップロードに失敗しました)`
+            });
+            results.push({ success: false, reason: 'cloudinary_upload_error', filename: attachment.name });
+            continue;
+          }
           if (typeof lineService.sendImageByUrl === 'function') {
-            await lineService.sendImageByUrl(userId, attachment.url);
-            logger.info('Successfully sent image to LINE via sendImageByUrl', { userId, filename: attachment.name });
+            await lineService.sendImageByUrl(userId, cloudinaryUrl);
+            logger.info('Successfully sent image to LINE via sendImageByUrl (Cloudinary)', { userId, filename: attachment.name });
           } else {
-            // fallback: pushMessageで直接送信
             const message = {
               type: 'image',
-              originalContentUrl: attachment.url,
-              previewImageUrl: attachment.url,
+              originalContentUrl: cloudinaryUrl,
+              previewImageUrl: cloudinaryUrl,
             };
             await lineService.pushMessage(userId, message);
-            logger.info('Successfully sent image to LINE via pushMessage fallback', { userId, filename: attachment.name });
+            logger.info('Successfully sent image to LINE via pushMessage fallback (Cloudinary)', { userId, filename: attachment.name });
           }
           results.push({ success: true, type: 'image', filename: attachment.name });
         } else if (attachment.contentType?.startsWith('video/')) {
