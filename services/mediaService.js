@@ -78,6 +78,27 @@ async function processDiscordImageAttachment(attachment, userId, lineService) {
   }
 }
 
+// Discordスタンプ画像もアップローダ経由で送信
+async function processDiscordStickerAttachment(sticker, userId, lineService) {
+  try {
+    // スタンプ画像URL（png/gif）をダウンロード
+    const url = sticker.url || sticker.stickerUrl;
+    const name = sticker.name || `sticker_${sticker.id || sticker.stickerId}.png`;
+    const buffer = await downloadImage(url, name);
+    const selfUrl = await uploadToSelf(buffer, name);
+    await sendImageToLine(userId, selfUrl, lineService);
+    logger.info('スタンプ送信成功', { userId, selfUrl });
+    return { success: true, type: 'sticker', filename: name };
+  } catch (error) {
+    logger.error('スタンプ送信失敗', { filename: sticker.name, error: error.message, details: error });
+    await lineService.pushMessage(userId, {
+      type: 'text',
+      text: `**スタンプ**: ${sticker.name} (送信に失敗しました)`
+    });
+    return { success: false, reason: 'send_error', filename: sticker.name };
+  }
+}
+
 class MediaService {
   constructor() {
     this.lineClient = new LineClient(config.line);
@@ -458,6 +479,15 @@ class MediaService {
         }
     }
     
+    return results;
+  }
+
+  // Discordスタンプ配列をLINEに送信
+  async processDiscordStickers(stickers, userId, lineService) {
+    const results = [];
+    for (const sticker of stickers) {
+      results.push(await processDiscordStickerAttachment(sticker, userId, lineService));
+    }
     return results;
   }
 

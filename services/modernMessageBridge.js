@@ -481,34 +481,15 @@ class ModernMessageBridge {
 
       // スタンプを処理
       if (discordMessage.stickers && discordMessage.stickers.size > 0) {
-        for (const sticker of discordMessage.stickers.values()) {
-          logger.info('Processing Discord sticker', {
-            stickerId: sticker.id,
-            stickerName: sticker.name,
-            stickerDescription: sticker.description,
-            stickerUrl: sticker.url
-          });
-          
-          // Discordスタンプを処理
-          try {
-                        // スタンプの正しい画像URLを取得（元の成功していた方法）
-            const stickerImageUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
-            
-            // Discordスタンプを画像として送信（元の成功していた方法）
-            await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
-            
-            logger.info('Discord sticker sent to LINE as image', {
-              stickerId: sticker.id,
-              stickerName: sticker.name,
-              imageUrl: stickerImageUrl
-            });
-                      } catch (stickerError) {
-              logger.error('Failed to send Discord sticker', {
-                stickerId: sticker.id,
-                error: stickerError.message
-              });
-            }
-        }
+        // 旧ロジック削除
+        // for (const sticker of discordMessage.stickers.values()) {
+        //   ...
+        //   await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
+        //   ...
+        // }
+        // 新ロジック: mediaService経由でアップローダ利用
+        const stickersArray = Array.from(discordMessage.stickers.values());
+        await this.mediaService.processDiscordStickers(stickersArray, lineUserId, this.lineService);
       }
 
     } catch (error) {
