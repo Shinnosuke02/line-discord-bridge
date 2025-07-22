@@ -49,6 +49,7 @@ async function uploadToSelf(buffer, filename) {
 
 // LINE送信
 async function sendImageToLine(userId, imageUrl, lineService) {
+  if (!lineService) throw new Error('lineService is undefined');
   if (typeof lineService.sendImageByUrl === 'function') {
     await lineService.sendImageByUrl(userId, imageUrl);
   } else {
@@ -117,7 +118,6 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
 
 class MediaService {
   constructor() {
-    this.lineClient = new LineClient(config.line);
     this.fileProcessor = new FileProcessor();
   }
 

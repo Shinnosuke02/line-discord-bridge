@@ -457,41 +457,22 @@ class ModernMessageBridge {
     const { discordMessage, lineUserId } = messageData;
     
     try {
-      // 添付ファイルを処理
       if (discordMessage.attachments && discordMessage.attachments.size > 0) {
-        await this.processAttachments(discordMessage.attachments, lineUserId);
+        await this.mediaService.processDiscordAttachments(Array.from(discordMessage.attachments.values()), lineUserId, this.lineService);
       }
-
-      // テキストメッセージを処理
       if (discordMessage.content && discordMessage.content.trim()) {
         const text = discordMessage.content.trim();
-        
-        // URLを検出して処理
-        const urlResults = await this.mediaService.processUrls(text, lineUserId);
-        
-        // URLが含まれていない場合のみテキストメッセージを送信
+        const urlResults = await this.mediaService.processUrls(text, lineUserId, this.lineService);
         if (urlResults.length === 0) {
           await this.lineService.pushMessage(lineUserId, {
             type: 'text',
             text: text
           });
         }
-        // URLが含まれている場合は、URL処理で送信されるため、テキストメッセージは送信しない
       }
-
-      // スタンプを処理
       if (discordMessage.stickers && discordMessage.stickers.size > 0) {
-        // 旧ロジック削除
-        // for (const sticker of discordMessage.stickers.values()) {
-        //   ...
-        //   await this.lineService.sendImageByUrl(lineUserId, stickerImageUrl);
-        //   ...
-        // }
-        // 新ロジック: mediaService経由でアップローダ利用
-        const stickersArray = Array.from(discordMessage.stickers.values());
-        await this.mediaService.processDiscordStickers(stickersArray, lineUserId, this.lineService);
+        await this.mediaService.processDiscordStickers(Array.from(discordMessage.stickers.values()), lineUserId, this.lineService);
       }
-
     } catch (error) {
       logger.error('Failed to process Discord to LINE message', {
         messageId: discordMessage.id,
