@@ -130,22 +130,22 @@ class ModernApp {
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        // 拡張子判定（MIMEタイプ優先）
+        const allowedImageExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
         const mimeToExt = {
           'image/jpeg': '.jpg',
           'image/jpg': '.jpg',
           'image/png': '.png',
           'image/webp': '.webp',
           'image/gif': '.gif',
-          'image/bmp': '.bmp',
-          'image/svg+xml': '.svg',
-          'application/pdf': '.pdf',
-          'video/mp4': '.mp4',
-          'audio/mpeg': '.mp3',
-          'audio/wav': '.wav',
-          'audio/ogg': '.ogg',
         };
-        let ext = mimeToExt[req.file.mimetype] || path.extname(req.file.originalname).toLowerCase() || '.bin';
+        let ext = mimeToExt[req.file.mimetype];
+        if (!ext) {
+          // ファイル名から拡張子を推定
+          ext = path.extname(req.file.originalname).toLowerCase();
+          if (!allowedImageExts.includes(ext)) {
+            return res.status(400).json({ error: 'Unsupported file type' });
+          }
+        }
         let filename = uuidv4() + ext;
         let buffer = req.file.buffer;
         // 画像の場合は10MB超なら圧縮
