@@ -399,8 +399,9 @@ class MediaService {
         const attachment = new AttachmentBuilder(content, { 
           name: `sticker_${message.stickerId}.png` 
         });
-        // contentプロパティ自体を含めない
+        // content: '' を明示的に含める
         return {
+          content: '',
           files: [attachment]
         };
       } else {
