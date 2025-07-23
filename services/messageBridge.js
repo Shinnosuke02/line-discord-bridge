@@ -74,6 +74,7 @@ class MessageBridge {
           break;
 
         case 'sticker':
+          // スタンプ画像のみ送信、テキストは送信しない
           discordMessage = await this.mediaService.processLineSticker(event.message);
           await channel.send(discordMessage);
           break;
