@@ -278,6 +278,140 @@ class LineService {
       return `${label} sent a ${description} message.`;
     }
   }
+
+  /**
+   * リプライメッセージを送信
+   * @param {string} replyToken - リプライトークン
+   * @param {Object|Array} messages - メッセージまたはメッセージ配列
+   * @returns {Promise<Object>} 送信結果
+   */
+  async replyMessage(replyToken, messages) {
+    try {
+      // 単一メッセージの場合は配列に変換
+      const messageArray = Array.isArray(messages) ? messages : [messages];
+      
+      // LINE APIの制限: 一度に最大5つのメッセージ
+      const limitedMessages = messageArray.slice(0, 5);
+      
+      const result = await this.client.replyMessage(replyToken, limitedMessages);
+      
+      logger.debug('Reply message sent to LINE', { 
+        replyToken: replyToken.substring(0, 10) + '...', 
+        messageCount: limitedMessages.length,
+        messageTypes: limitedMessages.map(m => m.type)
+      });
+      
+      return result;
+    } catch (error) {
+      logger.error('Failed to send reply message to LINE', {
+        replyToken: replyToken ? replyToken.substring(0, 10) + '...' : 'undefined',
+        messageCount: Array.isArray(messages) ? messages.length : 1,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * リプライメッセージとして画像を送信
+   * @param {string} replyToken - リプライトークン
+   * @param {Buffer} content - 画像データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async replyImage(replyToken, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'image',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        previewImageUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+      };
+      
+      return await this.replyMessage(replyToken, message);
+    } catch (error) {
+      logger.error('Failed to reply image to LINE', { 
+        replyToken: replyToken ? replyToken.substring(0, 10) + '...' : 'undefined',
+        filename, 
+        error: error.message 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * リプライメッセージとして動画を送信
+   * @param {string} replyToken - リプライトークン
+   * @param {Buffer} content - 動画データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async replyVideo(replyToken, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'video',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        previewImageUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+      };
+      
+      return await this.replyMessage(replyToken, message);
+    } catch (error) {
+      logger.error('Failed to reply video to LINE', { 
+        replyToken: replyToken ? replyToken.substring(0, 10) + '...' : 'undefined',
+        filename, 
+        error: error.message 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * リプライメッセージとして音声を送信
+   * @param {string} replyToken - リプライトークン
+   * @param {Buffer} content - 音声データ
+   * @param {string} filename - ファイル名
+   * @returns {Promise<Object>} 送信結果
+   */
+  async replyAudio(replyToken, content, filename) {
+    try {
+      const messageId = await this.uploadFile(content, filename);
+      
+      const message = {
+        type: 'audio',
+        originalContentUrl: `https://api-data.line.me/v2/bot/message/${messageId}/content`,
+        duration: 0, // Discordには音声の長さ情報がない
+      };
+      
+      return await this.replyMessage(replyToken, message);
+    } catch (error) {
+      logger.error('Failed to reply audio to LINE', { 
+        replyToken: replyToken ? replyToken.substring(0, 10) + '...' : 'undefined',
+        filename, 
+        error: error.message 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * メッセージIDからLINE メッセージ情報を抽出
+   * @param {Object} event - LINEイベント
+   * @returns {Object} メッセージ情報
+   */
+  extractMessageInfo(event) {
+    return {
+      messageId: event.message?.id,
+      replyToken: event.replyToken,
+      userId: event.source?.userId,
+      groupId: event.source?.groupId,
+      sourceId: event.source?.groupId || event.source?.userId,
+      messageType: event.message?.type,
+      timestamp: event.timestamp
+    };
+  }
 }
 
 module.exports = LineService; 

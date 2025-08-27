@@ -4,6 +4,7 @@
 const LineService = require('./lineService');
 const MediaService = require('./mediaService');
 const DiscordService = require('./discordService');
+const MessageMapper = require('./messageMapper');
 const logger = require('../utils/logger');
 const config = require('../config');
 const fetch = require('node-fetch');
@@ -15,6 +16,12 @@ class MessageBridge {
     this.lineService = new LineService();
     this.mediaService = new MediaService();
     this.discordService = new DiscordService();
+    this.messageMapper = new MessageMapper();
+    
+    // メッセージマッパーの初期化
+    this.messageMapper.initialize().catch(error => {
+      logger.error('Failed to initialize MessageMapper', error);
+    });
   }
 
   /**
@@ -41,48 +48,67 @@ class MessageBridge {
       // メッセージタイプに応じて処理
       const messageType = event.message.type;
       let discordMessage;
+      let sentMessage = null;
 
       switch (messageType) {
         case 'text':
           discordMessage = this.lineService.formatMessage(event, displayName);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         case 'image':
           discordMessage = await this.mediaService.processLineImage(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         case 'video':
           discordMessage = await this.mediaService.processLineVideo(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         case 'audio':
           discordMessage = await this.mediaService.processLineAudio(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         case 'file':
           discordMessage = await this.mediaService.processLineFile(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         case 'location':
           const location = event.message;
-          await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
+          sentMessage = await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
           break;
 
         case 'sticker':
           // スタンプ画像のみ送信、テキストは送信しない
           discordMessage = await this.mediaService.processLineSticker(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
           break;
 
         default:
           const description = this.lineService.getMessageTypeDescription(messageType);
-          await channel.send(`**${displayName}** sent a ${description} message.`);
+          sentMessage = await channel.send(`**${displayName}** sent a ${description} message.`);
           break;
+      }
+
+      // メッセージマッピングを保存（リプライ機能のため）
+      if (sentMessage && event.message?.id) {
+        try {
+          await this.messageMapper.addMapping(
+            event.message.id,
+            sentMessage.id,
+            channelId,
+            senderId
+          );
+        } catch (mappingError) {
+          logger.warn('Failed to save message mapping', {
+            lineMessageId: event.message.id,
+            discordMessageId: sentMessage.id,
+            error: mappingError.message
+          });
+        }
       }
 
       logger.info('Message forwarded from LINE to Discord', {
@@ -235,11 +261,49 @@ class MessageBridge {
         return;
       }
 
-      // メッセージを送信
-      if (messages.length === 1) {
-        await this.lineService.pushMessage(userId, messages[0]);
+      // リプライメッセージかどうかを判定
+      const discordMessageInfo = this.discordService.extractMessageInfo(message);
+      const isReplyMessage = discordMessageInfo.isReply;
+      
+      // メッセージを送信（リプライかどうかで分岐）
+      let sendResult = null;
+      if (isReplyMessage && message.reference?.messageId) {
+        // リプライメッセージの処理
+        sendResult = await this.handleDiscordReplyToLine(
+          message,
+          messages,
+          userId,
+          parsedMessage
+        );
       } else {
-        await this.lineService.pushMessages(userId, messages);
+        // 通常メッセージの処理
+        if (messages.length === 1) {
+          sendResult = await this.lineService.pushMessage(userId, messages[0]);
+        } else {
+          sendResult = await this.lineService.pushMessages(userId, messages);
+        }
+      }
+
+      // メッセージマッピングを保存（送信成功時のみ）
+      if (sendResult && message.id) {
+        try {
+          // LINEからの応答にメッセージIDが含まれている場合のマッピング
+          // 注意: pushMessageの場合、LINEからメッセージIDが返されない場合が多い
+          // そのため、DiscordメッセージIDのみを記録し、後でLINEのWebhookで関連付ける
+          const channelId = parsedMessage.channelId;
+          await this.messageMapper.addMapping(
+            null, // LINEメッセージIDは後でWebhookで設定
+            message.id,
+            channelId,
+            userId
+          );
+        } catch (mappingError) {
+          logger.warn('Failed to save Discord to LINE message mapping', {
+            discordMessageId: message.id,
+            userId,
+            error: mappingError.message
+          });
+        }
       }
 
       // 結果をログ
@@ -386,6 +450,178 @@ class MessageBridge {
     });
 
     logger.info('Discord message listener set up');
+  }
+
+  /**
+   * Discordのリプライメッセージを LINEに送信
+   * @param {Object} discordMessage - Discordメッセージ
+   * @param {Array} messages - 送信するメッセージ配列
+   * @param {string} userId - LINEユーザーID
+   * @param {Object} parsedMessage - 解析されたメッセージ
+   * @returns {Promise<Object>} 送信結果
+   */
+  async handleDiscordReplyToLine(discordMessage, messages, userId, parsedMessage) {
+    try {
+      const referencedMessageId = discordMessage.reference.messageId;
+      
+      // 参照先メッセージに対応するLINEメッセージを探す
+      const lineMapping = this.messageMapper.getLineMessage(referencedMessageId);
+      
+      if (lineMapping && lineMapping.lineMessageId) {
+        logger.info('Found LINE message for Discord reply', {
+          discordReferencedId: referencedMessageId,
+          lineMessageId: lineMapping.lineMessageId,
+          userId
+        });
+
+        // リプライコンテキストを含むメッセージを作成
+        const replyPrefix = `> 返信`;
+        const modifiedMessages = messages.map(msg => {
+          if (msg.type === 'text') {
+            return {
+              ...msg,
+              text: `${replyPrefix}\n${msg.text}`
+            };
+          }
+          return msg;
+        });
+
+        // LINE にメッセージを送信
+        if (modifiedMessages.length === 1) {
+          return await this.lineService.pushMessage(userId, modifiedMessages[0]);
+        } else {
+          return await this.lineService.pushMessages(userId, modifiedMessages);
+        }
+      } else {
+        logger.debug('No LINE message mapping found for Discord reply, sending as regular message', {
+          discordReferencedId: referencedMessageId,
+          userId
+        });
+
+        // マッピングが見つからない場合は通常のメッセージとして送信
+        if (messages.length === 1) {
+          return await this.lineService.pushMessage(userId, messages[0]);
+        } else {
+          return await this.lineService.pushMessages(userId, messages);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to handle Discord reply to LINE', {
+        discordMessageId: discordMessage.id,
+        referencedMessageId: discordMessage.reference?.messageId,
+        userId,
+        error: error.message
+      });
+
+      // エラー時は通常のメッセージとして送信を試行
+      try {
+        if (messages.length === 1) {
+          return await this.lineService.pushMessage(userId, messages[0]);
+        } else {
+          return await this.lineService.pushMessages(userId, messages);
+        }
+      } catch (fallbackError) {
+        logger.error('Fallback message sending failed', fallbackError);
+        throw fallbackError;
+      }
+    }
+  }
+
+  /**
+   * LINEのリプライメッセージをDiscordに送信
+   * @param {Object} event - LINEイベント
+   * @param {string} displayName - 表示名
+   * @param {string} channelId - DiscordチャンネルID
+   * @returns {Promise<Object>} 送信結果
+   */
+  async handleLineReplyToDiscord(event, displayName, channelId) {
+    try {
+      // LINEでは明示的なリプライ機能がWebhook APIには含まれていないため、
+      // メッセージ内容からリプライを検出する必要がある
+      // ここでは、まず通常のメッセージ処理を行い、将来的にリプライ検出ロジックを追加
+
+      const channel = await this.discordClient.channels.fetch(channelId);
+      const messageType = event.message.type;
+      let sentMessage = null;
+
+      // メッセージタイプに応じて処理
+      switch (messageType) {
+        case 'text':
+          const discordMessage = this.lineService.formatMessage(event, displayName);
+          sentMessage = await channel.send(discordMessage);
+          break;
+
+        case 'image':
+          const imageMessage = await this.mediaService.processLineImage(event.message);
+          sentMessage = await channel.send(imageMessage);
+          break;
+
+        case 'video':
+          const videoMessage = await this.mediaService.processLineVideo(event.message);
+          sentMessage = await channel.send(videoMessage);
+          break;
+
+        case 'audio':
+          const audioMessage = await this.mediaService.processLineAudio(event.message);
+          sentMessage = await channel.send(audioMessage);
+          break;
+
+        case 'file':
+          const fileMessage = await this.mediaService.processLineFile(event.message);
+          sentMessage = await channel.send(fileMessage);
+          break;
+
+        case 'location':
+          const location = event.message;
+          sentMessage = await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
+          break;
+
+        case 'sticker':
+          const stickerMessage = await this.mediaService.processLineSticker(event.message);
+          sentMessage = await channel.send(stickerMessage);
+          break;
+
+        default:
+          const description = this.lineService.getMessageTypeDescription(messageType);
+          sentMessage = await channel.send(`**${displayName}** sent a ${description} message.`);
+          break;
+      }
+
+      return sentMessage;
+    } catch (error) {
+      logger.error('Failed to handle LINE reply to Discord', {
+        lineMessageId: event.message?.id,
+        channelId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * メッセージマッパーの統計情報を取得
+   * @returns {Object} 統計情報
+   */
+  getMessageMappingStats() {
+    return this.messageMapper.getStats();
+  }
+
+  /**
+   * 特定のチャンネルのメッセージマッピングを取得
+   * @param {string} channelId - チャンネルID
+   * @returns {Array} マッピング配列
+   */
+  getChannelMessageMappings(channelId) {
+    return this.messageMapper.getMappingsByChannel(channelId);
+  }
+
+  /**
+   * 特定のユーザーのメッセージマッピングを取得
+   * @param {string} userId - ユーザーID
+   * @returns {Array} マッピング配列
+   */
+  getUserMessageMappings(userId) {
+    return this.messageMapper.getMappingsByUser(userId);
   }
 }
 
