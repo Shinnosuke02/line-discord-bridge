@@ -2,9 +2,14 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 const ModernLineService = require('./modernLineService');
+const InstagramService = require('./instagramService');
+const InstagramPollingService = require('./instagramPollingService');
 const MediaService = require('./mediaService');
 const ChannelManager = require('./channelManager');
 const WebhookManager = require('./webhookManager');
+const ReplyManager = require('./replyManager');
+const DiscordReplyService = require('./discordReplyService');
+const LineReplyService = require('./lineReplyService');
 
 /**
  * 近代化されたメッセージブリッジ
@@ -21,9 +26,16 @@ class ModernMessageBridge {
     });
     
     this.lineService = new ModernLineService();
+    this.instagramService = new InstagramService();
+    this.instagramPollingService = new InstagramPollingService();
     this.mediaService = new MediaService();
     this.channelManager = null; // Discordログイン後に初期化
     this.webhookManager = null; // Discordログイン後に初期化
+    
+    // リプライ機能の初期化
+    this.replyManager = new ReplyManager();
+    this.discordReplyService = new DiscordReplyService(this.replyManager);
+    this.lineReplyService = new LineReplyService(this.replyManager);
     
     // 初期化中のメッセージキュー
     this.pendingMessages = [];
@@ -51,8 +63,14 @@ class ModernMessageBridge {
       this.webhookManager = new WebhookManager(this.discord);
       await this.webhookManager.initialize();
       
+      // リプライ機能を初期化
+      await this.replyManager.initialize();
+      
       // 初期化完了
       this.isInitialized = true;
+      
+      // Instagramポーリングを開始（設定されている場合）
+      await this.startInstagramPolling();
       
       // 保留中のメッセージを処理
       await this.processPendingMessages();
@@ -124,6 +142,117 @@ class ModernMessageBridge {
       logger.error('Failed to queue Discord message', {
         messageId: message.id,
         error: error.message
+      });
+    }
+  }
+
+  /**
+   * InstagramメッセージをDiscordに転送
+   * @param {Object} event - Instagramイベント
+   */
+  async handleInstagramToDiscord(event) {
+    try {
+      // 初期化されていない場合はキューに追加
+      if (!this.isInitialized || !this.channelManager || !this.channelManager.isInitialized) {
+        logger.info('System not initialized, queuing Instagram message', { 
+          instagramUserId: event.sender.id 
+        });
+        this.pendingMessages.push({ type: 'instagram', event });
+        return;
+      }
+
+      // チャンネルを取得または作成
+      const sourceId = `instagram_${event.sender.id}`;
+      const mapping = await this.channelManager.getOrCreateChannel(sourceId);
+      if (!mapping) {
+        logger.error('Failed to get or create channel for Instagram user', {
+          instagramUserId: event.sender.id,
+          sourceId: sourceId
+        });
+        return;
+      }
+
+      logger.info('Processing Instagram message', {
+        sourceId: sourceId,
+        senderId: event.sender.id,
+        messageType: event.message?.type || 'unknown'
+      });
+
+      // 表示名を取得
+      const displayName = `Instagram: ${event.sender.username || event.sender.id}`;
+
+      // メッセージタイプに応じて処理
+      let discordMessage = null;
+      
+      switch (event.message.type) {
+        case 'text':
+          discordMessage = {
+            content: `**${displayName}**: ${event.message.text}`
+          };
+          break;
+          
+        case 'image':
+          logger.info('Processing Instagram image message', {
+            messageId: event.message.id
+          });
+          const imageResult = await this.mediaService.processInstagramImage(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${imageResult.content}`,
+            files: imageResult.files || []
+          };
+          break;
+          
+        case 'video':
+          const videoResult = await this.mediaService.processInstagramVideo(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${videoResult.content}`,
+            files: videoResult.files || []
+          };
+          break;
+          
+        case 'audio':
+          const audioResult = await this.mediaService.processInstagramAudio(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${audioResult.content}`,
+            files: audioResult.files || []
+          };
+          break;
+          
+        case 'file':
+          const fileResult = await this.mediaService.processInstagramFile(event.message);
+          discordMessage = {
+            content: `**${displayName}**: ${fileResult.content}`,
+            files: fileResult.files || []
+          };
+          break;
+          
+        default:
+          discordMessage = {
+            content: `**${displayName}** sent an unsupported message type: ${event.message.type}`,
+          };
+      }
+
+      // Discordに送信
+      if (discordMessage) {
+        await this.sendToDiscord(mapping.discordChannelId, discordMessage, {
+          useWebhook: config.webhook.enabled,
+          username: displayName,
+          avatarUrl: null
+        });
+
+        logger.info('Message forwarded from Instagram to Discord', {
+          sourceId: sourceId,
+          senderId: event.sender.id,
+          displayName,
+          channelId: mapping.discordChannelId,
+          messageType: event.message?.type || 'unknown'
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to handle Instagram message', {
+        eventId: event.message?.id,
+        error: error.message,
+        stack: error.stack
       });
     }
   }
@@ -239,9 +368,9 @@ class ModernMessageBridge {
           });
           const stickerResult = await this.mediaService.processLineSticker(event.message);
           discordMessage = {
-            content: `**${displayName}**: ${stickerResult.content}`,
             files: stickerResult.files || []
           };
+          // スタンプの場合はcontentを追加しない（画像のみ送信）
           logger.info('Sticker processing result', {
             messageId: event.message.id,
             hasContent: !!discordMessage?.content,
@@ -577,6 +706,8 @@ class ModernMessageBridge {
           await this.handleDiscordToLine(pendingMessage.message);
         } else if (pendingMessage.type === 'line') {
           await this.handleLineToDiscord(pendingMessage.event);
+        } else if (pendingMessage.type === 'instagram') {
+          await this.handleInstagramToDiscord(pendingMessage.event);
         }
       } catch (error) {
         logger.error('Failed to process pending message', {
@@ -590,10 +721,49 @@ class ModernMessageBridge {
   }
 
   /**
+   * Instagramポーリングを開始
+   */
+  async startInstagramPolling() {
+    try {
+      const accountId = config.instagram.businessAccountId;
+      if (!accountId) {
+        logger.info('No Instagram business account ID configured, skipping polling');
+        return;
+      }
+
+      logger.info('Starting Instagram polling for business account', {
+        accountId: accountId
+      });
+
+      await this.instagramPollingService.startPolling(
+        accountId,
+        async (message) => {
+          await this.handleInstagramToDiscord({
+            sender: message.from,
+            message: message,
+            timestamp: message.created_time
+          });
+        },
+        5 // 5分間隔でポーリング
+      );
+
+    } catch (error) {
+      logger.error('Failed to start Instagram polling', {
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * ブリッジを停止
    */
   async stop() {
     try {
+      // Instagramポーリングを停止
+      if (this.instagramPollingService) {
+        this.instagramPollingService.stopPolling();
+      }
+
       // WebhookManagerを停止
       if (this.webhookManager) {
         await this.webhookManager.stop();

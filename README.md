@@ -1,11 +1,19 @@
-# LINE-Discord Bridge (Modern Version 2.0.0)
+# LINE-Discord-Instagram Bridge (Modern Version 2.2.0)
 
-LINEを使いたくなさ過ぎて、LINEユーザーとDiscordでやりとり出来るアプリ作りました。
-ただ、LINEを最初の「公式アカウント」作成のために、一度は使わないとならない…。
+LINEとInstagramのメッセージをDiscordに集約するアプリを作りました。
+複数のSNSプラットフォームからのメッセージを一つのDiscordサーバーで管理できます。
+
+## 🆕 新機能: リプライ機能対応
+
+- **Discord→LINEリプライ**: Discordでメッセージに返信すると、LINE側にリプライとして送信
+- **LINE→Discordリプライ**: LINEのメッセージをDiscordでリプライ可能
+- **メッセージIDマッピング**: 自動的にメッセージIDを管理し、リプライ関係を追跡
+- **フォールバック機能**: リプライ機能にエラーが発生しても既存機能は継続動作
 
 ---
 必要なもの
 - LINE公式アカウント（LINE Messaging API利用のために必要）
+- Instagram Basic Display API（Instagramメッセージ受信のために必要）
 - 独自ドメイン（Let's Encryptを利用したSSL通信のため。運用はサブドメイン設定で問題なし）
 
 ---
@@ -48,13 +56,27 @@ npm install
 `.env`ファイル例：
 
 ```env
+# LINE設定
 LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 LINE_CHANNEL_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Instagram設定
+# Basic Display API（個人アカウント用）
+INSTAGRAM_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+INSTAGRAM_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+INSTAGRAM_VERIFY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Graph API（ビジネスアカウント用）
+INSTAGRAM_GRAPH_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+INSTAGRAM_BUSINESS_ACCOUNT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Discord設定
 DISCORD_BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 DISCORD_GUILD_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# サーバー設定
 PORT=3000
 WEBHOOK_ENABLED=true
-WEBHOOK_NAME=LINE Bridge
+WEBHOOK_NAME=Social Media Bridge
 LOG_LEVEL=info
 ```
 
@@ -141,7 +163,25 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d example.com
 ```
 
-### 9. アプリ起動
+### 9. Instagram設定
+
+#### 個人アカウント用（Basic Display API）
+1. **Facebook開発者アカウント**でアプリを作成
+2. **Instagram Basic Display**を追加
+3. **Webhook**を設定：
+   - URL: `https://yourdomain.com/instagram-webhook`
+   - 検証トークン: 任意の文字列（`.env`の`INSTAGRAM_VERIFY_TOKEN`と一致させる）
+   - サブスクライブするフィールド: `messages`
+
+#### ビジネスアカウント用（Graph API）
+1. **Facebook開発者アカウント**でアプリを作成
+2. **Instagram Graph API**を追加
+3. **ビジネスアカウント**を接続
+4. **アクセストークン**を取得（`pages_show_list`, `instagram_basic`, `instagram_manage_comments`権限が必要）
+5. **ビジネスアカウントID**を取得
+6. **ポーリング機能**が自動的に開始されます（5分間隔）
+
+### 10. アプリ起動
 
 ```bash
 pm2 start ecosystem.config.js
@@ -152,13 +192,18 @@ pm2 save
 
 ## 🚀 新機能・特徴
 
+- **マルチプラットフォーム対応**: LINEとInstagramのメッセージをDiscordに集約
+- **🆕 リプライ機能**: DiscordとLINE間での双方向リプライ対応
+- **🆕 メッセージIDマッピング**: 自動的なメッセージ関係管理
 - LINE Bot API v7対応
+- Instagram Basic Display API対応
 - 外部URLを使用したメディア送信
 - 正確なファイル処理（MIME判定・拡張子）
 - マイクロサービス指向設計
 - 構造化ログ・詳細なデバッグ
 - レート制限対策とメッセージキュー
 - グレースフルシャットダウン
+- **🆕 フォールバック機能**: リプライ機能エラー時も既存機能は継続動作
 
 ---
 
@@ -175,7 +220,12 @@ pm2 save
 ## 🔧 機能詳細
 
 - **LINE→Discord転送**: テキスト・画像・動画・音声・ファイル・スタンプ・位置情報
+- **Instagram→Discord転送**: テキスト・画像・動画・音声・ファイル
 - **Discord→LINE転送**: テキスト・画像・動画・音声・ファイル・スタンプ
+- **🆕 リプライ機能**: 
+  - Discordでメッセージに返信 → LINE側にリプライとして送信
+  - LINEのメッセージ → Discordでリプライ可能
+  - メッセージID自動マッピング・管理
 - **ファイル処理**: MIME判定・拡張子・10MB制限・堅牢なエラー処理
 
 ---
@@ -186,11 +236,18 @@ pm2 save
 ├── app.js                  # メインアプリケーション
 ├── services/
 │   ├── modernLineService.js
+│   ├── instagramService.js
 │   ├── modernMediaService.js
 │   ├── modernFileProcessor.js
-│   └── modernMessageBridge.js
+│   ├── modernMessageBridge.js
+│   ├── replyManager.js     # 🆕 リプライ機能管理
+│   ├── discordReplyService.js  # 🆕 Discordリプライ処理
+│   └── lineReplyService.js     # 🆕 LINEリプライ処理
 ├── utils/
 │   └── logger.js
+├── data/
+│   ├── message-mappings.json  # 🆕 メッセージIDマッピング
+│   └── reply-mappings.json    # 🆕 リプライ関係マッピング
 ├── config.js
 ├── mapping.json
 └── package.json
@@ -211,6 +268,24 @@ pm2 save
 
 - 詳細ログ: `export LOG_LEVEL=debug` で有効化
 - PM2ログ: `npm run pm2:logs`
+- リプライ機能ログ: `pm2 logs line-discord-bridge --lines 50` でリプライ処理を確認
 - よくある問題・デバッグ方法も記載
+
+## 🔄 リプライ機能の使用方法
+
+### Discord → LINE リプライ
+1. Discordで任意のメッセージに返信
+2. 自動的にリプライ先のメッセージ情報が取得される
+3. LINE側に「↩️ 返信: [メッセージID]」の形式で送信される
+
+### LINE → Discord リプライ
+1. LINEでメッセージを送信
+2. メッセージIDが自動的にマッピングに記録される
+3. Discord側でそのメッセージにリプライ可能になる
+
+### データ管理
+- メッセージマッピングは `data/message-mappings.json` に保存
+- リプライ関係は `data/reply-mappings.json` に保存
+- 最大10,000件のマッピングを保持（古いものは自動削除）
 
 ---

@@ -4,6 +4,9 @@
 const LineService = require('./lineService');
 const MediaService = require('./mediaService');
 const DiscordService = require('./discordService');
+const ReplyManager = require('./replyManager');
+const DiscordReplyService = require('./discordReplyService');
+const LineReplyService = require('./lineReplyService');
 const logger = require('../utils/logger');
 const config = require('../config');
 const fetch = require('node-fetch');
@@ -15,6 +18,24 @@ class MessageBridge {
     this.lineService = new LineService();
     this.mediaService = new MediaService();
     this.discordService = new DiscordService();
+    
+    // リプライ機能の初期化
+    this.replyManager = new ReplyManager();
+    this.discordReplyService = new DiscordReplyService(this.replyManager);
+    this.lineReplyService = new LineReplyService(this.replyManager);
+  }
+
+  /**
+   * 初期化処理
+   */
+  async initialize() {
+    try {
+      await this.replyManager.initialize();
+      logger.info('MessageBridge initialized with reply functionality');
+    } catch (error) {
+      logger.error('Failed to initialize MessageBridge reply functionality', error);
+      // リプライ機能の初期化に失敗してもアプリは継続動作
+    }
   }
 
   /**
@@ -41,42 +62,57 @@ class MessageBridge {
       // メッセージタイプに応じて処理
       const messageType = event.message.type;
       let discordMessage;
+      let sentMessage;
 
       switch (messageType) {
         case 'text':
           discordMessage = this.lineService.formatMessage(event, displayName);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          
+          // メッセージマッピングを記録
+          this.replyManager.addMessageMapping(
+            sentMessage.id,
+            event.message.id,
+            channelId,
+            senderId
+          );
           break;
 
         case 'image':
           discordMessage = await this.mediaService.processLineImage(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         case 'video':
           discordMessage = await this.mediaService.processLineVideo(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         case 'audio':
           discordMessage = await this.mediaService.processLineAudio(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         case 'file':
           discordMessage = await this.mediaService.processLineFile(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         case 'location':
           const location = event.message;
-          await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
+          sentMessage = await channel.send(`**${displayName}** sent a location: ${location.title}\n${location.address}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}`);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         case 'sticker':
           // スタンプ画像のみ送信、テキストは送信しない
           discordMessage = await this.mediaService.processLineSticker(event.message);
-          await channel.send(discordMessage);
+          sentMessage = await channel.send(discordMessage);
+          this.replyManager.addMessageMapping(sentMessage.id, event.message.id, channelId, senderId);
           break;
 
         default:
@@ -195,6 +231,17 @@ class MessageBridge {
     });
 
     try {
+      // リプライ機能の処理
+      let replyResult = null;
+      if (this.discordReplyService.isAvailable()) {
+        try {
+          replyResult = await this.discordReplyService.processReplyMessage(message);
+        } catch (error) {
+          logger.error('Failed to process reply message', error);
+          // リプライ処理に失敗しても通常のメッセージとして処理
+        }
+      }
+
       // サーバーのウェイクアップを確認
       /*
       const isServerAwake = await this.wakeUpServer();
@@ -210,9 +257,9 @@ class MessageBridge {
       const messages = [];
       const results = [];
 
-      // テキストメッセージの処理
+      // テキストメッセージの処理（リプライ対応）
       if (parsedMessage.hasText) {
-        const textResult = await this.processTextMessage(parsedMessage, userId);
+        const textResult = await this.processTextMessage(parsedMessage, userId, replyResult);
         messages.push(...textResult.messages);
         results.push(...textResult.results);
       }
@@ -266,19 +313,41 @@ class MessageBridge {
   }
 
   /**
-   * テキストメッセージを処理
+   * テキストメッセージを処理（リプライ対応）
    * @param {Object} parsedMessage - 解析されたメッセージ
    * @param {string} userId - LINEユーザーID
+   * @param {Object} replyResult - リプライ処理結果
    * @returns {Promise<Object>} 処理結果
    */
-  async processTextMessage(parsedMessage, userId) {
+  async processTextMessage(parsedMessage, userId, replyResult = null) {
     const messages = [];
     const results = [];
+
+    // リプライ機能の処理
+    let textToProcess = parsedMessage.text;
+    if (replyResult && replyResult.isReply) {
+      // リプライの場合は特別な処理
+      try {
+        const lineReplyMessage = this.lineReplyService.generateDiscordReplyMessage(
+          { content: parsedMessage.text },
+          replyResult.originalMessage?.id || 'unknown'
+        );
+        textToProcess = lineReplyMessage.text;
+        
+        logger.info('Discord reply processed for LINE', {
+          originalMessageId: replyResult.originalMessage?.id,
+          replyText: textToProcess.substring(0, 100)
+        });
+      } catch (error) {
+        logger.error('Failed to process Discord reply for LINE', error);
+        // エラー時は通常のテキストとして処理
+      }
+    }
 
     // URLを検出して埋め込み画像を処理
     if (parsedMessage.hasUrls) {
       const urlResults = await this.mediaService.processUrls(
-        parsedMessage.text,
+        textToProcess,
         userId,
         this.lineService
       );
@@ -286,7 +355,7 @@ class MessageBridge {
     }
 
     // テキストメッセージを追加（URLが含まれている場合は除く）
-    const textWithoutUrls = parsedMessage.text.replace(/https?:\/\/[^\s]+/g, '').trim();
+    const textWithoutUrls = textToProcess.replace(/https?:\/\/[^\s]+/g, '').trim();
     if (textWithoutUrls) {
       messages.push({
         type: 'text',
