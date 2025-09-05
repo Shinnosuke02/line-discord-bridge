@@ -36,6 +36,7 @@ const config = {
   files: {
     userChannelMap: './userChannelMap.json',
     channelMappings: './data/channel-mappings.json',
+    messageMappings: './data/message-mappings.json',
   },
   
   // チャンネル名設定
@@ -70,6 +71,16 @@ const config = {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,
     apiSecret: process.env.CLOUDINARY_API_SECRET,
+  },
+
+  // リプライ機能設定
+  reply: {
+    // リプライ機能の有効/無効
+    enabled: process.env.REPLY_ENABLED !== 'false', // デフォルトで有効
+    // メッセージマッピングの最大保持数
+    maxMappings: parseInt(process.env.REPLY_MAX_MAPPINGS) || 10000,
+    // マッピングファイルの保存間隔（ミリ秒）
+    saveInterval: parseInt(process.env.REPLY_SAVE_INTERVAL) || 5000,
   },
 };
 

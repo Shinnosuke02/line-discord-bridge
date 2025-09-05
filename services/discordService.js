@@ -221,6 +221,159 @@ class DiscordService {
 
     return parts.join(', ');
   }
+
+  /**
+   * Discordメッセージからリプライ情報を抽出
+   * @param {Object} message - Discordメッセージ
+   * @returns {Object|null} リプライ情報
+   */
+  extractReplyInfo(message) {
+    if (!message.reference || !message.reference.messageId) {
+      return null;
+    }
+
+    return {
+      referencedMessageId: message.reference.messageId,
+      referencedChannelId: message.reference.channelId,
+      referencedGuildId: message.reference.guildId,
+      isReply: true
+    };
+  }
+
+  /**
+   * Discordメッセージ情報を抽出
+   * @param {Object} message - Discordメッセージ
+   * @returns {Object} メッセージ情報
+   */
+  extractMessageInfo(message) {
+    const replyInfo = this.extractReplyInfo(message);
+    
+    return {
+      messageId: message.id,
+      channelId: message.channel.id,
+      guildId: message.guild?.id,
+      authorId: message.author.id,
+      authorName: message.author.username,
+      content: message.content,
+      timestamp: message.createdTimestamp,
+      isReply: !!replyInfo,
+      replyInfo: replyInfo,
+      attachments: message.attachments ? Array.from(message.attachments.values()) : [],
+      stickers: message.stickers ? Array.from(message.stickers.values()) : []
+    };
+  }
+
+  /**
+   * リプライメッセージを送信
+   * @param {Object} channel - Discordチャンネル
+   * @param {string} content - メッセージ内容
+   * @param {string} referencedMessageId - 参照先メッセージID
+   * @param {Object} options - 追加オプション
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendReply(channel, content, referencedMessageId, options = {}) {
+    try {
+      const messageOptions = {
+        content: content,
+        reply: {
+          messageReference: referencedMessageId,
+          failIfNotExists: false // 参照先メッセージが削除されていてもエラーにしない
+        },
+        ...options
+      };
+
+      const sentMessage = await channel.send(messageOptions);
+      
+      logger.debug('Reply message sent to Discord', {
+        channelId: channel.id,
+        messageId: sentMessage.id,
+        referencedMessageId,
+        contentLength: content.length
+      });
+      
+      return sentMessage;
+    } catch (error) {
+      logger.error('Failed to send reply message to Discord', {
+        channelId: channel.id,
+        referencedMessageId,
+        error: error.message
+      });
+      
+      // リプライに失敗した場合は通常のメッセージとして送信
+      try {
+        const fallbackMessage = await channel.send(content);
+        logger.info('Sent as regular message after reply failure', {
+          channelId: channel.id,
+          messageId: fallbackMessage.id
+        });
+        return fallbackMessage;
+      } catch (fallbackError) {
+        logger.error('Failed to send fallback message', fallbackError);
+        throw fallbackError;
+      }
+    }
+  }
+
+  /**
+   * ファイル付きリプライメッセージを送信
+   * @param {Object} channel - Discordチャンネル
+   * @param {string} content - メッセージ内容
+   * @param {string} referencedMessageId - 参照先メッセージID
+   * @param {Array} files - ファイル配列
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendReplyWithFiles(channel, content, referencedMessageId, files = []) {
+    try {
+      const options = {
+        files: files
+      };
+
+      return await this.sendReply(channel, content, referencedMessageId, options);
+    } catch (error) {
+      logger.error('Failed to send reply with files to Discord', {
+        channelId: channel.id,
+        referencedMessageId,
+        fileCount: files.length,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 埋め込み付きリプライメッセージを送信
+   * @param {Object} channel - Discordチャンネル
+   * @param {Array} embeds - 埋め込み配列
+   * @param {string} referencedMessageId - 参照先メッセージID
+   * @param {string} content - メッセージ内容（オプション）
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendReplyWithEmbeds(channel, embeds, referencedMessageId, content = '') {
+    try {
+      const options = {
+        embeds: embeds
+      };
+
+      return await this.sendReply(channel, content, referencedMessageId, options);
+    } catch (error) {
+      logger.error('Failed to send reply with embeds to Discord', {
+        channelId: channel.id,
+        referencedMessageId,
+        embedCount: embeds.length,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * メッセージがリプライかどうかを判定
+   * @param {Object} message - Discordメッセージ
+   * @returns {boolean} リプライかどうか
+   */
+  isReplyMessage(message) {
+    return !!(message.reference && message.reference.messageId);
+  }
 }
 
 module.exports = DiscordService; 
