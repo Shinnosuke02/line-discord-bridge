@@ -1,3 +1,6 @@
+// 環境変数を最初に読み込み
+require('dotenv').config();
+
 const express = require('express');
 const { createServer } = require('http');
 const { Client } = require('@line/bot-sdk');
@@ -9,7 +12,6 @@ const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
 
 const setupWebhookRoutes = require('./routes/webhook'); // 追加
 
