@@ -4,13 +4,15 @@ const { Client } = require('@line/bot-sdk');
 const config = require('./config');
 const logger = require('./utils/logger');
 const ModernMessageBridge = require('./services/modernMessageBridge');
-const InstagramService = require('./services/instagramService');
+// const InstagramService = require('./services/instagramService'); // 削除
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
+
+const setupWebhookRoutes = require('./routes/webhook'); // 追加
 
 /**
  * 近代化されたLINE-Discordブリッジアプリケーション
@@ -21,7 +23,7 @@ class ModernApp {
     this.app = express();
     this.server = createServer(this.app);
     this.lineClient = new Client(config.line);
-    this.instagramService = new InstagramService();
+    // this.instagramService = new InstagramService(); // 削除
     this.messageBridge = new ModernMessageBridge();
     
     // グレースフルシャットダウン用
@@ -75,123 +77,13 @@ class ModernApp {
       });
     });
 
-    // LINE Webhook
-    this.app.post('/webhook', async (req, res) => {
-      if (this.isShuttingDown) {
-        return res.status(503).json({ error: 'Service is shutting down' });
-      }
+    // LINE Webhook を routes/webhook.js から設定
+    this.app.use(
+      '/webhook',
+      setupWebhookRoutes(this.messageBridge, () => this.isShuttingDown, this.lineClient)
+    );
 
-      try {
-        // LINE署名を検証
-        const signature = req.headers['x-line-signature'];
-        if (!signature) {
-          logger.warn('Missing LINE signature');
-          return res.status(400).json({ error: 'Missing signature' });
-        }
-
-        // イベントを処理
-        for (const event of req.body.events) {
-          try {
-            await this.handleLineEvent(event);
-          } catch (error) {
-            logger.error('Failed to handle LINE event', {
-              eventId: event.message?.id,
-              error: error.message,
-              stack: error.stack
-            });
-          }
-        }
-        
-        logger.info('LINE webhook processed successfully', { 
-          eventCount: req.body.events?.length || 0 
-        });
-        res.status(200).json({ success: true });
-        
-      } catch (error) {
-        logger.error('LINE webhook error', {
-          error: error.message,
-          stack: error.stack
-        });
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    });
-
-    // Instagram Webhook
-    this.app.post('/instagram-webhook', async (req, res) => {
-      if (this.isShuttingDown) {
-        return res.status(503).json({ error: 'Service is shutting down' });
-      }
-
-      try {
-        // Instagram Webhookチャレンジ処理
-        if (req.body.object === 'instagram' && req.body.entry) {
-          // Webhook署名を検証
-          const signature = req.headers['x-hub-signature-256'];
-          if (signature) {
-            const rawBody = JSON.stringify(req.body);
-            if (!this.instagramService.verifySignature(signature.replace('sha256=', ''), rawBody)) {
-              logger.warn('Invalid Instagram signature');
-              return res.status(400).json({ error: 'Invalid signature' });
-            }
-          }
-
-          // エントリーを処理
-          for (const entry of req.body.entry) {
-            for (const change of entry.changes || []) {
-              try {
-                await this.handleInstagramEvent(change);
-              } catch (error) {
-                logger.error('Failed to handle Instagram event', {
-                  error: error.message,
-                  stack: error.stack
-                });
-              }
-            }
-          }
-        }
-        
-        logger.info('Instagram webhook processed successfully');
-        res.status(200).json({ success: true });
-        
-      } catch (error) {
-        logger.error('Instagram webhook error', {
-          error: error.message,
-          stack: error.stack
-        });
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    });
-
-    // Instagram Webhook検証
-    this.app.get('/instagram-webhook', (req, res) => {
-      const mode = req.query['hub.mode'];
-      const token = req.query['hub.verify_token'];
-      const challenge = req.query['hub.challenge'];
-
-      if (mode === 'subscribe' && token === config.instagram.verifyToken) {
-        logger.info('Instagram webhook verification successful');
-        res.status(200).send(challenge);
-      } else {
-        logger.warn('Instagram webhook verification failed');
-        res.status(403).json({ error: 'Forbidden' });
-      }
-    });
-
-    // Instagram データ削除リクエスト
-    this.app.post('/instagram-delete', (req, res) => {
-      logger.info('Instagram data deletion request received', {
-        userId: req.body.user_id
-      });
-      res.status(200).json({ success: true });
-    });
-
-    // Instagram 認証解除
-    this.app.post('/instagram-deauth', (req, res) => {
-      logger.info('Instagram deauthorization request received', {
-        userId: req.body.user_id
-      });
-      res.status(200).json({ success: true });
-    });
+    // Instagram Webhook 関連のルートは削除済み
 
     // アップロードAPI
     const upload = multer({ storage: multer.memoryStorage() });
@@ -313,92 +205,92 @@ class ModernApp {
   }
 
   /**
-   * Instagramイベントを処理
+   * Instagramイベントを処理 (削除)
    * @param {Object} change - Instagram変更イベント
    */
-  async handleInstagramEvent(change) {
-    try {
-      // メッセージイベントのみ処理
-      if (change.field !== 'messages') {
-        logger.debug('Skipping non-message Instagram event', { field: change.field });
-        return;
-      }
+  // async handleInstagramEvent(change) {
+  //   try {
+  //     // メッセージイベントのみ処理
+  //     if (change.field !== 'messages') {
+  //       logger.debug('Skipping non-message event', { field: change.field });
+  //       return;
+  //     }
 
-      const value = change.value;
-      if (!value || !value.messages || !Array.isArray(value.messages)) {
-        logger.debug('No messages in Instagram event');
-        return;
-      }
+  //     const value = change.value;
+  //     if (!value || !value.messages || !Array.isArray(value.messages)) {
+  //       logger.debug('No messages in Instagram event');
+  //       return;
+  //     }
 
-      for (const message of value.messages) {
-        try {
-          logger.info('Processing Instagram message', {
-            senderId: message.from?.id,
-            messageType: message.type,
-            timestamp: message.timestamp
-          });
+  //     for (const message of value.messages) {
+  //       try {
+  //         logger.info('Processing Instagram message', {
+  //           senderId: message.from?.id,
+  //           messageType: message.type,
+  //           timestamp: message.timestamp
+  //         });
 
-          // InstagramイベントをMessageBridgeに転送
-          await this.messageBridge.handleInstagramToDiscord({
-            sender: message.from,
-            message: message,
-            timestamp: message.timestamp
-          });
+  //         // InstagramイベントをMessageBridgeに転送
+  //         await this.messageBridge.handleInstagramToDiscord({
+  //           sender: message.from,
+  //           message: message,
+  //           timestamp: message.timestamp
+  //         });
 
-        } catch (error) {
-          logger.error('Failed to handle Instagram message', {
-            messageId: message.id,
-            error: error.message,
-            stack: error.stack
-          });
-        }
-      }
+  //       } catch (error) {
+  //         logger.error('Failed to handle Instagram message', {
+  //           messageId: message.id,
+  //           error: error.message,
+  //           stack: error.stack
+  //         });
+  //       }
+  //     }
 
-    } catch (error) {
-      logger.error('Failed to handle Instagram event', {
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  }
+  //   } catch (error) {
+  //     logger.error('Failed to handle Instagram event', {
+  //       error: error.message,
+  //       stack: error.stack
+  //     });
+  //   }
+  // }
 
   /**
-   * LINEイベントを処理
+   * LINEイベントを処理 (削除)
    * @param {Object} event - LINEイベント
    */
-  async handleLineEvent(event) {
-    try {
-      // メッセージイベントのみ処理
-      if (event.type !== 'message') {
-        logger.debug('Skipping non-message event', { eventType: event.type });
-        return;
-      }
+  // async handleLineEvent(event) {
+  //   try {
+  //     // メッセージイベントのみ処理
+  //     if (event.type !== 'message') {
+  //       logger.debug('Skipping non-message event', { eventType: event.type });
+  //       return;
+  //     }
 
-      // ボット自身のメッセージは無視
-      if (event.source.type === 'user' && event.source.userId === config.line.channelId) {
-        logger.debug('Skipping bot message');
-        return;
-      }
+  //     // ボット自身のメッセージは無視
+  //     if (event.source.type === 'user' && event.source.userId === config.line.channelId) {
+  //       logger.debug('Skipping bot message');
+  //       return;
+  //     }
 
-      logger.info('Processing LINE event', {
-        eventType: event.type,
-        messageType: event.message?.type,
-        sourceType: event.source.type,
-        sourceId: event.source.groupId || event.source.userId,
-        senderId: event.source.userId
-      });
+  //     logger.info('Processing LINE event', {
+  //       eventType: event.type,
+  //       messageType: event.message?.type,
+  //       sourceType: event.source.type,
+  //       sourceId: event.source.groupId || event.source.userId,
+  //       senderId: event.source.userId
+  //     });
 
-      // MessageBridgeに転送
-      await this.messageBridge.handleLineToDiscord(event);
+  //     // MessageBridgeに転送
+  //     await this.messageBridge.handleLineToDiscord(event);
 
-    } catch (error) {
-      logger.error('Failed to handle LINE event', {
-        eventId: event.message?.id,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  }
+  //   } catch (error) {
+  //     logger.error('Failed to handle LINE event', {
+  //       eventId: event.message?.id,
+  //       error: error.message,
+  //       stack: error.stack
+  //     });
+  //   }
+  // }
 
   /**
    * アプリケーションを開始
@@ -489,4 +381,4 @@ app.start().catch((error) => {
   process.exit(1);
 });
 
-module.exports = app; 
+module.exports = app;

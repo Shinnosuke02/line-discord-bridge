@@ -6,7 +6,7 @@ const { AttachmentBuilder } = require('discord.js');
 const { Client: LineClient } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
-const FileProcessor = require('./fileProcessor');
+const ModernFileProcessor = require('./modernFileProcessor');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
@@ -139,7 +139,7 @@ async function processDiscordStickerAttachment(sticker, userId, lineService) {
 
 class MediaService {
   constructor() {
-    this.fileProcessor = new FileProcessor();
+    this.fileProcessor = new ModernFileProcessor();
   }
 
   /**
@@ -239,8 +239,8 @@ class MediaService {
         contentLength: content.length
       });
       
-      // FileProcessorを使用して画像を処理
-      const result = this.fileProcessor.processLineImage(message, content);
+      // ModernFileProcessorを使用して画像を処理
+      const result = await this.fileProcessor.processLineImage(message, content);
       
       logger.info('FileProcessor result', {
         messageId: message.id,
@@ -281,7 +281,7 @@ class MediaService {
   async processLineVideo(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'video/mp4');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'video');
       if (!result.success) throw new Error(result.error);
       const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
@@ -299,7 +299,7 @@ class MediaService {
   async processLineAudio(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'audio/m4a');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'audio');
       if (!result.success) throw new Error(result.error);
       const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
@@ -317,7 +317,7 @@ class MediaService {
   async processLineFile(message) {
     try {
       const content = await this.getLineContent(message.id);
-      const result = this.fileProcessor.processLineMedia(message, content, 'application/octet-stream');
+      const result = await this.fileProcessor.processLineMedia(message, content, 'file');
       if (!result.success) throw new Error(result.error);
       const attachment = new AttachmentBuilder(content, { name: result.filename });
       return {
