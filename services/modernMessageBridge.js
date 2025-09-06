@@ -530,9 +530,9 @@ class ModernMessageBridge {
       const sentPattern = new RegExp(`^\\*\\*${displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*\\s+sent\\s+a\\s+.*?message\\.?\\s*`, 'i');
       cleanMessage.content = cleanMessage.content.replace(sentPattern, '');
       
-      // 空になった場合は適切なメッセージを設定
+      // 空になった場合はcontentを削除（スタンプなど、ファイルのみのメッセージ用）
       if (!cleanMessage.content.trim()) {
-        cleanMessage.content = 'メッセージを送信しました';
+        delete cleanMessage.content;
       }
     }
     
