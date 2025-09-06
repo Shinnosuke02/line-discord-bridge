@@ -1,5 +1,13 @@
-// 環境変数を最初に読み込み
-require('dotenv').config();
+// 環境変数を最初に読み込み（パスを明示的に指定）
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+// 環境変数読み込みのデバッグ
+console.log('Environment variables loaded:');
+console.log('LINE_CHANNEL_ACCESS_TOKEN:', process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'OK' : 'MISSING');
+console.log('LINE_CHANNEL_SECRET:', process.env.LINE_CHANNEL_SECRET ? 'OK' : 'MISSING');
+console.log('DISCORD_BOT_TOKEN:', process.env.DISCORD_BOT_TOKEN ? 'OK' : 'MISSING');
+console.log('DISCORD_GUILD_ID:', process.env.DISCORD_GUILD_ID ? 'OK' : 'MISSING');
 
 const express = require('express');
 const { createServer } = require('http');
@@ -10,7 +18,6 @@ const ModernMessageBridge = require('./services/modernMessageBridge');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const path = require('path');
 const fs = require('fs');
 
 const setupWebhookRoutes = require('./routes/webhook'); // 追加

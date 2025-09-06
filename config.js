@@ -1,7 +1,6 @@
 /**
  * アプリケーション設定
  */
-require('dotenv').config();
 
 const config = {
   // LINE設定
