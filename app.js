@@ -4,7 +4,6 @@ const { Client } = require('@line/bot-sdk');
 const config = require('./config');
 const logger = require('./utils/logger');
 const ModernMessageBridge = require('./services/modernMessageBridge');
-// const InstagramService = require('./services/instagramService'); // 削除
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
@@ -23,7 +22,6 @@ class ModernApp {
     this.app = express();
     this.server = createServer(this.app);
     this.lineClient = new Client(config.line);
-    // this.instagramService = new InstagramService(); // 削除
     this.messageBridge = new ModernMessageBridge();
     
     // グレースフルシャットダウン用
@@ -83,7 +81,6 @@ class ModernApp {
       setupWebhookRoutes(this.messageBridge, () => this.isShuttingDown, this.lineClient)
     );
 
-    // Instagram Webhook 関連のルートは削除済み
 
     // アップロードAPI
     const upload = multer({ storage: multer.memoryStorage() });
@@ -204,93 +201,7 @@ class ModernApp {
     process.on('SIGINT', () => shutdown('SIGINT'));
   }
 
-  /**
-   * Instagramイベントを処理 (削除)
-   * @param {Object} change - Instagram変更イベント
-   */
-  // async handleInstagramEvent(change) {
-  //   try {
-  //     // メッセージイベントのみ処理
-  //     if (change.field !== 'messages') {
-  //       logger.debug('Skipping non-message event', { field: change.field });
-  //       return;
-  //     }
 
-  //     const value = change.value;
-  //     if (!value || !value.messages || !Array.isArray(value.messages)) {
-  //       logger.debug('No messages in Instagram event');
-  //       return;
-  //     }
-
-  //     for (const message of value.messages) {
-  //       try {
-  //         logger.info('Processing Instagram message', {
-  //           senderId: message.from?.id,
-  //           messageType: message.type,
-  //           timestamp: message.timestamp
-  //         });
-
-  //         // InstagramイベントをMessageBridgeに転送
-  //         await this.messageBridge.handleInstagramToDiscord({
-  //           sender: message.from,
-  //           message: message,
-  //           timestamp: message.timestamp
-  //         });
-
-  //       } catch (error) {
-  //         logger.error('Failed to handle Instagram message', {
-  //           messageId: message.id,
-  //           error: error.message,
-  //           stack: error.stack
-  //         });
-  //       }
-  //     }
-
-  //   } catch (error) {
-  //     logger.error('Failed to handle Instagram event', {
-  //       error: error.message,
-  //       stack: error.stack
-  //     });
-  //   }
-  // }
-
-  /**
-   * LINEイベントを処理 (削除)
-   * @param {Object} event - LINEイベント
-   */
-  // async handleLineEvent(event) {
-  //   try {
-  //     // メッセージイベントのみ処理
-  //     if (event.type !== 'message') {
-  //       logger.debug('Skipping non-message event', { eventType: event.type });
-  //       return;
-  //     }
-
-  //     // ボット自身のメッセージは無視
-  //     if (event.source.type === 'user' && event.source.userId === config.line.channelId) {
-  //       logger.debug('Skipping bot message');
-  //       return;
-  //     }
-
-  //     logger.info('Processing LINE event', {
-  //       eventType: event.type,
-  //       messageType: event.message?.type,
-  //       sourceType: event.source.type,
-  //       sourceId: event.source.groupId || event.source.userId,
-  //       senderId: event.source.userId
-  //     });
-
-  //     // MessageBridgeに転送
-  //     await this.messageBridge.handleLineToDiscord(event);
-
-  //   } catch (error) {
-  //     logger.error('Failed to handle LINE event', {
-  //       eventId: event.message?.id,
-  //       error: error.message,
-  //       stack: error.stack
-  //     });
-  //   }
-  // }
 
   /**
    * アプリケーションを開始

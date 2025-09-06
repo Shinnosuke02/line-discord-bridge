@@ -10,16 +10,6 @@ const config = {
     channelSecret: process.env.LINE_CHANNEL_SECRET,
   },
   
-  // Instagram設定
-  instagram: {
-    // Basic Display API（個人アカウント用）
-    accessToken: process.env.INSTAGRAM_ACCESS_TOKEN,
-    appSecret: process.env.INSTAGRAM_APP_SECRET,
-    verifyToken: process.env.INSTAGRAM_VERIFY_TOKEN,
-    // Graph API（ビジネスアカウント用）
-    graphAccessToken: process.env.INSTAGRAM_GRAPH_ACCESS_TOKEN,
-    businessAccountId: process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID,
-  },
   
   // Discord設定
   discord: {
@@ -66,12 +56,6 @@ const config = {
     name: process.env.WEBHOOK_NAME || 'LINE Bridge',
   },
 
-  // Cloudinary設定
-  cloudinary: {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    apiKey: process.env.CLOUDINARY_API_KEY,
-    apiSecret: process.env.CLOUDINARY_API_SECRET,
-  },
 
   // リプライ機能設定
   reply: {
@@ -88,14 +72,8 @@ const config = {
 const requiredEnvVars = [
   'LINE_CHANNEL_ACCESS_TOKEN',
   'LINE_CHANNEL_SECRET',
-  'INSTAGRAM_ACCESS_TOKEN',
-  'INSTAGRAM_APP_SECRET',
-  'INSTAGRAM_VERIFY_TOKEN',
   'DISCORD_BOT_TOKEN',
   'DISCORD_GUILD_ID',
-  'CLOUDINARY_CLOUD_NAME',
-  'CLOUDINARY_API_KEY',
-  'CLOUDINARY_API_SECRET',
 ];
 
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
