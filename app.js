@@ -1,9 +1,18 @@
 // 環境変数を最初に読み込み（パスを明示的に指定）
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const fs = require('fs');
+
+// .envファイルの存在確認と読み込み
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+  console.log('✓ .env file loaded successfully');
+} else {
+  console.log('⚠ .env file not found, using system environment variables');
+}
 
 // 環境変数読み込みのデバッグ
-console.log('Environment variables loaded:');
+console.log('Environment variables status:');
 console.log('LINE_CHANNEL_ACCESS_TOKEN:', process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'OK' : 'MISSING');
 console.log('LINE_CHANNEL_SECRET:', process.env.LINE_CHANNEL_SECRET ? 'OK' : 'MISSING');
 console.log('DISCORD_BOT_TOKEN:', process.env.DISCORD_BOT_TOKEN ? 'OK' : 'MISSING');
@@ -18,7 +27,6 @@ const ModernMessageBridge = require('./services/modernMessageBridge');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
 
 const setupWebhookRoutes = require('./routes/webhook'); // 追加
 

@@ -2,7 +2,15 @@
 
 // 環境変数読み込みテスト
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const fs = require('fs');
+
+// .envファイルの存在確認と読み込み
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+} else {
+  console.log('⚠ .env file not found, using system environment variables');
+}
 
 console.log('=== Environment Variables Test ===');
 console.log('Current working directory:', process.cwd());
