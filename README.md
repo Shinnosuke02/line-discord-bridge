@@ -1,7 +1,9 @@
-# LINE-Discord-Instagram Bridge (Modern Version 2.2.0)
+# LINE-Discord Bridge (Modern Version 2.2.0)
 
-LINEとInstagramのメッセージをDiscordに集約するアプリを作りました。
-複数のSNSプラットフォームからのメッセージを一つのDiscordサーバーで管理できます。
+LINEとDiscordのメッセージを相互に転送し、リプライ機能を提供するアプリです。
+複数のプラットフォームからのメッセージを一つのDiscordサーバーで管理できます。
+
+> **注意**: Instagram機能は現在封印されています。LINE⇔Discordの双方向通信に特化した構成です。
 
 ## 🆕 新機能: リプライ機能対応
 
@@ -13,8 +15,10 @@ LINEとInstagramのメッセージをDiscordに集約するアプリを作りま
 ---
 必要なもの
 - LINE公式アカウント（LINE Messaging API利用のために必要）
-- Instagram Basic Display API（Instagramメッセージ受信のために必要）
+- Discord Bot Token（Discord API利用のために必要）
 - 独自ドメイン（Let's Encryptを利用したSSL通信のため。運用はサブドメイン設定で問題なし）
+
+> **Instagram機能について**: 現在封印されているため、Instagram関連の設定は不要です。
 
 ---
 
@@ -60,14 +64,12 @@ npm install
 LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 LINE_CHANNEL_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# Instagram設定
-# Basic Display API（個人アカウント用）
-INSTAGRAM_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-INSTAGRAM_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-INSTAGRAM_VERIFY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# Graph API（ビジネスアカウント用）
-INSTAGRAM_GRAPH_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-INSTAGRAM_BUSINESS_ACCOUNT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Instagram設定（現在封印中）
+# INSTAGRAM_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# INSTAGRAM_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# INSTAGRAM_VERIFY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# INSTAGRAM_GRAPH_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# INSTAGRAM_BUSINESS_ACCOUNT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Discord設定
 DISCORD_BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -163,25 +165,7 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d example.com
 ```
 
-### 9. Instagram設定
-
-#### 個人アカウント用（Basic Display API）
-1. **Facebook開発者アカウント**でアプリを作成
-2. **Instagram Basic Display**を追加
-3. **Webhook**を設定：
-   - URL: `https://yourdomain.com/instagram-webhook`
-   - 検証トークン: 任意の文字列（`.env`の`INSTAGRAM_VERIFY_TOKEN`と一致させる）
-   - サブスクライブするフィールド: `messages`
-
-#### ビジネスアカウント用（Graph API）
-1. **Facebook開発者アカウント**でアプリを作成
-2. **Instagram Graph API**を追加
-3. **ビジネスアカウント**を接続
-4. **アクセストークン**を取得（`pages_show_list`, `instagram_basic`, `instagram_manage_comments`権限が必要）
-5. **ビジネスアカウントID**を取得
-6. **ポーリング機能**が自動的に開始されます（5分間隔）
-
-### 10. アプリ起動
+### 9. アプリ起動
 
 ```bash
 pm2 start ecosystem.config.js
@@ -192,11 +176,10 @@ pm2 save
 
 ## 🚀 新機能・特徴
 
-- **マルチプラットフォーム対応**: LINEとInstagramのメッセージをDiscordに集約
+- **LINE⇔Discord双方向通信**: LINEとDiscordのメッセージを相互に転送
 - **🆕 リプライ機能**: DiscordとLINE間での双方向リプライ対応
 - **🆕 メッセージIDマッピング**: 自動的なメッセージ関係管理
 - LINE Bot API v7対応
-- Instagram Basic Display API対応
 - 外部URLを使用したメディア送信
 - 正確なファイル処理（MIME判定・拡張子）
 - マイクロサービス指向設計
@@ -204,6 +187,8 @@ pm2 save
 - レート制限対策とメッセージキュー
 - グレースフルシャットダウン
 - **🆕 フォールバック機能**: リプライ機能エラー時も既存機能は継続動作
+
+> **Instagram機能**: 現在封印中。必要に応じて将来的に有効化可能
 
 ---
 
@@ -220,13 +205,14 @@ pm2 save
 ## 🔧 機能詳細
 
 - **LINE→Discord転送**: テキスト・画像・動画・音声・ファイル・スタンプ・位置情報
-- **Instagram→Discord転送**: テキスト・画像・動画・音声・ファイル
 - **Discord→LINE転送**: テキスト・画像・動画・音声・ファイル・スタンプ
 - **🆕 リプライ機能**: 
   - Discordでメッセージに返信 → LINE側にリプライとして送信
   - LINEのメッセージ → Discordでリプライ可能
   - メッセージID自動マッピング・管理
 - **ファイル処理**: MIME判定・拡張子・10MB制限・堅牢なエラー処理
+
+> **Instagram機能**: 現在封印中。コードは残存しているため、必要に応じて有効化可能
 
 ---
 
@@ -236,13 +222,15 @@ pm2 save
 ├── app.js                  # メインアプリケーション
 ├── services/
 │   ├── modernLineService.js
-│   ├── instagramService.js
 │   ├── modernMediaService.js
 │   ├── modernFileProcessor.js
 │   ├── modernMessageBridge.js
 │   ├── replyManager.js     # 🆕 リプライ機能管理
 │   ├── discordReplyService.js  # 🆕 Discordリプライ処理
-│   └── lineReplyService.js     # 🆕 LINEリプライ処理
+│   ├── lineReplyService.js     # 🆕 LINEリプライ処理
+│   ├── instagramService.js     # 🔒 封印中（将来有効化可能）
+│   ├── instagramGraphService.js # 🔒 封印中（将来有効化可能）
+│   └── instagramPollingService.js # 🔒 封印中（将来有効化可能）
 ├── utils/
 │   └── logger.js
 ├── data/
@@ -287,5 +275,23 @@ pm2 save
 - メッセージマッピングは `data/message-mappings.json` に保存
 - リプライ関係は `data/reply-mappings.json` に保存
 - 最大10,000件のマッピングを保持（古いものは自動削除）
+
+---
+
+## 🔒 Instagram機能について
+
+Instagram機能は現在封印されていますが、コードは残存しています：
+
+### 封印されている機能
+- Instagram Basic Display API（個人アカウント用）
+- Instagram Graph API（ビジネスアカウント用）
+- Instagramポーリング機能
+
+### 有効化方法（将来）
+1. `app.js`のコメントアウトを解除
+2. 環境変数にInstagram関連の設定を追加
+3. 必要に応じてWebhookルートを追加
+
+現在はLINE⇔Discordの双方向通信に特化した構成となっています。
 
 ---
