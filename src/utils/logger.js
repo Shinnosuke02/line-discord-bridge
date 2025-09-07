@@ -1,14 +1,15 @@
 /**
- * ログ設定
+ * ログユーティリティ
  * Winstonを使用した構造化ログ
  */
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 
-const config = require('../config');
+// ログディレクトリの作成
+const logDir = path.join(process.cwd(), 'logs');
 
-// ログフォーマット
+// カスタムフォーマット
 const logFormat = winston.format.combine(
   winston.format.timestamp({
     format: 'YYYY-MM-DD HH:mm:ss.SSS'
@@ -35,62 +36,85 @@ const consoleFormat = winston.format.combine(
   })
 );
 
-// ログトランスポート
-const transports = [];
+// ログレベル設定
+const logLevel = process.env.LOG_LEVEL || 'info';
 
-// コンソール出力
-transports.push(
+// トランスポート設定
+const transports = [
+  // コンソール出力
   new winston.transports.Console({
-    level: config.logging.level,
+    level: logLevel,
     format: consoleFormat
+  }),
+
+  // 全ログファイル
+  new DailyRotateFile({
+    filename: path.join(logDir, 'application-%DATE%.log'),
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '20m',
+    maxFiles: '14d',
+    level: logLevel,
+    format: logFormat
+  }),
+
+  // エラーログファイル
+  new DailyRotateFile({
+    filename: path.join(logDir, 'error-%DATE%.log'),
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '20m',
+    maxFiles: '30d',
+    level: 'error',
+    format: logFormat
+  }),
+
+  // 警告ログファイル
+  new DailyRotateFile({
+    filename: path.join(logDir, 'warn-%DATE%.log'),
+    datePattern: 'YYYY-MM-DD',
+    maxSize: '20m',
+    maxFiles: '14d',
+    level: 'warn',
+    format: logFormat
   })
-);
+];
 
-// ファイル出力（本番環境）
-if (config.app.environment === 'production') {
-  // エラーログ
-  transports.push(
-    new DailyRotateFile({
-      filename: path.join('logs', 'error-%DATE%.log'),
-      datePattern: config.logging.datePattern,
-      level: 'error',
-      maxFiles: config.logging.maxFiles,
-      maxSize: config.logging.maxSize,
-      format: logFormat
-    })
-  );
-
-  // 全ログ
-  transports.push(
-    new DailyRotateFile({
-      filename: path.join('logs', 'combined-%DATE%.log'),
-      datePattern: config.logging.datePattern,
-      maxFiles: config.logging.maxFiles,
-      maxSize: config.logging.maxSize,
-      format: logFormat
-    })
-  );
+// 本番環境ではコンソール出力を無効化
+if (process.env.NODE_ENV === 'production') {
+  transports[0].silent = true;
 }
 
-// ロガーインスタンスを作成
+// ロガー作成
 const logger = winston.createLogger({
-  level: config.logging.level,
+  level: logLevel,
   format: logFormat,
+  defaultMeta: {
+    service: 'line-discord-bridge',
+    version: process.env.npm_package_version || '1.0.0'
+  },
   transports,
   exitOnError: false
 });
 
-// 未処理の例外と拒否をキャッチ
+// 未処理の例外とリジェクトをキャッチ
 logger.exceptions.handle(
-  new winston.transports.Console({
-    format: consoleFormat
+  new winston.transports.File({
+    filename: path.join(logDir, 'exceptions.log'),
+    format: logFormat
   })
 );
 
 logger.rejections.handle(
-  new winston.transports.Console({
-    format: consoleFormat
+  new winston.transports.File({
+    filename: path.join(logDir, 'rejections.log'),
+    format: logFormat
   })
 );
+
+// ログレベルの確認
+logger.info('Logger initialized', {
+  level: logLevel,
+  environment: process.env.NODE_ENV || 'development',
+  logDir
+});
 
 module.exports = logger;

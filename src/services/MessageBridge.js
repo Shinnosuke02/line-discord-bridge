@@ -34,6 +34,9 @@ class MessageBridge {
     this.channelManager = null;
     this.webhookManager = null;
     
+    // DiscordServiceにクライアントを設定
+    this.discordService.setClient(this.discord);
+    
     this.pendingMessages = [];
     this.isInitialized = false;
     this.metrics = {
@@ -413,8 +416,30 @@ class MessageBridge {
    * @returns {Object} 処理結果
    */
   async handleFileUpload(req) {
-    // ファイルアップロード処理の実装
-    return { success: true, message: 'File upload not implemented yet' };
+    try {
+      // ファイルアップロード処理の実装
+      if (!req.file) {
+        return { success: false, message: 'No file uploaded' };
+      }
+
+      // ファイル処理ロジック
+      const result = await this.mediaService.processUploadedFile(req.file);
+      
+      return { 
+        success: true, 
+        message: 'File uploaded successfully',
+        result 
+      };
+    } catch (error) {
+      logger.error('Failed to handle file upload', {
+        error: error.message
+      });
+      return { 
+        success: false, 
+        message: 'File upload failed',
+        error: error.message 
+      };
+    }
   }
 
   /**

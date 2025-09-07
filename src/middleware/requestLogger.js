@@ -1,37 +1,43 @@
 /**
  * リクエストログミドルウェア
+ * HTTPリクエストのログを記録
  */
 const logger = require('../utils/logger');
 
 /**
- * リクエストログを記録
+ * リクエストログミドルウェア
+ * @param {Object} req - リクエストオブジェクト
+ * @param {Object} res - レスポンスオブジェクト
+ * @param {Function} next - 次のミドルウェア関数
  */
-const requestLogger = (req, res, next) => {
-  const start = Date.now();
+function requestLogger(req, res, next) {
+  const startTime = Date.now();
   
+  // リクエスト情報をログに記録
+  logger.info('Incoming request', {
+    method: req.method,
+    url: req.url,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+
   // レスポンス完了時のログ
   res.on('finish', () => {
-    const duration = Date.now() - start;
-    const logData = {
+    const duration = Date.now() - startTime;
+    const logLevel = res.statusCode >= 400 ? 'warn' : 'info';
+    
+    logger[logLevel]('Request completed', {
       method: req.method,
       url: req.url,
-      status: res.statusCode,
+      statusCode: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-      userAgent: req.get('User-Agent'),
-      contentLength: res.get('Content-Length')
-    };
-
-    if (res.statusCode >= 400) {
-      logger.warn('HTTP Request', logData);
-    } else {
-      logger.info('HTTP Request', logData);
-    }
+      userAgent: req.get('User-Agent')
+    });
   });
 
   next();
-};
+}
 
-module.exports = {
-  requestLogger
-};
+module.exports = requestLogger;
