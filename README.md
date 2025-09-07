@@ -1,238 +1,278 @@
-# LINE-Discord Bridge (Modern Version 2.0.0)
+# LINE-Discord Bridge
 
-LINEを使いたくなさ過ぎて、LINEユーザーとDiscordでやりとり出来るアプリ作りました。
-ただ、LINEを最初の「公式アカウント」作成のために、一度は使わないとならない…。
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
----
-必要なもの
-- LINE公式アカウント（LINE Messaging API利用のために必要）
-- 独自ドメイン（Let's Encryptを利用したSSL通信のため。運用はサブドメイン設定で問題なし）
+高度なLINE-Discordブリッジアプリケーション。双方向メッセージング、返信機能、メディア処理をサポートします。
 
----
+## ✨ 特徴
 
-## 🖥️ 動作確認済みサーバ環境
+- 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
+- 💬 **返信機能**: DiscordとLINE間での返信機能サポート
+- 📎 **メディア処理**: 画像、動画、音声、ファイルの自動処理
+- 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示
+- 📊 **メッセージマッピング**: 自動的なメッセージID管理
+- 🛡️ **セキュリティ**: 堅牢なエラーハンドリングとセキュリティ機能
+- 📈 **監視**: 詳細なログとメトリクス
+- ⚡ **高性能**: 非同期処理とバッチ処理
 
-- サーバ: Oracle Cloud Free Tier
-- OS: Ubuntu 24.04.2 LTS (Noble Numbat)
-- カーネル: 6.8.0-1028-oracle
-- CPU: AMD EPYC 7551 32-Core Processor
-- メモリ: 約1GB
-- Node.js: v20.19.4
-- npm: 10.8.2
-- pm2: 6.0.8
+## 🚀 クイックスタート
 
----
-
-## 🛠️ Ubuntu系サーバへのインストールガイド
-
-### 1. 必要パッケージのインストール
-
-```bash
-sudo apt update
-sudo apt install -y nodejs npm nginx certbot python3-certbot-nginx git
-sudo npm install -g pm2
-```
-
-### 2. リポジトリのクローンとセットアップ
-
-```bash
-git clone <YOUR_REPO_URL>
-cd line-discord-bridge
-npm install
-```
-
-### 3. 環境変数ファイル（.env）の作成
-
-**重要：APIキーやシークレットなどの値は`.env`ファイルで管理してください。`config.js`に直接記載しないでください。**
-
-`.env`ファイル例：
-
-```env
-LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-LINE_CHANNEL_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DISCORD_BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DISCORD_GUILD_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-PORT=3000
-WEBHOOK_ENABLED=true
-WEBHOOK_NAME=LINE Bridge
-LOG_LEVEL=info
-```
-
-- `.env`ファイルはリポジトリには含めず、各サーバで個別に作成してください。
-- `.env`の内容は`config.js`経由で自動的に読み込まれます。
-
-### 4. 設定ファイルの確認
-
-`config.js`は環境変数を参照する形になっています。値を直接書かず、必ず`.env`で管理してください。
-
-### 5. マッピングファイルの作成
-
-`mapping.json`を作成し、LINEユーザーIDとDiscordチャンネルIDのマッピングを設定：
-
-```json
-[
-  {
-    "lineUserId": "U1234567890abcdef",
-    "discordChannelId": "1234567890123456789"
-  }
-]
-```
-
-### 6. ファイアウォール（iptables）設定例
-
-```bash
-# 80, 443, 22（SSH）を許可
-sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
-# 既存の許可ルールを確認
-sudo iptables -L
-# 設定を保存（Ubuntu 24.04例）
-sudo apt install -y iptables-persistent
-sudo netfilter-persistent save
-```
-
-### 7. Nginxリバースプロキシ設定
-
-- `/etc/nginx/sites-available/line-discord-bridge` を作成し、下記を記載
-
-```nginx
-server {
-    listen 80;
-    server_name example.com;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl;
-    server_name example.com;
-
-    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-- 有効化・再起動
-
-```bash
-sudo ln -s /etc/nginx/sites-available/line-discord-bridge /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 8. Let's EncryptでSSL証明書取得
-
-```bash
-sudo certbot --nginx -d example.com
-```
-
-### 9. アプリ起動
-
-```bash
-pm2 start ecosystem.config.js
-pm2 save
-```
-
----
-
-## 🚀 新機能・特徴
-
-- **LINE Bot API v7対応**
-- **🆕 相互返信機能**: DiscordとLINE間での双方向返信対応
-- **🆕 メッセージIDマッピング**: 自動的なメッセージ関係管理
-- 外部URLを使用したメディア送信
-- 正確なファイル処理（MIME判定・拡張子）
-- マイクロサービス指向設計
-- 構造化ログ・詳細なデバッグ
-- レート制限対策とメッセージキュー
-- グレースフルシャットダウン
-
----
-
-## 📋 アプリ要件
+### 前提条件
 
 - Node.js 18.0.0以上
 - npm 8.0.0以上
 - LINE Bot API v7対応のチャンネル
 - Discord Bot Token
-- Nginx/Let's Encrypt必須
 
----
+### インストール
+
+```bash
+# リポジトリをクローン
+git clone https://github.com/Shinnosuke02/line-discord-bridge.git
+cd line-discord-bridge
+
+# 依存関係をインストール
+npm install
+
+# 環境変数を設定
+cp env.example .env
+# .envファイルを編集して必要な値を設定
+```
+
+### 設定
+
+`.env`ファイルで以下の環境変数を設定してください：
+
+```env
+# LINE Bot設定
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
+LINE_CHANNEL_SECRET=your_line_channel_secret
+
+# Discord Bot設定
+DISCORD_BOT_TOKEN=your_discord_bot_token
+DISCORD_GUILD_ID=your_discord_guild_id
+
+# その他の設定
+NODE_ENV=production
+PORT=3000
+LOG_LEVEL=info
+```
+
+### 起動
+
+```bash
+# 開発モード
+npm run dev
+
+# 本番モード
+npm start
+
+# PM2で管理
+npm run pm2:start
+```
+
+## 📁 プロジェクト構造
+
+```
+src/
+├── app.js                 # メインアプリケーション
+├── config/
+│   ├── index.js          # メイン設定
+│   └── fileProcessing.js # ファイル処理設定
+├── services/
+│   ├── MessageBridge.js  # メッセージブリッジ
+│   ├── LineService.js    # LINE APIサービス
+│   ├── DiscordService.js # Discord APIサービス
+│   ├── MediaService.js   # メディア処理サービス
+│   ├── ChannelManager.js # チャンネル管理
+│   ├── WebhookManager.js # Webhook管理
+│   ├── MessageMappingManager.js # メッセージマッピング
+│   └── ReplyService.js   # 返信機能
+├── middleware/
+│   ├── errorHandler.js   # エラーハンドリング
+│   ├── requestLogger.js  # リクエストログ
+│   └── security.js       # セキュリティ
+├── utils/
+│   ├── logger.js         # ログ設定
+│   └── fileUtils.js      # ファイルユーティリティ
+└── routes/               # APIルート（将来の拡張用）
+
+data/                     # データファイル
+├── message-mappings.json # メッセージマッピング
+└── reply-mappings.json  # 返信マッピング
+
+logs/                     # ログファイル
+uploads/                  # アップロードファイル
+temp/                     # 一時ファイル
+```
 
 ## 🔧 機能詳細
 
-- **LINE→Discord転送**: テキスト・画像・動画・音声・ファイル・スタンプ・位置情報
-- **Discord→LINE転送**: テキスト・画像・動画・音声・ファイル・スタンプ
-- **🆕 返信機能**:  
-  - Discordでメッセージに返信 → LINE側にリプライとして送信  
-  - LINEのメッセージ → Discordでリプライ可能  
-  - メッセージID自動マッピング・管理
-- **ファイル処理**: MIME判定・拡張子・10MB制限・堅牢なエラー処理
+### メッセージ転送
 
----
+- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、スタンプ、位置情報
+- **Discord → LINE**: テキスト、画像、動画、音声、ファイル、スタンプ
 
-## 📁 ディレクトリ構成
+### 返信機能
 
-```
-├── app.js                  # メインアプリケーション
-├── services/
-│   ├── modernLineService.js      # LINE Bot API v7対応サービス
-│   ├── modernFileProcessor.js    # 近代化されたファイル処理
-│   ├── modernMessageBridge.js    # メインのメッセージブリッジ
-│   ├── mediaService.js           # メディア処理サービス
-│   ├── discordService.js         # Discord処理サービス
-│   ├── channelManager.js         # チャンネル管理
-│   ├── webhookManager.js         # Webhook管理
-│   ├── mappingManager.js         # マッピング管理
-│   ├── messageMappingManager.js  # 🆕 メッセージIDマッピング管理
-│   ├── replyService.js           # 🆕 返信機能管理
-│   └── errors.js                 # エラーハンドリング
-├── config/
-│   └── fileProcessing.js         # ファイル処理設定
-├── utils/
-│   ├── logger.js                 # ログ機能
-│   ├── fileUtils.js              # ファイルユーティリティ
-│   └── errorHandler.js           # エラーハンドラー
-├── data/
-│   ├── message-mappings.json     # 🆕 メッセージIDマッピング
-│   └── reply-mappings.json       # 🆕 返信関係マッピング
-├── config.js                     # メイン設定
-├── mapping.json                  # ユーザー・チャンネルマッピング
-├── ecosystem.config.js           # PM2設定
-├── render.yaml                   # Render.com設定
-└── package.json                  # 依存関係
+- **Discord返信**: Discordでメッセージに返信すると、LINE側に「↩️ 返信: [元メッセージ]」として送信
+- **メッセージマッピング**: 自動的なメッセージID管理で返信関係を追跡
+
+### メディア処理
+
+- **自動MIME判定**: ファイル内容から正確なMIMEタイプを判定
+- **サイズ制限**: 設定可能なファイルサイズ制限
+- **圧縮**: 画像の自動圧縮（Sharp使用）
+- **外部URL**: LINE Bot API v7の外部URL機能を活用
+
+### Webhook機能
+
+- **自然な表示**: Discord Webhookを使用してLINEユーザー名で表示
+- **アバター**: LINEプロフィール画像をDiscordアバターとして使用
+- **フォールバック**: Webhook失敗時はBot送信に自動切り替え
+
+## 📊 監視とログ
+
+### ヘルスチェック
+
+```bash
+curl http://localhost:3000/health
 ```
 
+### メトリクス
+
+```bash
+curl http://localhost:3000/metrics
+```
+
+### ログレベル
+
+環境変数`LOG_LEVEL`で設定可能：
+- `error`: エラーのみ
+- `warn`: 警告以上
+- `info`: 情報以上（デフォルト）
+- `debug`: デバッグ情報含む
+
+## 🛠️ 開発
+
+### スクリプト
+
+```bash
+# 開発サーバー起動
+npm run dev
+
+# テスト実行
+npm test
+npm run test:watch
+
+# リント
+npm run lint
+npm run lint:fix
+
+# フォーマット
+npm run format
+
+# PM2管理
+npm run pm2:start
+npm run pm2:stop
+npm run pm2:restart
+npm run pm2:logs
+npm run pm2:status
+```
+
+### テスト
+
+```bash
+# 全テスト実行
+npm test
+
+# ウォッチモード
+npm run test:watch
+
+# カバレッジ付き
+npm test -- --coverage
+```
+
+## 🚀 デプロイ
+
+### PM2を使用
+
+```bash
+# アプリケーション開始
+npm run pm2:start
+
+# 設定保存
+pm2 save
+
+# 自動起動設定
+pm2 startup
+```
+
+### Docker（将来の拡張）
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY src/ ./src/
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+### 環境変数
+
+本番環境では以下の環境変数を設定してください：
+
+```env
+NODE_ENV=production
+LOG_LEVEL=info
+UPLOAD_API_KEY=your_secure_api_key
+```
+
+## 🔒 セキュリティ
+
+- **API認証**: ファイルアップロード用のAPIキー認証
+- **レート制限**: 設定可能なレート制限
+- **セキュリティヘッダー**: XSS、CSRF対策
+- **入力検証**: ファイルタイプとサイズの検証
+- **エラーハンドリング**: 詳細なエラー情報の制御
+
+## 📈 パフォーマンス
+
+- **非同期処理**: 全処理が非同期で実行
+- **バッチ処理**: メッセージのバッチ処理
+- **メモリ管理**: 効率的なメモリ使用
+- **エラー回復**: 自動リトライ機能
+
+## 🤝 貢献
+
+1. フォークしてください
+2. フィーチャーブランチを作成してください (`git checkout -b feature/amazing-feature`)
+3. 変更をコミットしてください (`git commit -m 'Add some amazing feature'`)
+4. ブランチにプッシュしてください (`git push origin feature/amazing-feature`)
+5. プルリクエストを作成してください
+
+## 📝 ライセンス
+
+このプロジェクトはMITライセンスの下で公開されています。詳細は[LICENSE](LICENSE)ファイルを参照してください。
+
+## 🆘 サポート
+
+問題が発生した場合：
+
+1. [Issues](https://github.com/Shinnosuke02/line-discord-bridge/issues)で既存の問題を確認
+2. 新しいIssueを作成
+3. ログファイルを確認 (`logs/`ディレクトリ)
+
+## 📚 ドキュメント
+
+- [API仕様](docs/api.md) (将来の拡張)
+- [設定ガイド](docs/configuration.md) (将来の拡張)
+- [トラブルシューティング](docs/troubleshooting.md) (将来の拡張)
+
 ---
 
-## 🚦 注意点・セキュリティ
-
-- Node.jsアプリのポート（例: 3000）は外部公開しない（Nginx経由のみアクセス）
-- iptablesやUFWで不要なポートは閉じる
-- Let's Encrypt証明書は自動更新設定を推奨
-- `.env`ファイルは必ず`.gitignore`に含め、公開しないこと
-
----
-
-## 📊 ログ・トラブルシューティング
-
-- 詳細ログ: `export LOG_LEVEL=debug` で有効化
-- PM2ログ: `npm run pm2:logs`
-- よくある問題・デバッグ方法も記載
-
----
+**注意**: このアプリケーションはLINE Bot API v7とDiscord.js v14を使用しています。古いバージョンとの互換性は保証されません。

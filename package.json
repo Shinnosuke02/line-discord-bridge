@@ -1,19 +1,22 @@
 {
-  "name": "line-discord-bridge-modern",
-  "version": "2.0.2",
-  "description": "Modern LINE-Discord Bridge with LINE Bot API v7 support",
-  "main": "app.js",
+  "name": "line-discord-bridge",
+  "version": "3.0.0",
+  "description": "Advanced LINE-Discord Bridge with bidirectional messaging and reply support",
+  "main": "src/app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "pm2:start": "pm2 start app.js --name line-discord-bridge",
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/ --ext .js",
+    "lint:fix": "eslint src/ --ext .js --fix",
+    "format": "prettier --write src/",
+    "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop line-discord-bridge",
     "pm2:restart": "pm2 restart line-discord-bridge",
     "pm2:logs": "pm2 logs line-discord-bridge",
-    "pm2:status": "pm2 status"
+    "pm2:status": "pm2 status",
+    "pm2:delete": "pm2 delete line-discord-bridge"
   },
   "keywords": [
     "line",
@@ -22,9 +25,11 @@
     "bot",
     "messaging",
     "api",
-    "modern"
+    "bidirectional",
+    "reply",
+    "webhook"
   ],
-  "author": "Your Name",
+  "author": "Shinnosuke02",
   "license": "MIT",
   "dependencies": {
     "@line/bot-sdk": "^7.5.2",
@@ -36,16 +41,16 @@
     "file-type": "^18.7.0",
     "mime-types": "^2.1.35",
     "dotenv": "^16.3.1",
-    "cloudinary": "^1.37.2",
     "multer": "^1.4.5-lts.1",
     "sharp": "^0.33.0",
-    "uuid": "^9.0.1",
-    "node-fetch": "^2.7.0"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
     "eslint": "^8.55.0",
-    "prettier": "^3.1.1"
+    "prettier": "^3.1.1",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -53,10 +58,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "your-repository-url"
+    "url": "https://github.com/Shinnosuke02/line-discord-bridge.git"
   },
   "bugs": {
-    "url": "your-repository-url/issues"
+    "url": "https://github.com/Shinnosuke02/line-discord-bridge/issues"
   },
-  "homepage": "your-repository-url#readme"
+  "homepage": "https://github.com/Shinnosuke02/line-discord-bridge#readme"
 }
