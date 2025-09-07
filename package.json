@@ -1,0 +1,62 @@
+{
+  "name": "line-discord-bridge-modern",
+  "version": "2.0.2",
+  "description": "Modern LINE-Discord Bridge with LINE Bot API v7 support",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "pm2:start": "pm2 start app.js --name line-discord-bridge",
+    "pm2:stop": "pm2 stop line-discord-bridge",
+    "pm2:restart": "pm2 restart line-discord-bridge",
+    "pm2:logs": "pm2 logs line-discord-bridge",
+    "pm2:status": "pm2 status"
+  },
+  "keywords": [
+    "line",
+    "discord",
+    "bridge",
+    "bot",
+    "messaging",
+    "api",
+    "modern"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@line/bot-sdk": "^7.5.2",
+    "discord.js": "^14.14.1",
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "file-type": "^18.7.0",
+    "mime-types": "^2.1.35",
+    "dotenv": "^16.3.1",
+    "cloudinary": "^1.37.2",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.0",
+    "uuid": "^9.0.1",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-repository-url"
+  },
+  "bugs": {
+    "url": "your-repository-url/issues"
+  },
+  "homepage": "your-repository-url#readme"
+}
