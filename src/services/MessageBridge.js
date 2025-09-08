@@ -344,11 +344,21 @@ class MessageBridge {
   async getLineAvatar(event) {
     try {
       if (event.source.groupId) {
-        const memberProfile = await this.lineService.getGroupMemberProfile(
-          event.source.groupId,
-          event.source.userId
-        );
-        return memberProfile.pictureUrl || null;
+        // グループではグループのアイコンを優先
+        try {
+          const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
+          if (groupSummary?.pictureUrl) {
+            return groupSummary.pictureUrl;
+          }
+        } catch (e) {
+          // フォールバックでメンバーのアイコン
+          const memberProfile = await this.lineService.getGroupMemberProfile(
+            event.source.groupId,
+            event.source.userId
+          );
+          return memberProfile.pictureUrl || null;
+        }
+        return null;
       } else {
         const userProfile = await this.lineService.getUserProfile(event.source.userId);
         return userProfile.pictureUrl || null;
