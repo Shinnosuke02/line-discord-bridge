@@ -215,28 +215,28 @@ class LineService {
     
     switch (message.type) {
       case 'text':
-        return `**${displayName}**: ${message.text}`;
+        return message.text;
         
       case 'sticker':
-        return `**${displayName}** sent a sticker`;
+        return '😊 Sticker';
         
       case 'image':
-        return `**${displayName}** sent an image`;
+        return '📷 Image message';
         
       case 'video':
-        return `**${displayName}** sent a video`;
+        return '🎥 Video message';
         
       case 'audio':
-        return `**${displayName}** sent an audio message`;
+        return '🎵 Audio message';
         
       case 'file':
-        return `**${displayName}** sent a file: ${message.fileName || 'Unknown file'}`;
+        return `📎 File: ${message.fileName || 'Unknown file'}`;
         
       case 'location':
-        return `**${displayName}** sent a location`;
+        return '📍 Location message';
         
       default:
-        return `**${displayName}** sent a ${message.type} message`;
+        return `Unsupported message type: ${message.type}`;
     }
   }
 
