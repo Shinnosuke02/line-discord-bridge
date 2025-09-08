@@ -219,7 +219,20 @@ class ChannelManager {
         try {
           const userProfile = await this.lineService.getUserProfile(sourceId);
           const userName = userProfile.displayName || 'Unknown User';
+          logger.debug('User profile retrieved', {
+            sourceId,
+            userName,
+            hasDisplayName: !!userProfile.displayName
+          });
+          
           const sanitizedName = this.sanitizeChannelName(userName);
+          logger.debug('Channel name sanitized', {
+            sourceId,
+            originalName: userName,
+            sanitizedName,
+            sanitizedNameLength: sanitizedName ? sanitizedName.length : 0
+          });
+          
           if (sanitizedName && sanitizedName.length > 0) {
             return sanitizedName;
           }
