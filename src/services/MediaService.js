@@ -166,7 +166,7 @@ class MediaService {
       const buffer = Buffer.from(resp.data);
       const attachment = new AttachmentBuilder(buffer, { name: `sticker_${stickerId}.png` });
       return {
-        content: '😊 Sticker',
+        content: '',
         files: [attachment]
       };
     } catch (error) {
