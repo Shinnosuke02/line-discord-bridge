@@ -4,7 +4,7 @@
  */
 const fs = require('fs').promises;
 const path = require('path');
-const fileType = require('file-type');
+const { fileTypeFromBuffer } = require('file-type');
 const mimeTypes = require('mime-types');
 const logger = require('./logger');
 
@@ -15,7 +15,7 @@ const logger = require('./logger');
  */
 async function detectFileType(buffer) {
   try {
-    const fileTypeInfo = await fileType.fromBuffer(buffer);
+    const fileTypeInfo = await fileTypeFromBuffer(buffer);
     
     logger.debug('File type detected', {
       mimeType: fileTypeInfo?.mime,
