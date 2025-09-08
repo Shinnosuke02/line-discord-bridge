@@ -22,6 +22,117 @@ class MediaService {
     this.supportedImageTypes = config.file.supportedImageMimeTypes;
     this.supportedVideoTypes = config.file.supportedVideoMimeTypes;
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
+    
+    // サンドボックスクリンナップ設定
+    this.cleanupInterval = 30 * 60 * 1000; // 30分間隔でクリンナップ
+    this.fileMaxAge = 2 * 60 * 60 * 1000; // 2時間でファイルを削除
+    this.tempDir = path.join(process.cwd(), 'temp');
+    
+    // クリンナップタイマーを開始
+    this.startCleanupTimer();
+  }
+
+  /**
+   * クリンナップタイマーを開始
+   */
+  startCleanupTimer() {
+    // 初回クリンナップを実行
+    this.cleanupTempFiles();
+    
+    // 定期的なクリンナップを設定
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupTempFiles();
+    }, this.cleanupInterval);
+    
+    logger.info('Temp file cleanup timer started', {
+      interval: this.cleanupInterval / 1000 / 60, // 分単位
+      maxAge: this.fileMaxAge / 1000 / 60 // 分単位
+    });
+  }
+
+  /**
+   * 一時ファイルをクリンナップ
+   */
+  async cleanupTempFiles() {
+    try {
+      // tempディレクトリが存在しない場合は何もしない
+      try {
+        await fs.access(this.tempDir);
+      } catch (error) {
+        return; // ディレクトリが存在しない
+      }
+
+      const files = await fs.readdir(this.tempDir);
+      const now = Date.now();
+      let deletedCount = 0;
+      let totalSize = 0;
+
+      for (const file of files) {
+        const filePath = path.join(this.tempDir, file);
+        
+        try {
+          const stats = await fs.stat(filePath);
+          const fileAge = now - stats.mtime.getTime();
+          
+          // ファイルが古い場合は削除
+          if (fileAge > this.fileMaxAge) {
+            await fs.unlink(filePath);
+            deletedCount++;
+            totalSize += stats.size;
+            
+            logger.debug('Deleted old temp file', {
+              file,
+              age: Math.round(fileAge / 1000 / 60), // 分単位
+              size: stats.size
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to process temp file during cleanup', {
+            file,
+            error: error.message
+          });
+        }
+      }
+
+      if (deletedCount > 0) {
+        logger.info('Temp file cleanup completed', {
+          deletedCount,
+          totalSize: Math.round(totalSize / 1024), // KB単位
+          remainingFiles: files.length - deletedCount
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to cleanup temp files', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  }
+
+  /**
+   * クリンナップタイマーを停止
+   */
+  stopCleanupTimer() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+      logger.info('Temp file cleanup timer stopped');
+    }
+  }
+
+  /**
+   * サービス終了時のクリーンアップ
+   */
+  async shutdown() {
+    logger.info('MediaService shutting down...');
+    
+    // クリンナップタイマーを停止
+    this.stopCleanupTimer();
+    
+    // 最終クリンナップを実行
+    await this.cleanupTempFiles();
+    
+    logger.info('MediaService shutdown completed');
   }
 
   /**

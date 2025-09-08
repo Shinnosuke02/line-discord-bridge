@@ -588,6 +588,11 @@ class MessageBridge {
         await this.channelManager.stop();
       }
       
+      // MediaServiceのクリーンアップ
+      if (this.mediaService) {
+        await this.mediaService.shutdown();
+      }
+      
       await this.discord.destroy();
       logger.info('MessageBridge stopped successfully');
     } catch (error) {

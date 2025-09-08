@@ -38,6 +38,9 @@ class App {
       // MessageBridgeの初期化
       await this.initializeMessageBridge();
       
+      // 終了時のクリーンアップを設定
+      this.setupGracefulShutdown();
+      
       logger.info('Application initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize application', {
@@ -242,6 +245,59 @@ class App {
       } catch (error) {
         logger.error('Error during shutdown', {
           error: error.message
+        });
+        process.exit(1);
+      }
+    };
+
+    // シグナルハンドラーの設定
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    
+    // 未処理の例外とリジェクトをキャッチ
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught exception', {
+        error: error.message,
+        stack: error.stack
+      });
+      shutdown('uncaughtException');
+    });
+    
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('Unhandled rejection', {
+        reason: reason,
+        promise: promise
+      });
+      shutdown('unhandledRejection');
+    });
+  }
+
+  /**
+   * グレースフルシャットダウンの設定
+   */
+  setupGracefulShutdown() {
+    const shutdown = async (signal) => {
+      logger.info(`Received ${signal}, shutting down gracefully...`);
+      
+      try {
+        // MessageBridgeの停止
+        if (this.messageBridge) {
+          await this.messageBridge.stop();
+        }
+        
+        // サーバーの停止
+        if (this.server) {
+          await new Promise((resolve) => {
+            this.server.close(resolve);
+          });
+        }
+        
+        logger.info('Graceful shutdown completed');
+        process.exit(0);
+      } catch (error) {
+        logger.error('Error during graceful shutdown', {
+          error: error.message,
+          stack: error.stack
         });
         process.exit(1);
       }
