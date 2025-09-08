@@ -402,10 +402,10 @@ class MessageBridge {
       let newChannelName;
       try {
         const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
-        newChannelName = `line-${groupSummary.groupName || 'group'}`;
+        newChannelName = groupSummary.groupName || 'group';
       } catch (error) {
         logger.debug('Failed to get group name, using display name', { error: error.message });
-        newChannelName = `line-${displayName}`;
+        newChannelName = displayName;
       }
 
       // チャンネル名が変更された場合のみ更新
