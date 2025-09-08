@@ -132,12 +132,17 @@ function ipWhitelist(allowedIPs = []) {
 /**
  * ユーザーエージェントフィルタリング
  */
-function userAgentFilter(blockedPatterns = []) {
+function userAgentFilter(blockedPatterns = [], exemptPaths = ['/webhook']) {
   if (blockedPatterns.length === 0) {
     return (req, res, next) => next();
   }
 
   return (req, res, next) => {
+    // 例外パスは判定をスキップ（LINE Webhook 等）
+    const requestPath = req.path || req.url || '';
+    if (exemptPaths.some((p) => requestPath.startsWith(p))) {
+      return next();
+    }
     const userAgent = req.get('User-Agent') || '';
     
     const isBlocked = blockedPatterns.some(pattern => 
@@ -164,7 +169,8 @@ function securityMiddleware() {
     rateLimiter(),
     corsConfig(),
     requestSizeLimit(),
-    userAgentFilter(['bot', 'crawler', 'spider'])
+    // 一般的なクローラのみブロック。Webhookは除外
+    userAgentFilter(['crawler', 'spider'], ['/webhook'])
   ];
 }
 
