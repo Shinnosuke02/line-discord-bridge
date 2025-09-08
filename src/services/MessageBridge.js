@@ -199,7 +199,7 @@ class MessageBridge {
 
       const sentMessage = await this.sendToDiscord(mapping.discordChannelId, discordMessage, {
         useWebhook: config.webhook.enabled,
-        username: displayName,
+        username: this.sanitizeWebhookUsername(displayName),
         avatarUrl
       });
 
@@ -367,6 +367,22 @@ class MessageBridge {
       logger.debug('Failed to get LINE avatar', { error: error.message });
       return null;
     }
+  }
+
+  /**
+   * Webhook用のユーザー名をサニタイズ
+   * @param {string} username - 元のユーザー名
+   * @returns {string} サニタイズされたユーザー名
+   */
+  sanitizeWebhookUsername(username) {
+    if (!username || username === 'Unknown User') {
+      return 'LINE User';
+    }
+    
+    // Discordの制限: "discord"を含まない、32文字以内
+    return username
+      .replace(/discord/gi, 'DC')
+      .substring(0, 32);
   }
 
   /**
