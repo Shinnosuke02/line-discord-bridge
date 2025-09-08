@@ -4,6 +4,7 @@
  */
 const fs = require('fs').promises;
 const path = require('path');
+const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -157,12 +158,16 @@ class ChannelManager {
       // チャンネルを作成
       const channel = await guild.channels.create({
         name: channelName,
-        type: 0, // GUILD_TEXT
+        type: ChannelType.GuildText,
         topic: `LINE Bridge Channel for ${sourceId}`,
         permissionOverwrites: [
           {
             id: guild.roles.everyone.id,
-            allow: ['VIEW_CHANNEL', 'SEND_MESSAGES', 'READ_MESSAGE_HISTORY']
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory
+            ]
           }
         ]
       });
