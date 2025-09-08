@@ -427,17 +427,26 @@ class MediaService {
       if (sticker.format === 3) {
         // LOTTIEアニメーション（GIFとして送信）
         stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.gif`;
+        logger.debug('Using GIF URL for LOTTIE sticker', { stickerId: sticker.id });
       } else {
         // PNG/APNG
         stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+        logger.debug('Using PNG URL for sticker', { stickerId: sticker.id, format: sticker.format });
       }
       
       // スタンプ画像をダウンロードしてファイルタイプを確認
+      logger.debug('Downloading sticker from URL', { stickerUrl });
       const response = await axios.get(stickerUrl, { 
         responseType: 'arraybuffer',
         timeout: 10000 // 10秒タイムアウト
       });
       const imageBuffer = Buffer.from(response.data);
+      
+      logger.debug('Sticker downloaded successfully', {
+        stickerId: sticker.id,
+        bufferSize: imageBuffer.length,
+        contentType: response.headers['content-type']
+      });
       
       // ファイルタイプを判定
       const fileTypeInfo = await fileTypeFromBuffer(imageBuffer);
@@ -476,6 +485,11 @@ class MediaService {
       }
       
       // LINEに画像として送信
+      logger.debug('Sending sticker to LINE', {
+        stickerId: sticker.id,
+        processedUrl: processedUrl.substring(0, 100)
+      });
+      
       const result = await lineService.pushMessage(lineUserId, {
         type: 'image',
         originalContentUrl: processedUrl,
@@ -497,9 +511,36 @@ class MediaService {
       logger.error('Failed to process Discord sticker', {
         stickerId: sticker.id,
         stickerName: sticker.name,
-        error: error.message
+        format: sticker.format,
+        error: error.message,
+        stack: error.stack
       });
-      throw error;
+      
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'}`
+        });
+        
+        logger.info('Discord sticker sent as text fallback', {
+          stickerId: sticker.id,
+          lineMessageId: fallbackResult.messageId
+        });
+        
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          stickerId: sticker.id,
+          error: fallbackError.message
+        });
+        throw error;
+      }
     }
   }
 
