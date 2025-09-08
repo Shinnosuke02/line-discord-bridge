@@ -37,6 +37,7 @@ class WebhookManager {
    */
   async getOrCreateWebhook(channelId) {
     try {
+      const desiredName = process.env.WEBHOOK_NAME?.trim() || 'LINE Bridge';
       // キャッシュされたWebhookを確認
       if (this.webhooks.has(channelId)) {
         const webhook = this.webhooks.get(channelId);
@@ -58,7 +59,7 @@ class WebhookManager {
       // 既存のWebhookを検索
       const existingWebhooks = await channel.fetchWebhooks();
       const bridgeWebhook = existingWebhooks.find(webhook => 
-        webhook.name === 'LINE-Discord Bridge'
+        webhook.name === desiredName
       );
 
       let webhook;
@@ -67,7 +68,7 @@ class WebhookManager {
       } else {
         // 新しいWebhookを作成
         webhook = await channel.createWebhook({
-          name: 'LINE-Discord Bridge',
+          name: desiredName,
           avatar: null,
           reason: 'LINE-Discord Bridge webhook'
         });
@@ -79,7 +80,8 @@ class WebhookManager {
       logger.debug('Webhook obtained for channel', {
         channelId,
         webhookId: webhook.id,
-        webhookUrl: webhook.url
+        webhookUrl: webhook.url,
+        name: desiredName
       });
 
       return webhook;
