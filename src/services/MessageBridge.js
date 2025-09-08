@@ -206,11 +206,12 @@ class MessageBridge {
         avatarUrl
       };
       
-      logger.debug('Sending message to Discord', {
+      logger.info('Sending message to Discord', {
         channelId: mapping.discordChannelId,
         webhookEnabled: config.webhook.enabled,
         username: webhookOptions.username,
-        hasAvatar: !!avatarUrl
+        hasAvatar: !!avatarUrl,
+        hasWebhookManager: !!this.webhookManager
       });
       
       const sentMessage = await this.sendToDiscord(mapping.discordChannelId, discordMessage, webhookOptions);
@@ -332,18 +333,18 @@ class MessageBridge {
       case 'sticker':
         const result = await this.mediaService.processLineMedia(event.message, messageType, this.lineService);
         return {
-          content: `**${displayName}**: ${result.content}`,
+          content: result.content,
           files: result.files || []
         };
         
       case 'location':
         return {
-          content: `**${displayName}** sent a location message.`
+          content: '📍 Location message'
         };
         
       default:
         return {
-          content: `**${displayName}** sent an unsupported message type: ${messageType}`
+          content: `Unsupported message type: ${messageType}`
         };
     }
   }
