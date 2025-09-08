@@ -52,8 +52,8 @@ class MessageBridge {
    * イベントハンドラーの設定
    */
   setupEventHandlers() {
-    // Discord準備完了
-    this.discord.once('ready', async () => {
+    // Discord準備完了（discord.js v15: ready → clientReady）
+    this.discord.once('clientReady', async () => {
       logger.info('Discord client ready', {
         user: this.discord.user.tag,
         guilds: this.discord.guilds.cache.size
