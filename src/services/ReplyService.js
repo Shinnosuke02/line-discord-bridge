@@ -21,12 +21,25 @@ class ReplyService {
    */
   async handleDiscordReply(message, lineUserId) {
     try {
+      logger.debug('Checking Discord message for reply', {
+        messageId: message.id,
+        hasReference: !!message.reference,
+        referenceMessageId: message.reference?.messageId,
+        content: message.content?.substring(0, 100)
+      });
+
       if (!message.reference?.messageId) {
+        logger.debug('No reply reference found in Discord message');
         return;
       }
 
       const originalMessageId = message.reference.messageId;
       const lineMessageId = this.messageMappingManager.getLineMessageIdForDiscordReply(originalMessageId);
+
+      logger.debug('Looking up LINE message for Discord reply', {
+        originalDiscordMessageId: originalMessageId,
+        foundLineMessageId: lineMessageId
+      });
 
       if (!lineMessageId) {
         logger.warn('No LINE message found for Discord reply', {
@@ -66,23 +79,51 @@ class ReplyService {
    */
   async handleLineReply(event, discordChannelId) {
     try {
+      logger.debug('Checking LINE message for reply', {
+        eventId: event.message?.id,
+        messageType: event.message?.type,
+        content: event.message?.text?.substring(0, 100)
+      });
+
       if (event.type !== 'message' || event.message.type !== 'text') {
+        logger.debug('Not a text message, skipping reply check');
         return;
       }
 
       // 返信メッセージの検出（簡単な実装）
       const messageText = event.message.text;
-      if (!this.isReplyMessage(messageText)) {
+      const isReply = this.isReplyMessage(messageText);
+      
+      logger.debug('Reply message detection', {
+        messageText: messageText.substring(0, 100),
+        isReply
+      });
+
+      if (!isReply) {
+        logger.debug('Not detected as reply message');
         return;
       }
 
       // 元のメッセージIDを抽出
       const originalMessageId = this.extractOriginalMessageId(messageText);
+      
+      logger.debug('Extracted original message ID', {
+        originalMessageId,
+        messageText: messageText.substring(0, 100)
+      });
+
       if (!originalMessageId) {
+        logger.debug('Could not extract original message ID');
         return;
       }
 
       const discordMessageId = this.messageMappingManager.getDiscordMessageIdForLineReply(originalMessageId);
+      
+      logger.debug('Looking up Discord message for LINE reply', {
+        originalLineMessageId: originalMessageId,
+        foundDiscordMessageId: discordMessageId
+      });
+
       if (!discordMessageId) {
         logger.warn('No Discord message found for LINE reply', {
           lineMessageId: originalMessageId,
