@@ -4,15 +4,17 @@
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-高度なLINE-Discordブリッジアプリケーション。双方向メッセージング、返信機能、メディア処理をサポートします。
+高度なLINE-Discordブリッジアプリケーション。双方向メッセージング、返信機能、メディア処理、Webhook表示をサポートします。
 
 ## ✨ 特徴
 
 - 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
 - 💬 **返信機能**: DiscordとLINE間での返信機能サポート
-- 📎 **メディア処理**: 画像、動画、音声、ファイルの自動処理
-- 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示
+- 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理
+- 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示（LINEユーザー名・アイコン）
 - 📊 **メッセージマッピング**: 自動的なメッセージID管理
+- 🏷️ **チャンネル管理**: 自動チャンネル作成・名前生成（日本語対応）
+- 🔗 **既存チャンネル連携**: LINEノートからDiscordチャンネルIDを読み取り
 - 🛡️ **セキュリティ**: 堅牢なエラーハンドリングとセキュリティ機能
 - 📈 **監視**: 詳細なログとメトリクス
 - ⚡ **高性能**: 非同期処理とバッチ処理
@@ -25,6 +27,7 @@
 - npm 8.0.0以上
 - LINE Bot API v7対応のチャンネル
 - Discord Bot Token
+- Discord Bot権限: `Send Messages`, `Manage Webhooks`, `Manage Channels`
 
 ### インストール
 
@@ -53,6 +56,11 @@ LINE_CHANNEL_SECRET=your_line_channel_secret
 # Discord Bot設定
 DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_GUILD_ID=your_discord_guild_id
+DISCORD_CLIENT_ID=your_discord_client_id
+
+# Webhook設定
+WEBHOOK_ENABLED=true
+WEBHOOK_NAME=LINE Bridge
 
 # その他の設定
 NODE_ENV=production
@@ -100,6 +108,7 @@ src/
 └── routes/               # APIルート（将来の拡張用）
 
 data/                     # データファイル
+├── channel-mappings.json # チャンネルマッピング
 ├── message-mappings.json # メッセージマッピング
 └── reply-mappings.json  # 返信マッピング
 
@@ -112,8 +121,32 @@ temp/                     # 一時ファイル
 
 ### メッセージ転送
 
-- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、スタンプ、位置情報
-- **Discord → LINE**: テキスト、画像、動画、音声、ファイル、スタンプ
+- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報
+- **Discord → LINE**: テキスト、画像、動画、音声、ファイル、ステッカー（画像として送信）
+
+### Webhook表示機能
+
+- **LINEユーザー名表示**: DiscordでLINEユーザーの表示名を表示
+- **LINEアイコン表示**: DiscordでLINEプロフィール画像をアバターとして使用
+- **グループ対応**: グループチャットではグループ名・アイコンを表示
+- **自動フォールバック**: Webhook失敗時はBot送信に自動切り替え
+
+### チャンネル管理
+
+- **自動チャンネル作成**: LINEユーザー・グループごとにDiscordチャンネルを自動作成
+- **日本語チャンネル名**: 日本語のユーザー名・グループ名に対応
+- **動的チャンネル名更新**: グループ名変更時の自動更新
+- **既存チャンネル連携**: LINEノートからDiscordチャンネルIDを読み取り
+
+### 既存チャンネル連携
+
+LINEアプリでユーザーのノート欄に以下の形式でDiscordチャンネルIDを記載すると、既存のDiscordチャンネルにメッセージが送信されます：
+
+```
+DISCORD:1408407519055052891
+DC:1408407519055052891
+Discord Channel: 1408407519055052891
+```
 
 ### 返信機能
 
@@ -123,15 +156,15 @@ temp/                     # 一時ファイル
 ### メディア処理
 
 - **自動MIME判定**: ファイル内容から正確なMIMEタイプを判定
-- **サイズ制限**: 設定可能なファイルサイズ制限
-- **圧縮**: 画像の自動圧縮（Sharp使用）
+- **サイズ制限**: 設定可能なファイルサイズ制限（デフォルト: 10MB）
+- **画像圧縮**: Sharpを使用した画像の自動圧縮
+- **ステッカー処理**: DiscordステッカーをLINE画像として送信
 - **外部URL**: LINE Bot API v7の外部URL機能を活用
 
-### Webhook機能
+### ステッカー処理
 
-- **自然な表示**: Discord Webhookを使用してLINEユーザー名で表示
-- **アバター**: LINEプロフィール画像をDiscordアバターとして使用
-- **フォールバック**: Webhook失敗時はBot送信に自動切り替え
+- **LINE → Discord**: ステッカー画像のみ表示（ID表示なし）
+- **Discord → LINE**: Discordステッカーを画像として送信
 
 ## 📊 監視とログ
 
@@ -154,6 +187,12 @@ curl http://localhost:3000/metrics
 - `warn`: 警告以上
 - `info`: 情報以上（デフォルト）
 - `debug`: デバッグ情報含む
+
+### ログファイル
+
+- `logs/application-YYYY-MM-DD.log`: アプリケーションログ
+- `logs/error-YYYY-MM-DD.log`: エラーログ
+- `logs/warn-YYYY-MM-DD.log`: 警告ログ
 
 ## 🛠️ 開発
 
@@ -208,18 +247,9 @@ pm2 save
 
 # 自動起動設定
 pm2 startup
-```
 
-### Docker（将来の拡張）
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY src/ ./src/
-EXPOSE 3000
-CMD ["npm", "start"]
+# 再起動（環境変数更新）
+pm2 restart line-discord-bridge --update-env
 ```
 
 ### 環境変数
@@ -229,16 +259,17 @@ CMD ["npm", "start"]
 ```env
 NODE_ENV=production
 LOG_LEVEL=info
-UPLOAD_API_KEY=your_secure_api_key
+WEBHOOK_ENABLED=true
 ```
 
 ## 🔒 セキュリティ
 
 - **API認証**: ファイルアップロード用のAPIキー認証
 - **レート制限**: 設定可能なレート制限
-- **セキュリティヘッダー**: XSS、CSRF対策
+- **セキュリティヘッダー**: XSS、CSRF対策（Helmet使用）
 - **入力検証**: ファイルタイプとサイズの検証
 - **エラーハンドリング**: 詳細なエラー情報の制御
+- **User-Agentフィルタ**: ボット攻撃の防止
 
 ## 📈 パフォーマンス
 
@@ -246,6 +277,40 @@ UPLOAD_API_KEY=your_secure_api_key
 - **バッチ処理**: メッセージのバッチ処理
 - **メモリ管理**: 効率的なメモリ使用
 - **エラー回復**: 自動リトライ機能
+- **ファイル処理**: Sharpを使用した効率的な画像処理
+
+## 🔧 トラブルシューティング
+
+### よくある問題
+
+1. **Webhookが動作しない**
+   - `WEBHOOK_ENABLED=true`に設定されているか確認
+   - Discord Botに`Manage Webhooks`権限があるか確認
+
+2. **チャンネル名が日本語で表示されない**
+   - `LOG_LEVEL=debug`に設定してログを確認
+   - LINEユーザープロフィールが正しく取得できているか確認
+
+3. **画像送信が失敗する**
+   - ファイルサイズが制限内か確認（デフォルト: 10MB）
+   - サポートされている形式か確認
+
+4. **既存チャンネル連携が動作しない**
+   - LINEノートの形式が正しいか確認
+   - DiscordチャンネルIDが正しいか確認
+
+### ログ確認
+
+```bash
+# リアルタイムログ
+pm2 logs line-discord-bridge
+
+# エラーログ確認
+tail -f logs/error-$(date +%Y-%m-%d).log
+
+# アプリケーションログ確認
+tail -f logs/application-$(date +%Y-%m-%d).log
+```
 
 ## 🤝 貢献
 
@@ -267,11 +332,23 @@ UPLOAD_API_KEY=your_secure_api_key
 2. 新しいIssueを作成
 3. ログファイルを確認 (`logs/`ディレクトリ)
 
-## 📚 ドキュメント
+## 📚 技術仕様
 
-- [API仕様](docs/api.md) (将来の拡張)
-- [設定ガイド](docs/configuration.md) (将来の拡張)
-- [トラブルシューティング](docs/troubleshooting.md) (将来の拡張)
+### 使用技術
+
+- **Node.js**: v18.0.0以上
+- **Discord.js**: v14.14.1
+- **LINE Bot SDK**: v7.5.2
+- **Express**: v4.18.2
+- **Sharp**: v0.33.0（画像処理）
+- **Winston**: v3.11.0（ログ管理）
+- **PM2**: プロセス管理
+
+### API対応
+
+- **LINE Bot API**: v7（最新）
+- **Discord API**: v10（Discord.js v14経由）
+- **Node.js**: v18+（最新LTS）
 
 ---
 
