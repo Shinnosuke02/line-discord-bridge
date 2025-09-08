@@ -382,29 +382,28 @@ class MessageBridge {
   }
 
   /**
-   * チャンネル名を必要に応じて更新
+   * チャンネル名を必要に応じて更新（グループのみ）
    * @param {string} sourceId - ソースID
    * @param {string} displayName - 表示名
    * @param {Object} event - LINEイベント
    */
   async updateChannelNameIfNeeded(sourceId, displayName, event) {
     try {
+      // グループの場合のみ更新
+      if (!event.source.groupId) {
+        return;
+      }
+
       const mapping = this.channelManager.getChannelMapping(sourceId);
       if (!mapping) return;
 
-      // 新しいチャンネル名を生成
+      // グループ名を取得して新しいチャンネル名を生成
       let newChannelName;
-      if (event.source.groupId) {
-        // グループの場合
-        try {
-          const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
-          newChannelName = `line-${groupSummary.groupName || 'group'}`;
-        } catch (error) {
-          logger.debug('Failed to get group name, using display name', { error: error.message });
-          newChannelName = `line-${displayName}`;
-        }
-      } else {
-        // 1:1チャットの場合
+      try {
+        const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
+        newChannelName = `line-${groupSummary.groupName || 'group'}`;
+      } catch (error) {
+        logger.debug('Failed to get group name, using display name', { error: error.message });
         newChannelName = `line-${displayName}`;
       }
 
@@ -412,7 +411,7 @@ class MessageBridge {
       if (mapping.channelName !== newChannelName) {
         const success = await this.channelManager.updateChannelName(sourceId, newChannelName);
         if (success) {
-          logger.info('Channel name updated due to display name change', {
+          logger.info('Channel name updated due to group name change', {
             sourceId,
             oldName: mapping.channelName,
             newName: newChannelName
