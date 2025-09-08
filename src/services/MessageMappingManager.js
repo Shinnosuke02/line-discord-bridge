@@ -123,7 +123,7 @@ class MessageMappingManager {
       this.lineToDiscord.set(lineMessageId, mapping);
       await this.saveMappings();
       
-      logger.debug('LINE to Discord mapping created', {
+      logger.info('LINE to Discord mapping created', {
         lineMessageId,
         discordMessageId,
         lineUserId,
@@ -159,7 +159,7 @@ class MessageMappingManager {
       this.discordToLine.set(discordMessageId, mapping);
       await this.saveMappings();
       
-      logger.debug('Discord to LINE mapping created', {
+      logger.info('Discord to LINE mapping created', {
         discordMessageId,
         lineMessageId,
         lineUserId,
