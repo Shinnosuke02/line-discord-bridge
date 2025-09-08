@@ -197,11 +197,20 @@ class MessageBridge {
       const discordMessage = await this.createDiscordMessage(event, displayName);
       if (!discordMessage) return;
 
-      const sentMessage = await this.sendToDiscord(mapping.discordChannelId, discordMessage, {
+      const webhookOptions = {
         useWebhook: config.webhook.enabled,
         username: this.sanitizeWebhookUsername(displayName),
         avatarUrl
+      };
+      
+      logger.debug('Sending message to Discord', {
+        channelId: mapping.discordChannelId,
+        webhookEnabled: config.webhook.enabled,
+        username: webhookOptions.username,
+        hasAvatar: !!avatarUrl
       });
+      
+      const sentMessage = await this.sendToDiscord(mapping.discordChannelId, discordMessage, webhookOptions);
 
       // メッセージマッピングを記録
       if (sentMessage) {
@@ -395,6 +404,11 @@ class MessageBridge {
   async sendToDiscord(channelId, message, options = {}) {
     try {
       if (options.useWebhook && options.username && this.webhookManager) {
+        logger.debug('Using webhook to send message', {
+          channelId,
+          username: options.username,
+          hasAvatar: !!options.avatarUrl
+        });
         return await this.webhookManager.sendMessage(
           channelId,
           message,
@@ -402,6 +416,12 @@ class MessageBridge {
           options.avatarUrl
         );
       } else {
+        logger.debug('Using regular bot to send message', {
+          channelId,
+          useWebhook: options.useWebhook,
+          hasUsername: !!options.username,
+          hasWebhookManager: !!this.webhookManager
+        });
         const channel = await this.discord.channels.fetch(channelId);
         return await channel.send(message);
       }

@@ -223,7 +223,11 @@ class MediaService {
 
       // ファイルタイプを判定
       const mimeType = attachment.contentType || mimeTypes.lookup(attachment.name);
-      const fileTypeInfo = await fileType.fromUrl(attachment.url);
+      
+      // ファイルをダウンロードしてファイルタイプを判定
+      const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+      const buffer = Buffer.from(response.data);
+      const fileTypeInfo = await fileType.fromBuffer(buffer);
 
       // 画像ファイルの処理
       if (this.supportedImageTypes.includes(mimeType)) {
