@@ -270,18 +270,34 @@ class MessageBridge {
       // テキストメッセージの処理
       if (message.content?.trim()) {
         const text = message.content.trim();
-        const urlResults = await this.mediaService.processUrls(text, lineUserId, this.lineService);
         
-        if (urlResults.length === 0) {
+        // 位置情報の検出と処理
+        const locationResult = this.detectAndProcessLocation(text);
+        if (locationResult) {
           const result = await this.lineService.pushMessage(lineUserId, {
-            type: 'text',
-            text: text
+            type: 'location',
+            title: locationResult.title,
+            address: locationResult.address,
+            latitude: locationResult.latitude,
+            longitude: locationResult.longitude
           });
           if (result?.messageId) {
             lineMessageId = result.messageId;
           }
-        } else if (urlResults[0]?.lineMessageId) {
-          lineMessageId = urlResults[0].lineMessageId;
+        } else {
+          const urlResults = await this.mediaService.processUrls(text, lineUserId, this.lineService);
+          
+          if (urlResults.length === 0) {
+            const result = await this.lineService.pushMessage(lineUserId, {
+              type: 'text',
+              text: text
+            });
+            if (result?.messageId) {
+              lineMessageId = result.messageId;
+            }
+          } else if (urlResults[0]?.lineMessageId) {
+            lineMessageId = urlResults[0].lineMessageId;
+          }
         }
       }
 
@@ -317,6 +333,76 @@ class MessageBridge {
   }
 
   /**
+   * 位置情報メッセージをフォーマット
+   * @param {Object} locationMessage - LINE位置情報メッセージ
+   * @returns {Object} フォーマットされたDiscordメッセージ
+   */
+  formatLocationMessage(locationMessage) {
+    const { latitude, longitude, address } = locationMessage;
+    
+    // Googleマップのリンクを生成
+    const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+    
+    // 住所が利用可能な場合は含める
+    const addressText = address ? `\n📍 **住所**: ${address}` : '';
+    
+    const content = `📍 **位置情報**${addressText}
+🌐 **Googleマップ**: ${googleMapsUrl}
+📊 **座標**: ${latitude}, ${longitude}`;
+    
+    return {
+      content: content
+    };
+  }
+
+  /**
+   * Discordメッセージから位置情報を検出・処理
+   * @param {string} text - Discordメッセージテキスト
+   * @returns {Object|null} 位置情報オブジェクトまたはnull
+   */
+  detectAndProcessLocation(text) {
+    // GoogleマップのURLパターンを検出
+    const googleMapsPattern = /https:\/\/www\.google\.com\/maps\?q=([+-]?\d+\.?\d*),([+-]?\d+\.?\d*)/;
+    const match = text.match(googleMapsPattern);
+    
+    if (match) {
+      const latitude = parseFloat(match[1]);
+      const longitude = parseFloat(match[2]);
+      
+      // 座標の妥当性をチェック
+      if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+        return {
+          title: '位置情報',
+          address: null, // Discordからは住所情報が取得できない
+          latitude: latitude,
+          longitude: longitude
+        };
+      }
+    }
+    
+    // 座標パターンを検出（例: "35.6895, 139.6917"）
+    const coordinatePattern = /([+-]?\d+\.?\d*)\s*,\s*([+-]?\d+\.?\d*)/;
+    const coordMatch = text.match(coordinatePattern);
+    
+    if (coordMatch) {
+      const latitude = parseFloat(coordMatch[1]);
+      const longitude = parseFloat(coordMatch[2]);
+      
+      // 座標の妥当性をチェック
+      if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+        return {
+          title: '位置情報',
+          address: null,
+          latitude: latitude,
+          longitude: longitude
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  /**
    * Discordメッセージを作成
    * @param {Object} event - LINEイベント
    * @param {string} displayName - 表示名
@@ -343,9 +429,7 @@ class MessageBridge {
         };
         
       case 'location':
-        return {
-          content: '📍 Location message'
-        };
+        return this.formatLocationMessage(event.message);
         
       default:
         return {

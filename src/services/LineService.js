@@ -233,7 +233,10 @@ class LineService {
         return `📎 File: ${message.fileName || 'Unknown file'}`;
         
       case 'location':
-        return '📍 Location message';
+        const { latitude, longitude, address } = message;
+        const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+        const addressText = address ? `\n📍 住所: ${address}` : '';
+        return `📍 位置情報${addressText}\n🌐 Googleマップ: ${googleMapsUrl}\n📊 座標: ${latitude}, ${longitude}`;
         
       default:
         return `Unsupported message type: ${message.type}`;
