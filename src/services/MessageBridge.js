@@ -333,18 +333,18 @@ class MessageBridge {
       case 'sticker':
         const result = await this.mediaService.processLineMedia(event.message, messageType, this.lineService);
         return {
-          content: `**${displayName}**: ${result.content}`,
+          content: result.content,
           files: result.files || []
         };
         
       case 'location':
         return {
-          content: `**${displayName}**: 📍 Location message`
+          content: '📍 Location message'
         };
         
       default:
         return {
-          content: `**${displayName}**: Unsupported message type: ${messageType}`
+          content: `Unsupported message type: ${messageType}`
         };
     }
   }
