@@ -424,10 +424,13 @@ class MediaService {
 
       // DiscordスタンプのURLを取得（フォーマットに応じて）
       let stickerUrl;
+      let isLottie = false;
+      
       if (sticker.format === 3) {
-        // LOTTIEアニメーション（GIFとして送信）
-        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.gif`;
-        logger.debug('Using GIF URL for LOTTIE sticker', { stickerId: sticker.id });
+        // LOTTIEアニメーション（PNGとして試行、GIFは利用不可）
+        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+        isLottie = true;
+        logger.debug('Using PNG URL for LOTTIE sticker (fallback)', { stickerId: sticker.id });
       } else {
         // PNG/APNG
         stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
@@ -436,17 +439,46 @@ class MediaService {
       
       // スタンプ画像をダウンロードしてファイルタイプを確認
       logger.debug('Downloading sticker from URL', { stickerUrl });
-      const response = await axios.get(stickerUrl, { 
-        responseType: 'arraybuffer',
-        timeout: 10000 // 10秒タイムアウト
-      });
-      const imageBuffer = Buffer.from(response.data);
       
-      logger.debug('Sticker downloaded successfully', {
-        stickerId: sticker.id,
-        bufferSize: imageBuffer.length,
-        contentType: response.headers['content-type']
-      });
+      let response;
+      let imageBuffer;
+      
+      try {
+        response = await axios.get(stickerUrl, { 
+          responseType: 'arraybuffer',
+          timeout: 10000 // 10秒タイムアウト
+        });
+        imageBuffer = Buffer.from(response.data);
+        
+        logger.debug('Sticker downloaded successfully', {
+          stickerId: sticker.id,
+          bufferSize: imageBuffer.length,
+          contentType: response.headers['content-type']
+        });
+      } catch (downloadError) {
+        // LOTTIEスタンプの場合はPNGで再試行
+        if (isLottie && stickerUrl.includes('.png')) {
+          logger.warn('PNG download failed for LOTTIE sticker, trying alternative approach', {
+            stickerId: sticker.id,
+            error: downloadError.message
+          });
+          
+          // フォールバック: テキストメッセージとして送信
+          const fallbackResult = await lineService.pushMessage(lineUserId, {
+            type: 'text',
+            text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'} (LOTTIE)`
+          });
+          
+          return {
+            success: true,
+            lineMessageId: fallbackResult.messageId,
+            type: 'text',
+            fallback: true,
+            reason: 'lottie_download_failed'
+          };
+        }
+        throw downloadError;
+      }
       
       // ファイルタイプを判定
       const fileTypeInfo = await fileTypeFromBuffer(imageBuffer);
@@ -456,11 +488,11 @@ class MediaService {
         extension: fileTypeInfo?.ext
       });
 
-      // APNGの場合は静止画に変換
+      // APNGまたはLOTTIEの場合は静止画に変換
       let processedUrl = stickerUrl;
-      if (fileTypeInfo?.mime === 'image/apng') {
+      if (fileTypeInfo?.mime === 'image/apng' || isLottie) {
         try {
-          // SharpでAPNGを静止画PNGに変換
+          // SharpでAPNG/LOTTIEを静止画PNGに変換
           const processedBuffer = await sharp(imageBuffer, { animated: true })
             .png()
             .toBuffer();
@@ -469,16 +501,21 @@ class MediaService {
           const tempFileName = `sticker_${sticker.id}_${Date.now()}.png`;
           const tempPath = path.join(process.cwd(), 'temp', tempFileName);
           
+          // tempディレクトリが存在しない場合は作成
+          await fs.mkdir(path.dirname(tempPath), { recursive: true });
           await fs.writeFile(tempPath, processedBuffer);
           processedUrl = `http://localhost:${config.port}/temp/${tempFileName}`;
           
-          logger.debug('APNG sticker converted to static PNG', {
+          logger.debug('Sticker converted to static PNG', {
             stickerId: sticker.id,
+            isLottie,
+            mimeType: fileTypeInfo?.mime,
             tempPath
           });
         } catch (conversionError) {
-          logger.warn('Failed to convert APNG sticker, using original', {
+          logger.warn('Failed to convert sticker, using original', {
             stickerId: sticker.id,
+            isLottie,
             error: conversionError.message
           });
         }
