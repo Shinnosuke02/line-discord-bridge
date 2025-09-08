@@ -519,15 +519,13 @@ class MediaService {
   }
 
   /**
-   * スタンプをアップローダにアップロード
+   * スタンプをアップローダにアップロード（レガシーコードのアプローチ）
    * @param {Buffer} buffer - 画像バッファ
-   * @param {string} stickerId - スタンプID
-   * @param {string} stickerName - スタンプ名
+   * @param {string} fileName - ファイル名
    * @returns {Promise<Object>} アップロード結果
    */
-  async uploadStickerToSelf(buffer, stickerId, stickerName) {
+  async uploadToSelf(buffer, fileName) {
     try {
-      const fileName = `sticker_${stickerId}_${Date.now()}.png`;
       const tempPath = path.join(process.cwd(), 'temp', fileName);
       
       // tempディレクトリが存在しない場合は作成
@@ -536,16 +534,81 @@ class MediaService {
       
       const url = `http://localhost:${config.port}/temp/${fileName}`;
       
-      logger.debug('Sticker uploaded to self', {
-        stickerId,
+      logger.debug('File uploaded to self', {
         fileName,
-        url
+        url,
+        size: buffer.length
       });
       
       return { url, fileName };
     } catch (error) {
-      logger.error('Failed to upload sticker to self', {
-        stickerId,
+      logger.error('Failed to upload file to self', {
+        fileName,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 画像をダウンロード（レガシーコードのアプローチ）
+   * @param {string} url - 画像URL
+   * @param {string} name - ファイル名
+   * @returns {Promise<Buffer>} 画像バッファ
+   */
+  async downloadImage(url, name) {
+    try {
+      const response = await axios.get(url, { 
+        responseType: 'arraybuffer',
+        timeout: 10000
+      });
+      
+      const buffer = Buffer.from(response.data);
+      
+      logger.debug('Image downloaded successfully', {
+        url: url.substring(0, 100),
+        name,
+        size: buffer.length,
+        contentType: response.headers['content-type']
+      });
+      
+      return buffer;
+    } catch (error) {
+      logger.error('Failed to download image', {
+        url: url.substring(0, 100),
+        name,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * LINEに画像を送信（レガシーコードのアプローチ）
+   * @param {string} userId - LINEユーザーID
+   * @param {string} imageUrl - 画像URL
+   * @param {Object} lineService - LINEサービス
+   * @returns {Promise<Object>} 送信結果
+   */
+  async sendImageToLine(userId, imageUrl, lineService) {
+    try {
+      const result = await lineService.pushMessage(userId, {
+        type: 'image',
+        originalContentUrl: imageUrl,
+        previewImageUrl: imageUrl
+      });
+      
+      logger.debug('Image sent to LINE', {
+        userId,
+        imageUrl: imageUrl.substring(0, 100),
+        lineMessageId: result.messageId
+      });
+      
+      return result;
+    } catch (error) {
+      logger.error('Failed to send image to LINE', {
+        userId,
+        imageUrl: imageUrl.substring(0, 100),
         error: error.message
       });
       throw error;
@@ -601,168 +664,54 @@ class MediaService {
         throw new Error('No sticker URL or ID available');
       }
       
-      // LOTTIEスタンプの場合は静止画変換を試行
-      if (sticker.format === 3) {
-        logger.debug('LOTTIE sticker detected, attempting conversion', { 
-          stickerId: sticker.id,
-          stickerName: sticker.name 
-        });
-        
-        // LOTTIEスタンプも画像として処理を試行
-        isLottie = true;
-      }
-      
-      // スタンプ画像をダウンロードしてファイルタイプを確認
-      logger.debug('Downloading sticker from URL', { stickerUrl });
-      
-      let response;
-      let imageBuffer;
-      
-      try {
-        response = await axios.get(stickerUrl, { 
-          responseType: 'arraybuffer',
-          timeout: 10000 // 10秒タイムアウト
-        });
-        imageBuffer = Buffer.from(response.data);
-        
-        logger.debug('Sticker downloaded successfully', {
-          stickerId: sticker.id,
-          bufferSize: imageBuffer.length,
-          contentType: response.headers['content-type']
-        });
-      } catch (downloadError) {
-        logger.error('Failed to download sticker', {
-          stickerId: sticker.id,
-          stickerUrl,
-          error: downloadError.message
-        });
-        
-        // LOTTIEスタンプの場合はテキストフォールバック
-        if (isLottie) {
-          logger.warn('LOTTIE sticker download failed, sending as text', {
-            stickerId: sticker.id,
-            error: downloadError.message
-          });
-          
-          const fallbackResult = await lineService.pushMessage(lineUserId, {
-            type: 'text',
-            text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'} (LOTTIE)`
-          });
-          
-          return {
-            success: true,
-            lineMessageId: fallbackResult.messageId,
-            type: 'text',
-            fallback: true,
-            reason: 'lottie_download_failed'
-          };
-        }
-        
-        throw downloadError;
-      }
-      
-      // ファイルタイプを判定
-      const fileTypeInfo = await fileTypeFromBuffer(imageBuffer);
-      logger.debug('Discord sticker file type detected', {
+      // レガシーコードのアプローチ: フォーマットに関係なく処理
+      logger.debug('Processing sticker with legacy approach', { 
         stickerId: sticker.id,
-        mimeType: fileTypeInfo?.mime,
-        extension: fileTypeInfo?.ext
-      });
-
-      // APNGまたはLOTTIEの場合は静止画に変換
-      let processedUrl = stickerUrl;
-      if (fileTypeInfo?.mime === 'image/apng' || isLottie) {
-        try {
-          // SharpでAPNG/LOTTIEを静止画PNGに変換
-          const processedBuffer = await sharp(imageBuffer, { animated: true })
-            .png()
-            .toBuffer();
-          
-          // 一時ファイルとして保存
-          const tempFileName = `sticker_${sticker.id}_${Date.now()}.png`;
-          const tempPath = path.join(process.cwd(), 'temp', tempFileName);
-          
-          // tempディレクトリが存在しない場合は作成
-          await fs.mkdir(path.dirname(tempPath), { recursive: true });
-          await fs.writeFile(tempPath, processedBuffer);
-          processedUrl = `http://localhost:${config.port}/temp/${tempFileName}`;
-          
-          logger.debug('Sticker converted to static PNG', {
-            stickerId: sticker.id,
-            isLottie,
-            mimeType: fileTypeInfo?.mime,
-            tempPath
-          });
-        } catch (conversionError) {
-          logger.warn('Failed to convert sticker, using original', {
-            stickerId: sticker.id,
-            isLottie,
-            error: conversionError.message
-          });
-        }
-      }
-      
-      // LINEに画像として送信
-      logger.debug('Sending sticker to LINE', {
-        stickerId: sticker.id,
-        processedUrl: processedUrl.substring(0, 100)
+        stickerName: sticker.name,
+        format: sticker.format
       });
       
-      // 直接URL送信を試行
-      try {
-        const result = await lineService.pushMessage(lineUserId, {
-          type: 'image',
-          originalContentUrl: processedUrl,
-          previewImageUrl: processedUrl
-        });
-        
-        logger.info('Discord sticker sent to LINE (direct URL)', {
-          stickerId: sticker.id,
-          lineMessageId: result.messageId,
-          processedUrl: processedUrl.substring(0, 100)
-        });
-        
-        return {
-          success: true,
-          lineMessageId: result.messageId,
-          type: 'image'
-        };
-      } catch (directUrlError) {
-        logger.warn('Direct URL failed, trying upload method', {
-          stickerId: sticker.id,
-          error: directUrlError.message
-        });
-        
-        // フォールバック: アップローダ経由で送信
-        try {
-          const uploadResult = await this.uploadStickerToSelf(imageBuffer, sticker.id, sticker.name);
-          const uploadResult2 = await lineService.pushMessage(lineUserId, {
-            type: 'image',
-            originalContentUrl: uploadResult.url,
-            previewImageUrl: uploadResult.url
-          });
-          
-          logger.info('Discord sticker sent to LINE (upload method)', {
-            stickerId: sticker.id,
-            lineMessageId: uploadResult2.messageId,
-            uploadUrl: uploadResult.url
-          });
-          
-          return {
-            success: true,
-            lineMessageId: uploadResult2.messageId,
-            type: 'image',
-            method: 'upload'
-          };
-        } catch (uploadError) {
-          logger.error('Both direct URL and upload methods failed', {
-            stickerId: sticker.id,
-            directError: directUrlError.message,
-            uploadError: uploadError.message
-          });
-          throw directUrlError; // 元のエラーを再スロー
+      // スタンプ画像をダウンロード
+      const name = sticker.name || `sticker_${sticker.id}.png`;
+      const buffer = await this.downloadImage(stickerUrl, name);
+      const type = await fileTypeFromBuffer(buffer);
+      
+      logger.info('スタンプ画像ダウンロード', { 
+        url: stickerUrl, 
+        name, 
+        mime: type?.mime, 
+        ext: type?.ext 
+      });
+      
+      let processedBuffer = buffer;
+      let uploadName = name;
+      
+      // APNGの場合はSharpでPNG静止画に変換
+      if (type && type.mime === 'image/apng') {
+        processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
+        // 拡張子が無い場合も含め、必ず.pngを付与
+        if (!/\.png$/i.test(name)) {
+          uploadName = name.replace(/(\.[^.]+)?$/, '.png');
+        } else {
+          uploadName = name;
         }
+        logger.info('apng→png静止画変換', { original: name, converted: uploadName });
       }
+      
+      // アップローダ経由で送信
+      const selfUrl = await this.uploadToSelf(processedBuffer, uploadName);
+      await this.sendImageToLine(lineUserId, selfUrl.url, lineService);
+      
+      logger.info('スタンプ送信成功', { 
+        lineUserId, 
+        selfUrl: selfUrl.url 
+      });
+      
+      return { 
+        success: true, 
+        type: 'sticker', 
+        filename: uploadName 
+      };
     } catch (error) {
       logger.error('Failed to process Discord sticker', {
         stickerId: sticker.id,
