@@ -101,8 +101,6 @@ class ChannelManager {
         // チャンネルが存在するか確認
         const channelExists = await this.validateChannel(mapping.discordChannelId);
         if (channelExists) {
-          // チャンネル名を更新（ユーザー名が変更された場合）
-          await this.updateChannelNameIfNeeded(sourceId, mapping);
           return mapping;
         } else {
           // チャンネルが存在しない場合は削除
@@ -219,16 +217,18 @@ class ChannelManager {
       // ユーザーの場合はユーザー名を取得
       if (sourceId.startsWith('U')) {
         try {
+          logger.info('Getting user profile', { sourceId });
           const userProfile = await this.lineService.getUserProfile(sourceId);
           const userName = userProfile.displayName || 'Unknown User';
-          logger.debug('User profile retrieved', {
+          logger.info('User profile retrieved', {
             sourceId,
             userName,
-            hasDisplayName: !!userProfile.displayName
+            hasDisplayName: !!userProfile.displayName,
+            profileKeys: Object.keys(userProfile)
           });
           
           const sanitizedName = this.sanitizeChannelName(userName);
-          logger.debug('Channel name sanitized', {
+          logger.info('Channel name sanitized', {
             sourceId,
             originalName: userName,
             sanitizedName,
@@ -236,6 +236,7 @@ class ChannelManager {
           });
           
           if (sanitizedName && sanitizedName.length > 0) {
+            logger.info('User channel name generated', { sourceId, userName, sanitizedName });
             return sanitizedName;
           }
         } catch (error) {
@@ -247,13 +248,15 @@ class ChannelManager {
       }
 
       // フォールバック
-      return `user-${sourceId.substring(0, 8)}`;
+      const fallbackName = `user-${sourceId.substring(0, 8)}`;
+      logger.info('Using fallback channel name', { sourceId, fallbackName });
+      return fallbackName;
     } catch (error) {
       logger.error('Failed to generate channel name', {
         sourceId,
         error: error.message
       });
-      return `line-${sourceId.substring(0, 8)}`;
+      return `user-${sourceId.substring(0, 8)}`;
     }
   }
 
@@ -431,34 +434,6 @@ class ChannelManager {
     }
   }
 
-  /**
-   * チャンネル名を必要に応じて更新
-   * @param {string} sourceId - ソースID
-   * @param {Object} mapping - 既存のマッピング
-   */
-  async updateChannelNameIfNeeded(sourceId, mapping) {
-    try {
-      // 新しいチャンネル名を生成
-      const newChannelName = await this.generateChannelName(sourceId);
-      
-      // チャンネル名が変更された場合のみ更新
-      if (mapping.channelName !== newChannelName) {
-        const success = await this.updateChannelName(sourceId, newChannelName);
-        if (success) {
-          logger.info('Channel name updated due to user name change', {
-            sourceId,
-            oldName: mapping.channelName,
-            newName: newChannelName
-          });
-        }
-      }
-    } catch (error) {
-      logger.debug('Failed to update channel name', {
-        sourceId,
-        error: error.message
-      });
-    }
-  }
 
   /**
    * チャンネル名を更新
