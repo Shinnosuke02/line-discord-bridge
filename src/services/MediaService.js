@@ -408,6 +408,40 @@ class MediaService {
   }
 
   /**
+   * スタンプをアップローダにアップロード
+   * @param {Buffer} buffer - 画像バッファ
+   * @param {string} stickerId - スタンプID
+   * @param {string} stickerName - スタンプ名
+   * @returns {Promise<Object>} アップロード結果
+   */
+  async uploadStickerToSelf(buffer, stickerId, stickerName) {
+    try {
+      const fileName = `sticker_${stickerId}_${Date.now()}.png`;
+      const tempPath = path.join(process.cwd(), 'temp', fileName);
+      
+      // tempディレクトリが存在しない場合は作成
+      await fs.mkdir(path.dirname(tempPath), { recursive: true });
+      await fs.writeFile(tempPath, buffer);
+      
+      const url = `http://localhost:${config.port}/temp/${fileName}`;
+      
+      logger.debug('Sticker uploaded to self', {
+        stickerId,
+        fileName,
+        url
+      });
+      
+      return { url, fileName };
+    } catch (error) {
+      logger.error('Failed to upload sticker to self', {
+        stickerId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Discordスタンプを処理
    * @param {Object} sticker - Discordスタンプ
    * @param {string} lineUserId - LINEユーザーID
@@ -429,6 +463,16 @@ class MediaService {
       // スタンプのURLを取得（Discord APIから提供されるURLを使用）
       if (sticker.url) {
         stickerUrl = sticker.url;
+        // .jsonで終わる場合は.pngに置換
+        if (stickerUrl.endsWith('.json')) {
+          stickerUrl = stickerUrl.replace('.json', '.png');
+          logger.debug('Converted .json URL to .png', { 
+            stickerId: sticker.id, 
+            originalUrl: sticker.url,
+            convertedUrl: stickerUrl,
+            format: sticker.format 
+          });
+        }
         logger.debug('Using Discord provided sticker URL', { 
           stickerId: sticker.id, 
           url: stickerUrl,
@@ -551,23 +595,61 @@ class MediaService {
         processedUrl: processedUrl.substring(0, 100)
       });
       
-      const result = await lineService.pushMessage(lineUserId, {
-        type: 'image',
-        originalContentUrl: processedUrl,
-        previewImageUrl: processedUrl
-      });
-
-      logger.info('Discord sticker sent to LINE', {
-        stickerId: sticker.id,
-        lineMessageId: result.messageId,
-        processedUrl: processedUrl.substring(0, 100)
-      });
-
-      return {
-        success: true,
-        lineMessageId: result.messageId,
-        type: 'image'
-      };
+      // 直接URL送信を試行
+      try {
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'image',
+          originalContentUrl: processedUrl,
+          previewImageUrl: processedUrl
+        });
+        
+        logger.info('Discord sticker sent to LINE (direct URL)', {
+          stickerId: sticker.id,
+          lineMessageId: result.messageId,
+          processedUrl: processedUrl.substring(0, 100)
+        });
+        
+        return {
+          success: true,
+          lineMessageId: result.messageId,
+          type: 'image'
+        };
+      } catch (directUrlError) {
+        logger.warn('Direct URL failed, trying upload method', {
+          stickerId: sticker.id,
+          error: directUrlError.message
+        });
+        
+        // フォールバック: アップローダ経由で送信
+        try {
+          const uploadResult = await this.uploadStickerToSelf(imageBuffer, sticker.id, sticker.name);
+          const uploadResult2 = await lineService.pushMessage(lineUserId, {
+            type: 'image',
+            originalContentUrl: uploadResult.url,
+            previewImageUrl: uploadResult.url
+          });
+          
+          logger.info('Discord sticker sent to LINE (upload method)', {
+            stickerId: sticker.id,
+            lineMessageId: uploadResult2.messageId,
+            uploadUrl: uploadResult.url
+          });
+          
+          return {
+            success: true,
+            lineMessageId: uploadResult2.messageId,
+            type: 'image',
+            method: 'upload'
+          };
+        } catch (uploadError) {
+          logger.error('Both direct URL and upload methods failed', {
+            stickerId: sticker.id,
+            directError: directUrlError.message,
+            uploadError: uploadError.message
+          });
+          throw directUrlError; // 元のエラーを再スロー
+        }
+      }
     } catch (error) {
       logger.error('Failed to process Discord sticker', {
         stickerId: sticker.id,
