@@ -5,7 +5,7 @@
 const { AttachmentBuilder } = require('discord.js');
 const axios = require('axios');
 const sharp = require('sharp');
-const fileType = require('file-type');
+const { fileTypeFromBuffer } = require('file-type');
 const mimeTypes = require('mime-types');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -227,7 +227,7 @@ class MediaService {
       // ファイルをダウンロードしてファイルタイプを判定
       const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data);
-      const fileTypeInfo = await fileType.fromBuffer(buffer);
+      const fileTypeInfo = await fileTypeFromBuffer(buffer);
 
       // 画像ファイルの処理
       if (this.supportedImageTypes.includes(mimeType)) {
@@ -545,7 +545,7 @@ class MediaService {
    */
   async detectFileType(buffer) {
     try {
-      const fileTypeInfo = await fileType.fromBuffer(buffer);
+      const fileTypeInfo = await fileTypeFromBuffer(buffer);
       
       logger.debug('File type detected', {
         mimeType: fileTypeInfo?.mime,
