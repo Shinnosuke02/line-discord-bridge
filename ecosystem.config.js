@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'line-discord-bridge',
-      script: 'app.js',
+      script: 'src/app.js',
       instances: 1,
       autorestart: true,
       watch: false,
