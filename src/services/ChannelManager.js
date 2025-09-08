@@ -112,6 +112,41 @@ class ChannelManager {
         }
       }
 
+      // LINEノートからDiscordチャンネルIDを確認
+      const discordChannelId = await this.getDiscordChannelIdFromLineNote(sourceId);
+      if (discordChannelId) {
+        // 既存のDiscordチャンネルが存在するか確認
+        const channelExists = await this.validateChannel(discordChannelId);
+        if (channelExists) {
+          // 既存チャンネルを使用してマッピングを作成
+          const channel = await this.discord.channels.fetch(discordChannelId);
+          mapping = {
+            sourceId,
+            discordChannelId: discordChannelId,
+            channelName: channel.name,
+            createdAt: new Date().toISOString(),
+            lastUsed: new Date().toISOString(),
+            fromNote: true
+          };
+          
+          this.mappings.set(sourceId, mapping);
+          await this.saveMappings();
+          
+          logger.info('Channel mapping created from LINE note', {
+            sourceId,
+            discordChannelId: discordChannelId,
+            channelName: channel.name
+          });
+          
+          return mapping;
+        } else {
+          logger.warn('Discord channel from LINE note does not exist', {
+            sourceId,
+            discordChannelId
+          });
+        }
+      }
+
       // 新しいチャンネルを作成
       mapping = await this.createNewChannel(sourceId);
       if (mapping) {
@@ -494,6 +529,57 @@ class ChannelManager {
         error: error.message
       });
       return false;
+    }
+  }
+
+  /**
+   * LINEノートからDiscordチャンネルIDを取得
+   * @param {string} sourceId - LINEのソースID
+   * @returns {string|null} DiscordチャンネルID
+   */
+  async getDiscordChannelIdFromLineNote(sourceId) {
+    try {
+      // ユーザーの場合のみノートを確認（グループにはノート機能がない）
+      if (!sourceId.startsWith('U')) {
+        return null;
+      }
+
+      const userProfile = await this.lineService.getUserProfile(sourceId);
+      const note = userProfile.note || '';
+      
+      logger.debug('Checking LINE note for Discord channel ID', {
+        sourceId,
+        note: note.substring(0, 100) // ログは100文字まで
+      });
+      
+      // ノートからDiscordチャンネルIDを抽出
+      // 対応フォーマット: "DISCORD:1408407519055052891", "DC:1408407519055052891", "Discord Channel: 1408407519055052891"
+      const discordIdMatch = note.match(/DISCORD[:\s]*(\d+)/i) || 
+                            note.match(/DC[:\s]*(\d+)/i) ||
+                            note.match(/Discord Channel[:\s]*(\d+)/i);
+      
+      if (discordIdMatch) {
+        const channelId = discordIdMatch[1];
+        logger.info('Discord channel ID found in LINE note', {
+          sourceId,
+          discordChannelId: channelId,
+          note: note.substring(0, 50)
+        });
+        return channelId;
+      }
+      
+      logger.debug('No Discord channel ID found in LINE note', {
+        sourceId,
+        note: note.substring(0, 50)
+      });
+      
+      return null;
+    } catch (error) {
+      logger.error('Failed to get Discord channel ID from LINE note', {
+        sourceId,
+        error: error.message
+      });
+      return null;
     }
   }
 
