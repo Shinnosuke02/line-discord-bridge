@@ -126,7 +126,7 @@ class ReplyService {
     const author = message.author.username;
     const content = message.content || '返信メッセージ';
     
-    return `💬 ${author} からの返信:\n${content}`;
+    return `💬 ${author} からの返信 (ID:${lineMessageId}):\n${content}`;
   }
 
   /**
@@ -139,7 +139,7 @@ class ReplyService {
     const displayName = event.source.userId; // 実際の実装では表示名を取得
     const content = event.message.text;
     
-    return `💬 ${displayName} からの返信:\n${content}`;
+    return `💬 ${displayName} からの返信 (ID:${discordMessageId}):\n${content}`;
   }
 
   /**
@@ -148,8 +148,11 @@ class ReplyService {
    * @returns {boolean} 返信メッセージかどうか
    */
   isReplyMessage(messageText) {
-    // 簡単な実装：特定のパターンで返信を検出
-    return messageText.includes('返信:') || messageText.includes('reply:');
+    // LINEの返信メッセージパターンを検出
+    return messageText.includes('↩️ 返信:') || 
+           messageText.includes('💬') ||
+           messageText.includes('返信:') ||
+           messageText.includes('reply:');
   }
 
   /**
@@ -158,9 +161,22 @@ class ReplyService {
    * @returns {string|null} 元のメッセージID
    */
   extractOriginalMessageId(messageText) {
-    // 簡単な実装：メッセージIDのパターンを検出
-    const idMatch = messageText.match(/ID:([a-zA-Z0-9]+)/);
-    return idMatch ? idMatch[1] : null;
+    // 返信メッセージから元のメッセージIDを抽出
+    const patterns = [
+      /ID:([a-zA-Z0-9]+)/,
+      /返信:.*?ID:([a-zA-Z0-9]+)/,
+      /💬.*?ID:([a-zA-Z0-9]+)/,
+      /reply:.*?ID:([a-zA-Z0-9]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = messageText.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return null;
   }
 
   /**

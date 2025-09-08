@@ -197,6 +197,11 @@ class MessageBridge {
       // チャンネル名を更新（表示名が変更された場合）
       await this.updateChannelNameIfNeeded(sourceId, displayName, event);
 
+      // 返信メッセージの処理
+      if (this.replyService) {
+        await this.replyService.handleLineReply(event, mapping.discordChannelId);
+      }
+
       const discordMessage = await this.createDiscordMessage(event, displayName);
       if (!discordMessage) return;
 
