@@ -67,6 +67,9 @@ class App {
     // 静的ファイルの提供
     this.app.use('/static', express.static(path.join(__dirname, '../public')));
     
+    // 一時ファイルの提供（スタンプ変換用）
+    this.app.use('/temp', express.static(path.join(__dirname, '../temp')));
+    
     logger.info('Middleware configured');
   }
 

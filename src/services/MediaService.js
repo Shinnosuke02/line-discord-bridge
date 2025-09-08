@@ -7,6 +7,8 @@ const axios = require('axios');
 const sharp = require('sharp');
 const { fileTypeFromBuffer } = require('file-type');
 const mimeTypes = require('mime-types');
+const fs = require('fs').promises;
+const path = require('path');
 const config = require('../config');
 const logger = require('../utils/logger');
 const fileUtils = require('../utils/fileUtils');
@@ -414,18 +416,76 @@ class MediaService {
    */
   async processDiscordSticker(sticker, lineUserId, lineService) {
     try {
-      // Discordスタンプを画像としてLINEに送信
-      const stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+      logger.info('Processing Discord sticker', {
+        stickerId: sticker.id,
+        stickerName: sticker.name,
+        format: sticker.format
+      });
+
+      // DiscordスタンプのURLを取得（フォーマットに応じて）
+      let stickerUrl;
+      if (sticker.format === 3) {
+        // LOTTIEアニメーション（GIFとして送信）
+        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.gif`;
+      } else {
+        // PNG/APNG
+        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+      }
       
-      // スタンプ画像をダウンロード
-      const response = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
+      // スタンプ画像をダウンロードしてファイルタイプを確認
+      const response = await axios.get(stickerUrl, { 
+        responseType: 'arraybuffer',
+        timeout: 10000 // 10秒タイムアウト
+      });
       const imageBuffer = Buffer.from(response.data);
+      
+      // ファイルタイプを判定
+      const fileTypeInfo = await fileTypeFromBuffer(imageBuffer);
+      logger.debug('Discord sticker file type detected', {
+        stickerId: sticker.id,
+        mimeType: fileTypeInfo?.mime,
+        extension: fileTypeInfo?.ext
+      });
+
+      // APNGの場合は静止画に変換
+      let processedUrl = stickerUrl;
+      if (fileTypeInfo?.mime === 'image/apng') {
+        try {
+          // SharpでAPNGを静止画PNGに変換
+          const processedBuffer = await sharp(imageBuffer, { animated: true })
+            .png()
+            .toBuffer();
+          
+          // 一時ファイルとして保存
+          const tempFileName = `sticker_${sticker.id}_${Date.now()}.png`;
+          const tempPath = path.join(process.cwd(), 'temp', tempFileName);
+          
+          await fs.writeFile(tempPath, processedBuffer);
+          processedUrl = `http://localhost:${config.port}/temp/${tempFileName}`;
+          
+          logger.debug('APNG sticker converted to static PNG', {
+            stickerId: sticker.id,
+            tempPath
+          });
+        } catch (conversionError) {
+          logger.warn('Failed to convert APNG sticker, using original', {
+            stickerId: sticker.id,
+            error: conversionError.message
+          });
+        }
+      }
       
       // LINEに画像として送信
       const result = await lineService.pushMessage(lineUserId, {
         type: 'image',
-        originalContentUrl: stickerUrl,
-        previewImageUrl: stickerUrl
+        originalContentUrl: processedUrl,
+        previewImageUrl: processedUrl
+      });
+
+      logger.info('Discord sticker sent to LINE', {
+        stickerId: sticker.id,
+        lineMessageId: result.messageId,
+        processedUrl: processedUrl.substring(0, 100)
       });
 
       return {
@@ -436,6 +496,7 @@ class MediaService {
     } catch (error) {
       logger.error('Failed to process Discord sticker', {
         stickerId: sticker.id,
+        stickerName: sticker.name,
         error: error.message
       });
       throw error;
