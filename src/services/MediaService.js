@@ -3,6 +3,7 @@
  * 画像、動画、音声、ファイルの処理を管理
  */
 const { AttachmentBuilder } = require('discord.js');
+const axios = require('axios');
 const sharp = require('sharp');
 const fileType = require('file-type');
 const mimeTypes = require('mime-types');
@@ -27,17 +28,17 @@ class MediaService {
    * @param {string} messageType - メッセージタイプ
    * @returns {Object} 処理結果
    */
-  async processLineMedia(message, messageType) {
+  async processLineMedia(message, messageType, lineService) {
     try {
       switch (messageType) {
         case 'image':
-          return await this.processLineImage(message);
+          return await this.processLineImage(message, lineService);
         case 'video':
-          return await this.processLineVideo(message);
+          return await this.processLineVideo(message, lineService);
         case 'audio':
-          return await this.processLineAudio(message);
+          return await this.processLineAudio(message, lineService);
         case 'file':
-          return await this.processLineFile(message);
+          return await this.processLineFile(message, lineService);
         case 'sticker':
           return await this.processLineSticker(message);
         default:
@@ -58,13 +59,15 @@ class MediaService {
    * @param {Object} message - LINEメッセージ
    * @returns {Object} 処理結果
    */
-  async processLineImage(message) {
+  async processLineImage(message, lineService) {
     try {
-      // LINE画像の処理ロジック
-      // 実際の実装では、LINE APIから画像を取得して処理
+      const buffer = await lineService.getMessageContent(message.id);
+      const typeInfo = await this.detectFileType(buffer);
+      const ext = typeInfo?.ext || 'jpg';
+      const attachment = new AttachmentBuilder(buffer, { name: `image_${message.id}.${ext}` });
       return {
-        content: '📷 Image message',
-        files: [] // 実際のファイル処理結果
+        content: 'Image message',
+        files: [attachment]
       };
     } catch (error) {
       logger.error('Failed to process LINE image', {
@@ -80,12 +83,15 @@ class MediaService {
    * @param {Object} message - LINEメッセージ
    * @returns {Object} 処理結果
    */
-  async processLineVideo(message) {
+  async processLineVideo(message, lineService) {
     try {
-      // LINE動画の処理ロジック
+      const buffer = await lineService.getMessageContent(message.id);
+      const typeInfo = await this.detectFileType(buffer);
+      const ext = typeInfo?.ext || 'mp4';
+      const attachment = new AttachmentBuilder(buffer, { name: `video_${message.id}.${ext}` });
       return {
-        content: '🎥 Video message',
-        files: []
+        content: 'Video message',
+        files: [attachment]
       };
     } catch (error) {
       logger.error('Failed to process LINE video', {
@@ -101,12 +107,15 @@ class MediaService {
    * @param {Object} message - LINEメッセージ
    * @returns {Object} 処理結果
    */
-  async processLineAudio(message) {
+  async processLineAudio(message, lineService) {
     try {
-      // LINE音声の処理ロジック
+      const buffer = await lineService.getMessageContent(message.id);
+      const typeInfo = await this.detectFileType(buffer);
+      const ext = typeInfo?.ext || 'm4a';
+      const attachment = new AttachmentBuilder(buffer, { name: `audio_${message.id}.${ext}` });
       return {
-        content: '🎵 Audio message',
-        files: []
+        content: 'Audio message',
+        files: [attachment]
       };
     } catch (error) {
       logger.error('Failed to process LINE audio', {
@@ -122,12 +131,16 @@ class MediaService {
    * @param {Object} message - LINEメッセージ
    * @returns {Object} 処理結果
    */
-  async processLineFile(message) {
+  async processLineFile(message, lineService) {
     try {
-      const fileName = message.fileName || 'Unknown file';
+      const fileName = message.fileName || `file_${message.id}`;
+      const buffer = await lineService.getMessageContent(message.id);
+      const typeInfo = await this.detectFileType(buffer);
+      const ext = typeInfo?.ext ? `.${typeInfo.ext}` : '';
+      const attachment = new AttachmentBuilder(buffer, { name: `${fileName}${ext}` });
       return {
-        content: `📎 File: ${fileName}`,
-        files: []
+        content: `File: ${fileName}`,
+        files: [attachment]
       };
     } catch (error) {
       logger.error('Failed to process LINE file', {
@@ -147,10 +160,14 @@ class MediaService {
     try {
       const packageId = message.packageId;
       const stickerId = message.stickerId;
-      
+      // LINEのスタンプ静的画像URL（一般的な表示用）
+      const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone/sticker@2x.png`;
+      const resp = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
+      const buffer = Buffer.from(resp.data);
+      const attachment = new AttachmentBuilder(buffer, { name: `sticker_${stickerId}.png` });
       return {
-        content: `😊 Sticker (Package: ${packageId}, ID: ${stickerId})`,
-        files: []
+        content: `Sticker (Package: ${packageId}, ID: ${stickerId})`,
+        files: [attachment]
       };
     } catch (error) {
       logger.error('Failed to process LINE sticker', {

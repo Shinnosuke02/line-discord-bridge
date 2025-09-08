@@ -318,7 +318,7 @@ class MessageBridge {
       case 'audio':
       case 'file':
       case 'sticker':
-        const result = await this.mediaService.processLineMedia(event.message, messageType);
+        const result = await this.mediaService.processLineMedia(event.message, messageType, this.lineService);
         return {
           content: `**${displayName}**: ${result.content}`,
           files: result.files || []
