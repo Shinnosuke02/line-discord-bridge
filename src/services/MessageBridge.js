@@ -194,6 +194,9 @@ class MessageBridge {
       const displayName = await this.lineService.getDisplayName(event);
       const avatarUrl = await this.getLineAvatar(event);
 
+      // チャンネル名を更新（表示名が変更された場合）
+      await this.updateChannelNameIfNeeded(sourceId, displayName, event);
+
       const discordMessage = await this.createDiscordMessage(event, displayName);
       if (!discordMessage) return;
 
@@ -375,6 +378,53 @@ class MessageBridge {
     } catch (error) {
       logger.debug('Failed to get LINE avatar', { error: error.message });
       return null;
+    }
+  }
+
+  /**
+   * チャンネル名を必要に応じて更新
+   * @param {string} sourceId - ソースID
+   * @param {string} displayName - 表示名
+   * @param {Object} event - LINEイベント
+   */
+  async updateChannelNameIfNeeded(sourceId, displayName, event) {
+    try {
+      const mapping = this.channelManager.getChannelMapping(sourceId);
+      if (!mapping) return;
+
+      // 新しいチャンネル名を生成
+      let newChannelName;
+      if (event.source.groupId) {
+        // グループの場合
+        try {
+          const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
+          newChannelName = `line-${groupSummary.groupName || 'group'}`;
+        } catch (error) {
+          logger.debug('Failed to get group name, using display name', { error: error.message });
+          newChannelName = `line-${displayName}`;
+        }
+      } else {
+        // 1:1チャットの場合
+        newChannelName = `line-${displayName}`;
+      }
+
+      // チャンネル名が変更された場合のみ更新
+      if (mapping.channelName !== newChannelName) {
+        const success = await this.channelManager.updateChannelName(sourceId, newChannelName);
+        if (success) {
+          logger.info('Channel name updated due to display name change', {
+            sourceId,
+            oldName: mapping.channelName,
+            newName: newChannelName
+          });
+        }
+      }
+    } catch (error) {
+      logger.debug('Failed to update channel name', {
+        sourceId,
+        displayName,
+        error: error.message
+      });
     }
   }
 

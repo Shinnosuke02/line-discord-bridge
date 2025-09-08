@@ -411,6 +411,56 @@ class ChannelManager {
   }
 
   /**
+   * チャンネル名を更新
+   * @param {string} sourceId - ソースID
+   * @param {string} newName - 新しいチャンネル名
+   * @returns {boolean} 更新成功
+   */
+  async updateChannelName(sourceId, newName) {
+    try {
+      const mapping = this.mappings.get(sourceId);
+      if (!mapping) {
+        logger.warn('Channel mapping not found for update', { sourceId });
+        return false;
+      }
+
+      const channel = await this.discord.channels.fetch(mapping.discordChannelId);
+      if (!channel) {
+        logger.warn('Discord channel not found for update', { 
+          sourceId, 
+          channelId: mapping.discordChannelId 
+        });
+        return false;
+      }
+
+      // チャンネル名を更新
+      await channel.setName(newName);
+      
+      // マッピング情報を更新
+      mapping.channelName = newName;
+      mapping.updatedAt = new Date().toISOString();
+      
+      await this.saveMappings();
+
+      logger.info('Channel name updated', {
+        sourceId,
+        channelId: mapping.discordChannelId,
+        oldName: mapping.channelName,
+        newName
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('Failed to update channel name', {
+        sourceId,
+        newName,
+        error: error.message
+      });
+      return false;
+    }
+  }
+
+  /**
    * 停止処理
    */
   async stop() {
