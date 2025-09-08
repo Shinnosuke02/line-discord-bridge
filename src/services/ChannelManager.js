@@ -202,7 +202,10 @@ class ChannelManager {
         try {
           const groupSummary = await this.lineService.getGroupSummary(sourceId);
           const groupName = groupSummary.groupName || 'Unknown Group';
-          return this.sanitizeChannelName(groupName);
+          const sanitizedName = this.sanitizeChannelName(groupName);
+          if (sanitizedName && sanitizedName.length > 0) {
+            return sanitizedName;
+          }
         } catch (error) {
           logger.warn('Failed to get group name, using fallback', {
             sourceId,
@@ -216,7 +219,10 @@ class ChannelManager {
         try {
           const userProfile = await this.lineService.getUserProfile(sourceId);
           const userName = userProfile.displayName || 'Unknown User';
-          return this.sanitizeChannelName(userName);
+          const sanitizedName = this.sanitizeChannelName(userName);
+          if (sanitizedName && sanitizedName.length > 0) {
+            return sanitizedName;
+          }
         } catch (error) {
           logger.warn('Failed to get user name, using fallback', {
             sourceId,
@@ -226,7 +232,7 @@ class ChannelManager {
       }
 
       // フォールバック
-      return sourceId.substring(0, 8);
+      return `user-${sourceId.substring(0, 8)}`;
     } catch (error) {
       logger.error('Failed to generate channel name', {
         sourceId,
