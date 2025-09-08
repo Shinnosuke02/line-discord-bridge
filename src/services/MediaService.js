@@ -427,10 +427,28 @@ class MediaService {
       let isLottie = false;
       
       if (sticker.format === 3) {
-        // LOTTIEアニメーション（PNGとして試行、GIFは利用不可）
-        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+        // LOTTIEアニメーション（直接テキスト送信）
         isLottie = true;
-        logger.debug('Using PNG URL for LOTTIE sticker (fallback)', { stickerId: sticker.id });
+        logger.debug('LOTTIE sticker detected, skipping image download', { stickerId: sticker.id });
+        
+        // LOTTIEスタンプは直接テキストとして送信
+        const lottieResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'} (LOTTIE)`
+        });
+        
+        logger.info('LOTTIE sticker sent as text', {
+          stickerId: sticker.id,
+          lineMessageId: lottieResult.messageId
+        });
+        
+        return {
+          success: true,
+          lineMessageId: lottieResult.messageId,
+          type: 'text',
+          fallback: true,
+          reason: 'lottie_direct_text'
+        };
       } else {
         // PNG/APNG
         stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
@@ -456,27 +474,11 @@ class MediaService {
           contentType: response.headers['content-type']
         });
       } catch (downloadError) {
-        // LOTTIEスタンプの場合はPNGで再試行
-        if (isLottie && stickerUrl.includes('.png')) {
-          logger.warn('PNG download failed for LOTTIE sticker, trying alternative approach', {
-            stickerId: sticker.id,
-            error: downloadError.message
-          });
-          
-          // フォールバック: テキストメッセージとして送信
-          const fallbackResult = await lineService.pushMessage(lineUserId, {
-            type: 'text',
-            text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'} (LOTTIE)`
-          });
-          
-          return {
-            success: true,
-            lineMessageId: fallbackResult.messageId,
-            type: 'text',
-            fallback: true,
-            reason: 'lottie_download_failed'
-          };
-        }
+        logger.error('Failed to download sticker', {
+          stickerId: sticker.id,
+          stickerUrl,
+          error: downloadError.message
+        });
         throw downloadError;
       }
       
@@ -488,11 +490,11 @@ class MediaService {
         extension: fileTypeInfo?.ext
       });
 
-      // APNGまたはLOTTIEの場合は静止画に変換
+      // APNGの場合は静止画に変換
       let processedUrl = stickerUrl;
-      if (fileTypeInfo?.mime === 'image/apng' || isLottie) {
+      if (fileTypeInfo?.mime === 'image/apng') {
         try {
-          // SharpでAPNG/LOTTIEを静止画PNGに変換
+          // SharpでAPNGを静止画PNGに変換
           const processedBuffer = await sharp(imageBuffer, { animated: true })
             .png()
             .toBuffer();
@@ -506,16 +508,14 @@ class MediaService {
           await fs.writeFile(tempPath, processedBuffer);
           processedUrl = `http://localhost:${config.port}/temp/${tempFileName}`;
           
-          logger.debug('Sticker converted to static PNG', {
+          logger.debug('APNG sticker converted to static PNG', {
             stickerId: sticker.id,
-            isLottie,
             mimeType: fileTypeInfo?.mime,
             tempPath
           });
         } catch (conversionError) {
-          logger.warn('Failed to convert sticker, using original', {
+          logger.warn('Failed to convert APNG sticker, using original', {
             stickerId: sticker.id,
-            isLottie,
             error: conversionError.message
           });
         }
