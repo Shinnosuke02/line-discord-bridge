@@ -266,12 +266,24 @@ class ChannelManager {
    * @returns {string} サニタイズされた名前
    */
   sanitizeChannelName(name) {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9\-_]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .substring(0, 50);
+    if (!name || typeof name !== 'string') {
+      return '';
+    }
+    
+    // 日本語文字を保持しつつ、Discordで使用できない文字のみを置換
+    let sanitized = name
+      .replace(/[<>:"/\\|?*]/g, '-')  // Discordで使用できない文字のみを置換
+      .replace(/-+/g, '-')            // 連続する-を1つに
+      .replace(/^-|-$/g, '')          // 先頭と末尾の-を削除
+      .trim();
+    
+    // 空文字列の場合は元の名前をそのまま使用
+    if (!sanitized || sanitized.length === 0) {
+      sanitized = name.trim();
+    }
+    
+    // 長さ制限（Discordのチャンネル名は100文字まで）
+    return sanitized.substring(0, 100);
   }
 
   /**
