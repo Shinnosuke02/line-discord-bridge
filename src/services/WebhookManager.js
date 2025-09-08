@@ -132,6 +132,13 @@ class WebhookManager {
         files: message.files || []
       };
 
+      logger.debug('Sending webhook message', {
+        channelId,
+        username,
+        avatarURL: avatarUrl,
+        hasFiles: (message.files || []).length > 0
+      });
+
       const sentMessage = await webhook.send(webhookMessage);
 
       logger.debug('Message sent via webhook', {

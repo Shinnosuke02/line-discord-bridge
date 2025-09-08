@@ -414,18 +414,24 @@ class MediaService {
    */
   async processDiscordSticker(sticker, lineUserId, lineService) {
     try {
-      // DiscordスタンプをLINEスタンプに変換
-      // 実際の実装では、スタンプマッピングテーブルを使用
+      // Discordスタンプを画像としてLINEに送信
+      const stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+      
+      // スタンプ画像をダウンロード
+      const response = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
+      const imageBuffer = Buffer.from(response.data);
+      
+      // LINEに画像として送信
       const result = await lineService.pushMessage(lineUserId, {
-        type: 'sticker',
-        packageId: '11537', // デフォルトパッケージ
-        stickerId: '52002734' // デフォルトスタンプ
+        type: 'image',
+        originalContentUrl: stickerUrl,
+        previewImageUrl: stickerUrl
       });
 
       return {
         success: true,
         lineMessageId: result.messageId,
-        type: 'sticker'
+        type: 'image'
       };
     } catch (error) {
       logger.error('Failed to process Discord sticker', {
