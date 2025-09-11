@@ -446,19 +446,33 @@ class MessageBridge {
   async getLineAvatar(event) {
     try {
       if (event.source.groupId) {
-        // グループではグループのアイコンを優先
+        // グループではメンバーのアイコンを優先、なければグループアイコンにフォールバック
+        try {
+          const memberProfile = await this.lineService.getGroupMemberProfile(
+            event.source.groupId,
+            event.source.userId
+          );
+          if (memberProfile?.pictureUrl) {
+            return memberProfile.pictureUrl;
+          }
+        } catch (e) {
+          logger.debug('Failed to get group member profile for avatar, will try group summary', {
+            groupId: event.source.groupId,
+            userId: event.source.userId,
+            error: e.message
+          });
+        }
+
         try {
           const groupSummary = await this.lineService.getGroupSummary(event.source.groupId);
           if (groupSummary?.pictureUrl) {
             return groupSummary.pictureUrl;
           }
         } catch (e) {
-          // フォールバックでメンバーのアイコン
-          const memberProfile = await this.lineService.getGroupMemberProfile(
-            event.source.groupId,
-            event.source.userId
-          );
-          return memberProfile.pictureUrl || null;
+          logger.debug('Failed to get group summary for avatar', {
+            groupId: event.source.groupId,
+            error: e.message
+          });
         }
         return null;
       } else {
