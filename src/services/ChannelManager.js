@@ -190,8 +190,11 @@ class ChannelManager {
       // チャンネル名を生成
       const channelName = await this.generateChannelName(sourceId);
       
-      // チャンネルを作成
-      const channel = await guild.channels.create({
+      // カテゴリIDを取得
+      const categoryId = this.getCategoryForSource(sourceId);
+      
+      // チャンネル作成オプション
+      const channelOptions = {
         name: channelName,
         type: ChannelType.GuildText,
         topic: `LINE Bridge Channel for ${sourceId}`,
@@ -205,12 +208,33 @@ class ChannelManager {
             ]
           }
         ]
-      });
+      };
+      
+      // カテゴリが指定されている場合は追加
+      if (categoryId) {
+        channelOptions.parent = categoryId;
+        logger.info('Creating channel with category', {
+          sourceId,
+          channelName,
+          categoryId,
+          sourceType: sourceId.startsWith('C') ? 'group' : 'user'
+        });
+      } else {
+        logger.info('Creating channel without category', {
+          sourceId,
+          channelName,
+          sourceType: sourceId.startsWith('C') ? 'group' : 'user'
+        });
+      }
+      
+      // チャンネルを作成
+      const channel = await guild.channels.create(channelOptions);
 
       const mapping = {
         sourceId,
         discordChannelId: channel.id,
         channelName: channel.name,
+        categoryId: categoryId,
         createdAt: new Date().toISOString(),
         lastUsed: new Date().toISOString()
       };
@@ -222,6 +246,53 @@ class ChannelManager {
         error: error.message
       });
       throw error;
+    }
+  }
+
+  /**
+   * ソースIDに基づいてカテゴリIDを取得
+   * @param {string} sourceId - LINEのソースID
+   * @returns {string|null} カテゴリID
+   */
+  getCategoryForSource(sourceId) {
+    try {
+      // LINEグループの場合（IDがCで始まる）
+      if (sourceId.startsWith('C')) {
+        const groupsCategoryId = config.discord.categories.groups;
+        if (groupsCategoryId && groupsCategoryId !== 'null') {
+          logger.debug('Selected Groups category for LINE group', {
+            sourceId,
+            categoryId: groupsCategoryId
+          });
+          return groupsCategoryId;
+        }
+      }
+      
+      // LINE個人の場合（IDがUで始まる）
+      if (sourceId.startsWith('U')) {
+        const friendsCategoryId = config.discord.categories.friends;
+        if (friendsCategoryId && friendsCategoryId !== 'null') {
+          logger.debug('Selected Friends category for LINE user', {
+            sourceId,
+            categoryId: friendsCategoryId
+          });
+          return friendsCategoryId;
+        }
+      }
+      
+      // その他の場合はカテゴリなし
+      logger.debug('No category selected', {
+        sourceId,
+        sourceType: sourceId.startsWith('C') ? 'group' : 
+                   sourceId.startsWith('U') ? 'user' : 'unknown'
+      });
+      return null;
+    } catch (error) {
+      logger.error('Failed to get category for source', {
+        sourceId,
+        error: error.message
+      });
+      return null;
     }
   }
 
