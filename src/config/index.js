@@ -177,6 +177,7 @@ function initializeConfig() {
     
     return config;
   } catch (error) {
+    // ログシステムが初期化される前にエラーが発生した場合のみconsole.errorを使用
     console.error('Failed to initialize configuration:', error.message);
     process.exit(1);
   }
