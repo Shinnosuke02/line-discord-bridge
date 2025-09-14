@@ -500,7 +500,7 @@ class MediaService {
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎥 ${fileTypeDisplay}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
+          text: `🎥 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
         });
 
         logger.info('Video sent as text fallback', {
@@ -584,7 +584,7 @@ class MediaService {
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎵 ${fileTypeDisplay}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
+          text: `🎵 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
         });
 
         logger.info('Audio sent as text fallback', {
@@ -668,7 +668,7 @@ class MediaService {
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📄 ${fileTypeDisplay}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
+          text: `📄 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
         });
 
         logger.info('Document sent as text fallback', {
@@ -752,7 +752,7 @@ class MediaService {
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
+          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
         });
 
         logger.info('File sent as text fallback', {
@@ -1599,7 +1599,7 @@ class MediaService {
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
+          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
         });
 
         return {
