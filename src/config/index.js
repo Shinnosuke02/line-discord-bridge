@@ -28,7 +28,15 @@ const config = {
 
   // ファイル処理設定
   file: {
-    maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB
+    // LINE側の制限を考慮したファイルサイズ制限
+    maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024, // 5MB（LINE側制限を考慮）
+    // LINE側の実際の制限値
+    lineLimits: {
+      image: 10 * 1024 * 1024, // 10MB
+      video: 50 * 1024 * 1024, // 50MB
+      audio: 10 * 1024 * 1024, // 10MB
+      file: 10 * 1024 * 1024   // 10MB
+    },
     uploadPath: process.env.UPLOAD_PATH || './uploads',
     tempPath: process.env.TEMP_PATH || './temp',
     supportedImageMimeTypes: [

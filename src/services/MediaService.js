@@ -19,6 +19,7 @@ const fileUtils = require('../utils/fileUtils');
 class MediaService {
   constructor() {
     this.maxFileSize = config.file.maxFileSize;
+    this.lineLimits = config.file.lineLimits;
     this.supportedImageTypes = config.file.supportedImageMimeTypes;
     this.supportedVideoTypes = config.file.supportedVideoMimeTypes;
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
@@ -329,13 +330,27 @@ class MediaService {
    */
   async processDiscordAttachment(attachment, lineUserId, lineService) {
     try {
-      // ファイルサイズチェック
+      // ファイルタイプを判定
+      const mimeType = attachment.contentType || mimeTypes.lookup(attachment.name);
+      
+      // LINE側の制限を考慮したファイルサイズチェック
+      const lineLimit = this.getLineLimitForMimeType(mimeType);
+      if (attachment.size > lineLimit) {
+        logger.warn('File exceeds LINE limit, attempting to use Discord CDN URL', {
+          fileSize: attachment.size,
+          lineLimit: lineLimit,
+          mimeType: mimeType,
+          attachmentUrl: attachment.url
+        });
+        
+        // Discord CDN URLを直接使用（24時間有効期限あり）
+        return await this.processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, mimeType);
+      }
+
+      // 通常のファイルサイズチェック
       if (attachment.size > this.maxFileSize) {
         throw new Error(`File too large: ${attachment.size} bytes`);
       }
-
-      // ファイルタイプを判定
-      const mimeType = attachment.contentType || mimeTypes.lookup(attachment.name);
       
       // ファイルをダウンロードしてファイルタイプを判定
       const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
@@ -1005,6 +1020,131 @@ class MediaService {
         error: error.message
       });
       throw error;
+    }
+  }
+
+  /**
+   * MIMEタイプに応じたLINE側の制限値を取得
+   * @param {string} mimeType - MIMEタイプ
+   * @returns {number} 制限値（バイト）
+   */
+  getLineLimitForMimeType(mimeType) {
+    if (this.supportedImageTypes.includes(mimeType)) {
+      return this.lineLimits.image;
+    } else if (this.supportedVideoTypes.includes(mimeType)) {
+      return this.lineLimits.video;
+    } else if (this.supportedAudioTypes.includes(mimeType)) {
+      return this.lineLimits.audio;
+    } else {
+      return this.lineLimits.file;
+    }
+  }
+
+  /**
+   * Discord CDN URLを使用してLINEに送信（大容量ファイル用）
+   * @param {Object} attachment - Discord添付ファイル
+   * @param {string} lineUserId - LINEユーザーID
+   * @param {Object} lineService - LINEサービス
+   * @param {string} mimeType - MIMEタイプ
+   * @returns {Object} 処理結果
+   */
+  async processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, mimeType) {
+    try {
+      logger.info('Processing large file with Discord CDN URL', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        mimeType: mimeType,
+        cdnUrl: attachment.url
+      });
+
+      // ファイルタイプに応じてLINEメッセージタイプを決定
+      let messageType;
+      if (this.supportedImageTypes.includes(mimeType)) {
+        messageType = 'image';
+      } else if (this.supportedVideoTypes.includes(mimeType)) {
+        messageType = 'video';
+      } else if (this.supportedAudioTypes.includes(mimeType)) {
+        messageType = 'audio';
+      } else {
+        messageType = 'file';
+      }
+
+      // Discord CDN URLを直接使用してLINEに送信
+      const messageData = this.createLineMessageData(messageType, attachment);
+      const result = await lineService.pushMessage(lineUserId, messageData);
+
+      logger.info('Large file sent successfully via Discord CDN', {
+        fileName: attachment.name,
+        messageType: messageType,
+        lineMessageId: result.messageId,
+        cdnUrl: attachment.url
+      });
+
+      return {
+        success: true,
+        lineMessageId: result.messageId,
+        type: messageType,
+        cdnUsed: true,
+        warning: 'Discord CDN URL使用（24時間有効期限あり）'
+      };
+
+    } catch (error) {
+      logger.error('Failed to process large file with Discord CDN', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        error: error.message
+      });
+
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `📎 大容量ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 注意: このリンクは24時間で無効になります`
+        });
+
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true,
+          warning: 'フォールバック: テキストメッセージとして送信'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          fileName: attachment.name,
+          error: fallbackError.message
+        });
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * LINEメッセージデータを作成
+   * @param {string} messageType - メッセージタイプ
+   * @param {Object} attachment - Discord添付ファイル
+   * @returns {Object} LINEメッセージデータ
+   */
+  createLineMessageData(messageType, attachment) {
+    const baseData = {
+      type: messageType,
+      originalContentUrl: attachment.url,
+      previewImageUrl: attachment.url
+    };
+
+    switch (messageType) {
+      case 'audio':
+        return {
+          ...baseData,
+          duration: 60000 // 60秒
+        };
+      case 'file':
+        return {
+          ...baseData,
+          fileName: attachment.name
+        };
+      default:
+        return baseData;
     }
   }
 
