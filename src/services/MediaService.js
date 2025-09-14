@@ -485,8 +485,9 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
-        const displayName = attachment.name || 'unknown_file';
+        // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
+        const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
+        const displayName = recoveredFileName || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `🎥 動画ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
@@ -558,8 +559,9 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
-        const displayName = attachment.name || 'unknown_file';
+        // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
+        const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
+        const displayName = recoveredFileName || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `🎵 音声ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
@@ -631,8 +633,9 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
-        const displayName = attachment.name || 'unknown_file';
+        // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
+        const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
+        const displayName = recoveredFileName || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `📄 ドキュメント: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
@@ -704,8 +707,9 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
-        const displayName = attachment.name || 'unknown_file';
+        // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
+        const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
+        const displayName = recoveredFileName || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `📎 ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
@@ -1151,6 +1155,53 @@ class MediaService {
   }
 
   /**
+   * Discord CDN URLから元のファイル名を推測・復元
+   * Discord側で2バイト文字が削除されたファイル名を、URLから推測して復元
+   * @param {string} attachmentName - Discord側で処理済みのファイル名
+   * @param {string} attachmentUrl - Discord CDN URL
+   * @returns {string} 復元されたファイル名（推測できない場合は元のファイル名）
+   */
+  recoverFileNameFromDiscordURL(attachmentName, attachmentUrl) {
+    if (!attachmentUrl) return attachmentName;
+    
+    try {
+      // URLからファイル名を抽出
+      const urlPath = new URL(attachmentUrl).pathname;
+      const urlFileName = urlPath.split('/').pop();
+      
+      // URLパラメータを除去
+      const cleanUrlFileName = urlFileName.split('?')[0];
+      
+      // URLのファイル名とattachment.nameが異なる場合
+      if (cleanUrlFileName && cleanUrlFileName !== attachmentName) {
+        logger.info('Attempting to recover filename from Discord URL', {
+          attachmentName: attachmentName,
+          urlFileName: cleanUrlFileName,
+          url: attachmentUrl
+        });
+        
+        // URLのファイル名がより長く、2バイト文字を含んでいる可能性がある場合
+        if (cleanUrlFileName.length > attachmentName.length && /[^\x00-\x7F]/.test(cleanUrlFileName)) {
+          logger.info('Recovered filename from Discord URL', {
+            original: attachmentName,
+            recovered: cleanUrlFileName
+          });
+          return cleanUrlFileName;
+        }
+      }
+      
+      return attachmentName;
+    } catch (error) {
+      logger.error('Failed to recover filename from Discord URL', {
+        attachmentName: attachmentName,
+        attachmentUrl: attachmentUrl,
+        error: error.message
+      });
+      return attachmentName;
+    }
+  }
+
+  /**
    * アップロードされたファイルを処理
    * @param {Object} file - アップロードされたファイル
    * @returns {Object} 処理結果
@@ -1366,8 +1417,9 @@ class MediaService {
 
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
-        const displayName = attachment.name || 'unknown_file';
+        // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
+        const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
+        const displayName = recoveredFileName || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `📎 大容量ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`

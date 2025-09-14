@@ -303,6 +303,48 @@ describe('MediaService', () => {
       // 表示用は元のファイル名が保持される
       expect(result.content).toBe('File: 電気料金請求書.pdf');
     });
+
+    test('Discord URLからファイル名復元機能が正しく動作する', () => {
+      // 通常のケース（復元不要）
+      expect(mediaService.recoverFileNameFromDiscordURL('document.pdf', 'https://cdn.discordapp.com/attachments/123/456/document.pdf')).toBe('document.pdf');
+      
+      // 2バイト文字が含まれるURLのケース
+      const japaneseUrl = 'https://cdn.discordapp.com/attachments/123/456/電気料金請求書_20250908101102.pdf?ex=68c8046a';
+      const sanitizedName = '20250908101102.pdf';
+      const recovered = mediaService.recoverFileNameFromDiscordURL(sanitizedName, japaneseUrl);
+      
+      expect(recovered).toBe('電気料金請求書_20250908101102.pdf');
+      expect(recovered).not.toBe(sanitizedName);
+    });
+
+    test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {
+      const attachment = {
+        name: '20250908101102.pdf', // Discord側で処理済み（日本語削除済み）
+        size: 3 * 1024 * 1024,
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/電気料金請求書_20250908101102.pdf?ex=68c8046a'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordDocument(
+        attachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('電気料金請求書_20250908101102.pdf')
+        })
+      );
+    });
   });
 
   describe('統合テスト', () => {
