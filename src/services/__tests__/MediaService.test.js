@@ -376,7 +376,7 @@ describe('MediaService', () => {
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('LINEの制限により、動画を直接表示できません')
+          text: expect.stringContaining('リンク先で参照できます')
         })
       );
       expect(mockLineService.pushMessage).toHaveBeenCalledTimes(2);
@@ -407,7 +407,7 @@ describe('MediaService', () => {
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('LINEの制限により、音声を直接再生できません')
+          text: expect.stringContaining('リンク先で参照できます')
         })
       );
     });
@@ -437,7 +437,7 @@ describe('MediaService', () => {
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('LINEの制限により、ドキュメントを直接表示できません')
+          text: expect.stringContaining('リンク先で参照できます')
         })
       );
     });
