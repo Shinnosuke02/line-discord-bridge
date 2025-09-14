@@ -389,6 +389,27 @@ describe('MediaService', () => {
       expect(mediaService.getFileTypeDisplayName('', '', 'unknown.xyz')).toBe('ファイル');
     });
 
+    test('スタンプフォーマット名取得機能が正しく動作する', () => {
+      expect(mediaService.getStickerFormatName(1)).toBe('PNG');
+      expect(mediaService.getStickerFormatName(2)).toBe('APNG');
+      expect(mediaService.getStickerFormatName(3)).toBe('LOTTIE');
+      expect(mediaService.getStickerFormatName(0)).toBe('UNKNOWN');
+      expect(mediaService.getStickerFormatName(999)).toBe('UNKNOWN');
+    });
+
+    test('LINE側用ファイル名サニタイズ機能が正しく動作する', () => {
+      // 短いファイル名はそのまま
+      expect(mediaService.sanitizeFileNameForLine('test.png')).toBe('test.png');
+      expect(mediaService.sanitizeFileNameForLine('discord_sticker_123.png')).toBe('discord_sticker_123.png');
+      
+      // 長いファイル名は短縮
+      const longFileName = 'very_long_discord_sticker_filename_that_exceeds_limit.png';
+      const result = mediaService.sanitizeFileNameForLine(longFileName);
+      expect(result.length).toBeLessThanOrEqual(50);
+      expect(result.endsWith('.png')).toBe(true);
+      expect(result.startsWith('very_long_discord_sticker_filename_that_exce')).toBe(true);
+    });
+
     test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {
       const attachment = {
         name: '20250908101102.pdf', // Discord側で処理済み（日本語削除済み）

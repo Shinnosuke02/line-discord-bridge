@@ -904,7 +904,7 @@ class MediaService {
   }
 
   /**
-   * Discordスタンプを処理
+   * Discordスタンプを処理（LINE側ステッカー処理方式を適用）
    * @param {Object} sticker - Discordスタンプ
    * @param {string} lineUserId - LINEユーザーID
    * @param {Object} lineService - LINEサービス
@@ -918,87 +918,37 @@ class MediaService {
         format: sticker.format
       });
 
-      // DiscordスタンプのURLを取得
-      let stickerUrl;
-      let isLottie = false;
+      // LINE側ステッカー処理方式を適用
+      // 1. スタンプ画像をダウンロード
+      const buffer = await this.downloadStickerImage(sticker);
       
-      // スタンプのURLを取得（Discord APIから提供されるURLを使用）
-      if (sticker.url) {
-        stickerUrl = sticker.url;
-        // .jsonで終わる場合は.pngに置換
-        if (stickerUrl.endsWith('.json')) {
-          stickerUrl = stickerUrl.replace('.json', '.png');
-          logger.debug('Converted .json URL to .png', { 
-            stickerId: sticker.id, 
-            originalUrl: sticker.url,
-            convertedUrl: stickerUrl,
-            format: sticker.format 
-          });
-        }
-        logger.debug('Using Discord provided sticker URL', { 
-          stickerId: sticker.id, 
-          url: stickerUrl,
-          format: sticker.format 
-        });
-      } else if (sticker.id) {
-        // フォールバック: IDからURLを生成
-        stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
-        logger.debug('Using generated sticker URL', { 
-          stickerId: sticker.id, 
-          url: stickerUrl,
-          format: sticker.format 
-        });
-      } else {
-        throw new Error('No sticker URL or ID available');
-      }
+      // 2. 静止画PNGに変換
+      const pngBuffer = await this.convertToStaticPng(buffer, sticker);
       
-      // レガシーコードのアプローチ: フォーマットに関係なく処理
-      logger.debug('Processing sticker with legacy approach', { 
+      // 3. LINE側と同様のファイル名処理
+      const fileName = `discord_sticker_${sticker.id}.png`;
+      const lineSafeFileName = this.sanitizeFileNameForLine(fileName);
+      
+      // 4. 自己アップローダ経由でLINEに送信
+      const selfUrl = await this.uploadToSelf(pngBuffer, lineSafeFileName);
+      const result = await lineService.pushMessage(lineUserId, {
+        type: 'image',
+        originalContentUrl: selfUrl.url,
+        previewImageUrl: selfUrl.url
+      });
+      
+      logger.info('Discord sticker sent as image', {
         stickerId: sticker.id,
         stickerName: sticker.name,
-        format: sticker.format
+        lineMessageId: result.messageId,
+        selfUrl: selfUrl.url
       });
       
-      // スタンプ画像をダウンロード
-      const name = sticker.name || `sticker_${sticker.id}.png`;
-      const buffer = await this.downloadImage(stickerUrl, name);
-      const type = await fileTypeFromBuffer(buffer);
-      
-      logger.info('スタンプ画像ダウンロード', { 
-        url: stickerUrl, 
-        name, 
-        mime: type?.mime, 
-        ext: type?.ext 
-      });
-      
-      let processedBuffer = buffer;
-      let uploadName = name;
-      
-      // APNGの場合はSharpでPNG静止画に変換
-      if (type && type.mime === 'image/apng') {
-        processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
-        // 拡張子が無い場合も含め、必ず.pngを付与
-        if (!/\.png$/i.test(name)) {
-          uploadName = name.replace(/(\.[^.]+)?$/, '.png');
-        } else {
-          uploadName = name;
-        }
-        logger.info('apng→png静止画変換', { original: name, converted: uploadName });
-      }
-      
-      // アップローダ経由で送信
-      const selfUrl = await this.uploadToSelf(processedBuffer, uploadName);
-      await this.sendImageToLine(lineUserId, selfUrl.url, lineService);
-      
-      logger.info('スタンプ送信成功', { 
-        lineUserId, 
-        selfUrl: selfUrl.url 
-      });
-      
-      return { 
-        success: true, 
-        type: 'sticker', 
-        filename: uploadName 
+      return {
+        success: true,
+        lineMessageId: result.messageId,
+        type: 'image',
+        filename: lineSafeFileName
       };
     } catch (error) {
       logger.error('Failed to process Discord sticker', {
@@ -1013,11 +963,13 @@ class MediaService {
       try {
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'}`
+          text: `🎭 スタンプ: ${sticker.name || 'Unknown Sticker'} (${this.getStickerFormatName(sticker.format)})`
         });
         
         logger.info('Discord sticker sent as text fallback', {
           stickerId: sticker.id,
+          stickerName: sticker.name,
+          format: sticker.format,
           lineMessageId: fallbackResult.messageId
         });
         
@@ -1341,6 +1293,115 @@ class MediaService {
     
     // デフォルト
     return 'ファイル';
+  }
+
+  /**
+   * スタンプフォーマット名を取得
+   * @param {number} format - スタンプフォーマット
+   * @returns {string} フォーマット名
+   */
+  getStickerFormatName(format) {
+    switch (format) {
+      case 1: return 'PNG';
+      case 2: return 'APNG';
+      case 3: return 'LOTTIE';
+      default: return 'UNKNOWN';
+    }
+  }
+
+  /**
+   * Discordスタンプ画像をダウンロード
+   * @param {Object} sticker - Discordスタンプ
+   * @returns {Buffer} 画像バッファ
+   */
+  async downloadStickerImage(sticker) {
+    let stickerUrl = sticker.url;
+    
+    if (!stickerUrl && sticker.id) {
+      // フォールバック: IDからURLを生成
+      stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+    }
+    
+    if (!stickerUrl) {
+      throw new Error('No sticker URL or ID available');
+    }
+    
+    // LOTTIEスタンプの場合は静止画URLに変換
+    if (sticker.format === 3) { // LOTTIE
+      stickerUrl = stickerUrl.replace('.json', '.png');
+      logger.debug('Converted LOTTIE URL to PNG', { 
+        stickerId: sticker.id, 
+        originalUrl: sticker.url,
+        convertedUrl: stickerUrl 
+      });
+    }
+    
+    // .jsonで終わる場合は.pngに置換
+    if (stickerUrl.endsWith('.json')) {
+      stickerUrl = stickerUrl.replace('.json', '.png');
+      logger.debug('Converted .json URL to .png', { 
+        stickerId: sticker.id, 
+        originalUrl: sticker.url,
+        convertedUrl: stickerUrl 
+      });
+    }
+    
+    logger.debug('Downloading sticker image', { 
+      stickerId: sticker.id, 
+      url: stickerUrl,
+      format: sticker.format 
+    });
+    
+    const response = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data);
+  }
+
+  /**
+   * スタンプ画像を静止画PNGに変換
+   * @param {Buffer} buffer - 元の画像バッファ
+   * @param {Object} sticker - Discordスタンプ
+   * @returns {Buffer} PNGバッファ
+   */
+  async convertToStaticPng(buffer, sticker) {
+    const type = await fileTypeFromBuffer(buffer);
+    
+    if (type?.mime === 'image/apng') {
+      // APNG→PNG静止画変換
+      logger.debug('Converting APNG to static PNG', { 
+        stickerId: sticker.id,
+        originalMime: type.mime 
+      });
+      return await sharp(buffer, { animated: true }).png().toBuffer();
+    } else if (sticker.format === 3) { // LOTTIE
+      // LOTTIEの場合は静止画URLを使用しているので、そのまま返す
+      logger.debug('Using LOTTIE as static PNG', { 
+        stickerId: sticker.id 
+      });
+      return buffer;
+    } else {
+      // 既にPNGの場合はそのまま
+      logger.debug('Using original PNG buffer', { 
+        stickerId: sticker.id,
+        mime: type?.mime 
+      });
+      return buffer;
+    }
+  }
+
+  /**
+   * LINE側用のファイル名をサニタイズ
+   * @param {string} fileName - 元のファイル名
+   * @returns {string} サニタイズされたファイル名
+   */
+  sanitizeFileNameForLine(fileName) {
+    // LINE側の制限に合わせたファイル名処理
+    // 2バイト文字は問題ないので、主に長さ制限を考慮
+    if (fileName.length > 50) {
+      const ext = fileName.split('.').pop();
+      const base = fileName.substring(0, fileName.lastIndexOf('.'));
+      return `${base.substring(0, 40)}.${ext}`;
+    }
+    return fileName;
   }
 
   /**
