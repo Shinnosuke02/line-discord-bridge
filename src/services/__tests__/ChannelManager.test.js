@@ -33,8 +33,8 @@ describe('ChannelManager', () => {
     config.discord = {
       guildId: 'test-guild-id',
       categories: {
-        friends: '1397253861965561988',
-        groups: '1397253777643409631',
+        friends: 'test-friends-category-id',
+        groups: 'test-groups-category-id',
         shop: null,
         test: null,
         archive: null
@@ -53,14 +53,14 @@ describe('ChannelManager', () => {
       const sourceId = 'U1234567890abcdef';
       const categoryId = channelManager.getCategoryForSource(sourceId);
       
-      expect(categoryId).toBe('1397253861965561988');
+      expect(categoryId).toBe('test-friends-category-id');
     });
 
     test('LINEグループの場合、Groupsカテゴリを返す', () => {
       const sourceId = 'C1234567890abcdef';
       const categoryId = channelManager.getCategoryForSource(sourceId);
       
-      expect(categoryId).toBe('1397253777643409631');
+      expect(categoryId).toBe('test-groups-category-id');
     });
 
     test('不明なソースIDの場合、nullを返す', () => {

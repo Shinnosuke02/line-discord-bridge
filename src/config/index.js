@@ -20,9 +20,9 @@ const config = {
     // カテゴリ設定
     categories: {
       // LINE個人用カテゴリ
-      friends: process.env.DISCORD_CATEGORY_FRIENDS || '1397253861965561988',
+      friends: process.env.DISCORD_CATEGORY_FRIENDS || null,
       // LINEグループ用カテゴリ
-      groups: process.env.DISCORD_CATEGORY_GROUPS || '1397253777643409631',
+      groups: process.env.DISCORD_CATEGORY_GROUPS || null,
       // その他のカテゴリ
       shop: process.env.DISCORD_CATEGORY_SHOP || null,
       test: process.env.DISCORD_CATEGORY_TEST || null,

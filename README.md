@@ -61,6 +61,16 @@ DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_GUILD_ID=your_discord_guild_id
 DISCORD_CLIENT_ID=your_discord_client_id
 
+# Discord カテゴリ設定（オプション）
+# LINE個人ユーザー用カテゴリ
+DISCORD_CATEGORY_FRIENDS=your_friends_category_id
+# LINEグループ用カテゴリ
+DISCORD_CATEGORY_GROUPS=your_groups_category_id
+# その他のカテゴリ（オプション）
+DISCORD_CATEGORY_SHOP=your_shop_category_id
+DISCORD_CATEGORY_TEST=your_test_category_id
+DISCORD_CATEGORY_ARCHIVE=your_archive_category_id
+
 # Webhook設定
 WEBHOOK_ENABLED=true
 WEBHOOK_NAME=LINE Bridge
@@ -139,6 +149,7 @@ temp/                     # 一時ファイル
 - **自動チャンネル作成**: LINEユーザー・グループごとにDiscordチャンネルを自動作成
 - **日本語チャンネル名**: 日本語のユーザー名・グループ名に対応
 - **動的チャンネル名更新**: グループ名変更時の自動更新
+- **自動カテゴリ分類**: LINE個人→Friendsカテゴリ、LINEグループ→Groupsカテゴリに自動配置
 
 ### 位置情報共有機能
 
