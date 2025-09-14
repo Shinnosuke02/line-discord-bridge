@@ -362,21 +362,31 @@ describe('MediaService', () => {
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('PDFドキュメント')
+          text: expect.stringContaining('PDFファイル')
         })
       );
     });
 
     test('ファイルタイプ表示名機能が正しく動作する', () => {
-      // 各種ファイルタイプの表示名テスト
-      expect(mediaService.getFileTypeDisplayName('application/pdf')).toBe('PDFドキュメント');
+      // MIMEタイプベースのテスト
+      expect(mediaService.getFileTypeDisplayName('application/pdf')).toBe('PDFファイル');
       expect(mediaService.getFileTypeDisplayName('image/jpeg')).toBe('画像ファイル');
       expect(mediaService.getFileTypeDisplayName('video/mp4')).toBe('動画ファイル');
       expect(mediaService.getFileTypeDisplayName('audio/mpeg')).toBe('音声ファイル');
-      expect(mediaService.getFileTypeDisplayName('application/msword')).toBe('Word文書');
-      expect(mediaService.getFileTypeDisplayName('application/vnd.ms-excel')).toBe('Excelファイル');
+      expect(mediaService.getFileTypeDisplayName('application/msword')).toBe('WORDファイル');
+      expect(mediaService.getFileTypeDisplayName('application/vnd.ms-excel')).toBe('EXCELファイル');
       expect(mediaService.getFileTypeDisplayName('application/zip')).toBe('圧縮ファイル');
       expect(mediaService.getFileTypeDisplayName('unknown/type')).toBe('ファイル');
+      
+      // 拡張子ベースのテスト（MIMEタイプが不明な場合）
+      expect(mediaService.getFileTypeDisplayName('', '', 'document.pdf')).toBe('PDFファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'image.jpg')).toBe('画像ファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'video.mp4')).toBe('動画ファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'audio.mp3')).toBe('音声ファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'document.docx')).toBe('WORDファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'spreadsheet.xlsx')).toBe('EXCELファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'archive.zip')).toBe('圧縮ファイル');
+      expect(mediaService.getFileTypeDisplayName('', '', 'unknown.xyz')).toBe('ファイル');
     });
 
     test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {
