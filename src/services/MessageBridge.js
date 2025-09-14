@@ -12,6 +12,7 @@ const ChannelManager = require('./ChannelManager');
 const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
 const ReplyService = require('./ReplyService');
+const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 
 /**
  * メッセージブリッジクラス
@@ -285,12 +286,13 @@ class MessageBridge {
             lineMessageId = result.messageId;
           }
         } else {
-          const urlResults = await this.mediaService.processUrls(text, lineUserId, this.lineService);
+          const processedText = processDiscordEmoji(text);
+          const urlResults = await this.mediaService.processUrls(processedText, lineUserId, this.lineService);
           
           if (urlResults.length === 0) {
             const result = await this.lineService.pushMessage(lineUserId, {
               type: 'text',
-              text: text
+              text: processedText
             });
             if (result?.messageId) {
               lineMessageId = result.messageId;
@@ -413,8 +415,9 @@ class MessageBridge {
     
     switch (messageType) {
       case 'text':
+        const formattedText = this.lineService.formatMessage(event, displayName);
         return {
-          content: this.lineService.formatMessage(event, displayName)
+          content: processLineEmoji(formattedText)
         };
         
       case 'image':
