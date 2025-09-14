@@ -635,7 +635,18 @@ class MediaService {
       try {
         // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
         const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
-        const displayName = recoveredFileName || 'unknown_file';
+        let displayName = recoveredFileName || 'unknown_file';
+        
+        // ファイル名が破損している場合の特別な処理
+        if (this.isCorruptedFilename(displayName)) {
+          displayName = 'ドキュメントファイル';
+          logger.warn('Using fallback display name for corrupted filename', {
+            originalName: attachment.name,
+            recoveredName: recoveredFileName,
+            fallbackName: displayName
+          });
+        }
+        
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
           text: `📄 ドキュメント: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
@@ -1172,14 +1183,40 @@ class MediaService {
       // URLパラメータを除去
       const cleanUrlFileName = urlFileName.split('?')[0];
       
-      // URLのファイル名とattachment.nameが異なる場合
-      if (cleanUrlFileName && cleanUrlFileName !== attachmentName) {
-        logger.info('Attempting to recover filename from Discord URL', {
-          attachmentName: attachmentName,
-          urlFileName: cleanUrlFileName,
-          url: attachmentUrl
+      logger.info('Filename recovery attempt', {
+        attachmentName: attachmentName,
+        urlFileName: cleanUrlFileName,
+        urlPath: urlPath,
+        url: attachmentUrl
+      });
+      
+      // 破損したファイル名パターンを検出
+      if (this.isCorruptedFilename(attachmentName)) {
+        logger.warn('Detected corrupted filename, attempting recovery', {
+          corruptedName: attachmentName,
+          urlFileName: cleanUrlFileName
         });
         
+        // URLのファイル名が有効な場合（2バイト文字を含む、または適切な長さ）
+        if (cleanUrlFileName && cleanUrlFileName.length > 3 && cleanUrlFileName !== '-_.pdf') {
+          logger.info('Recovered filename from URL', {
+            corrupted: attachmentName,
+            recovered: cleanUrlFileName
+          });
+          return cleanUrlFileName;
+        }
+        
+        // URLからも復元できない場合、適切なフォールバック名を生成
+        const fallbackName = this.generateFallbackFileName(attachmentName, attachmentUrl);
+        logger.warn('Using generated fallback filename', {
+          corrupted: attachmentName,
+          fallback: fallbackName
+        });
+        return fallbackName;
+      }
+      
+      // URLのファイル名とattachment.nameが異なる場合
+      if (cleanUrlFileName && cleanUrlFileName !== attachmentName) {
         // URLのファイル名がより長く、2バイト文字を含んでいる可能性がある場合
         if (cleanUrlFileName.length > attachmentName.length && /[^\x00-\x7F]/.test(cleanUrlFileName)) {
           logger.info('Recovered filename from Discord URL', {
@@ -1199,6 +1236,50 @@ class MediaService {
       });
       return attachmentName;
     }
+  }
+
+  /**
+   * 破損したファイル名かどうかを判定
+   * @param {string} filename - ファイル名
+   * @returns {boolean} 破損しているかどうか
+   */
+  isCorruptedFilename(filename) {
+    if (!filename) return true;
+    
+    // 破損パターンの検出
+    const corruptedPatterns = [
+      /^-_\./,           // -_.pdf のようなパターン
+      /^[_-]{1,3}\./,    // -_.pdf, _-.pdf, --.pdf など
+      /^\.{1,3}$/,       // 拡張子のみ
+      /^[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/, // 有効な文字で始まらない
+    ];
+    
+    return corruptedPatterns.some(pattern => pattern.test(filename));
+  }
+
+  /**
+   * フォールバック用のファイル名を生成
+   * @param {string} originalName - 元のファイル名
+   * @param {string} url - URL
+   * @returns {string} 生成されたファイル名
+   */
+  generateFallbackFileName(originalName, url) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    
+    // URLから拡張子を推測
+    let extension = '.pdf'; // デフォルト
+    try {
+      const urlPath = new URL(url).pathname;
+      const urlFileName = urlPath.split('/').pop();
+      const urlExt = urlFileName.split('?')[0].split('.').pop();
+      if (urlExt && urlExt.length <= 4) {
+        extension = `.${urlExt}`;
+      }
+    } catch (error) {
+      // URL解析に失敗した場合はデフォルトの拡張子を使用
+    }
+    
+    return `document_${timestamp}${extension}`;
   }
 
   /**

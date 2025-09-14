@@ -317,6 +317,56 @@ describe('MediaService', () => {
       expect(recovered).not.toBe(sanitizedName);
     });
 
+    test('破損したファイル名の検出機能が正しく動作する', () => {
+      // 破損したファイル名のパターン
+      expect(mediaService.isCorruptedFilename('-_.pdf')).toBe(true);
+      expect(mediaService.isCorruptedFilename('_-.pdf')).toBe(true);
+      expect(mediaService.isCorruptedFilename('--.pdf')).toBe(true);
+      expect(mediaService.isCorruptedFilename('.pdf')).toBe(true);
+      expect(mediaService.isCorruptedFilename('')).toBe(true);
+      
+      // 正常なファイル名
+      expect(mediaService.isCorruptedFilename('document.pdf')).toBe(false);
+      expect(mediaService.isCorruptedFilename('電気料金請求書.pdf')).toBe(false);
+      expect(mediaService.isCorruptedFilename('image_123.jpg')).toBe(false);
+    });
+
+    test('フォールバックファイル名生成機能が正しく動作する', () => {
+      const fallbackName = mediaService.generateFallbackFileName('-_.pdf', 'https://cdn.discordapp.com/attachments/123/456/-_.pdf');
+      
+      expect(fallbackName).toMatch(/^document_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/);
+      expect(fallbackName).not.toBe('-_.pdf');
+    });
+
+    test('破損したファイル名でDiscord⇒LINE処理が適切にフォールバックする', async () => {
+      const attachment = {
+        name: '-_.pdf', // 破損したファイル名
+        size: 3 * 1024 * 1024,
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/-_.pdf?ex=68c8046a'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordDocument(
+        attachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('ドキュメントファイル')
+        })
+      );
+    });
+
     test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {
       const attachment = {
         name: '20250908101102.pdf', // Discord側で処理済み（日本語削除済み）
