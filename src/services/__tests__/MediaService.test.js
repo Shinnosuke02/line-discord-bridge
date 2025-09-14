@@ -287,6 +287,78 @@ describe('MediaService', () => {
     });
   });
 
+  describe('フォールバック機能', () => {
+    test('動画送信失敗時にフォールバックが実行される', async () => {
+      const videoAttachment = {
+        name: 'video.mp4',
+        size: 5 * 1024 * 1024,
+        contentType: 'video/mp4',
+        url: 'https://cdn.discordapp.com/attachments/123/456/video.mp4'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordVideo(
+        videoAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(result.warning).toContain('動画送信失敗');
+      expect(mockLineService.pushMessage).toHaveBeenCalledTimes(2);
+    });
+
+    test('音声送信失敗時にフォールバックが実行される', async () => {
+      const audioAttachment = {
+        name: 'audio.mp3',
+        size: 3 * 1024 * 1024,
+        contentType: 'audio/mpeg',
+        url: 'https://cdn.discordapp.com/attachments/123/456/audio.mp3'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordAudio(
+        audioAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(result.warning).toContain('音声送信失敗');
+    });
+
+    test('ドキュメント送信失敗時にフォールバックが実行される', async () => {
+      const documentAttachment = {
+        name: 'document.pdf',
+        size: 2 * 1024 * 1024,
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/document.pdf'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordDocument(
+        documentAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(result.warning).toContain('ドキュメント送信失敗');
+    });
+  });
+
   describe('エラーハンドリング', () => {
     test('LINE制限を超えるファイルのエラーログが記録される', async () => {
       const logger = require('../../utils/logger');
@@ -314,6 +386,42 @@ describe('MediaService', () => {
         expect.objectContaining({
           fileName: largeAttachment.name,
           fileSize: largeAttachment.size
+        })
+      );
+    });
+
+    test('詳細なエラー情報がログに記録される', async () => {
+      const logger = require('../../utils/logger');
+      
+      const attachment = {
+        name: 'test.mp4',
+        size: 5 * 1024 * 1024,
+        contentType: 'video/mp4',
+        url: 'https://cdn.discordapp.com/attachments/123/456/test.mp4'
+      };
+
+      const error = new Error('LINE API Error');
+      error.status = 400;
+      error.statusCode = 400;
+
+      mockLineService.pushMessage.mockRejectedValue(error);
+
+      await expect(
+        mediaService.processDiscordVideo(
+          attachment,
+          'user123',
+          mockLineService
+        )
+      ).rejects.toThrow();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to process Discord video',
+        expect.objectContaining({
+          fileName: attachment.name,
+          attachmentUrl: attachment.url,
+          error: 'LINE API Error',
+          status: 400,
+          statusCode: 400
         })
       );
     });

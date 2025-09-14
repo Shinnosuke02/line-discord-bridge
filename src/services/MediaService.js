@@ -429,11 +429,23 @@ class MediaService {
    */
   async processDiscordVideo(attachment, lineUserId, lineService) {
     try {
+      logger.info('Processing Discord video', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        contentType: attachment.contentType,
+        url: attachment.url
+      });
+
       // 動画をLINEに送信
       const result = await lineService.pushMessage(lineUserId, {
         type: 'video',
         originalContentUrl: attachment.url,
         previewImageUrl: attachment.url
+      });
+
+      logger.info('Video sent successfully to LINE', {
+        fileName: attachment.name,
+        lineMessageId: result.messageId
       });
 
       return {
@@ -443,10 +455,39 @@ class MediaService {
       };
     } catch (error) {
       logger.error('Failed to process Discord video', {
+        fileName: attachment.name,
         attachmentUrl: attachment.url,
-        error: error.message
+        error: error.message,
+        status: error.status,
+        statusCode: error.statusCode
       });
-      throw error;
+      
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎥 動画ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 動画の直接送信に失敗しました`
+        });
+
+        logger.info('Video sent as text fallback', {
+          fileName: attachment.name,
+          lineMessageId: fallbackResult.messageId
+        });
+
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true,
+          warning: '動画送信失敗、テキストメッセージとして送信'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          fileName: attachment.name,
+          error: fallbackError.message
+        });
+        throw error;
+      }
     }
   }
 
@@ -459,11 +500,23 @@ class MediaService {
    */
   async processDiscordAudio(attachment, lineUserId, lineService) {
     try {
+      logger.info('Processing Discord audio', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        contentType: attachment.contentType,
+        url: attachment.url
+      });
+
       // 音声をLINEに送信
       const result = await lineService.pushMessage(lineUserId, {
         type: 'audio',
         originalContentUrl: attachment.url,
         duration: 60000 // デフォルト60秒
+      });
+
+      logger.info('Audio sent successfully to LINE', {
+        fileName: attachment.name,
+        lineMessageId: result.messageId
       });
 
       return {
@@ -473,10 +526,39 @@ class MediaService {
       };
     } catch (error) {
       logger.error('Failed to process Discord audio', {
+        fileName: attachment.name,
         attachmentUrl: attachment.url,
-        error: error.message
+        error: error.message,
+        status: error.status,
+        statusCode: error.statusCode
       });
-      throw error;
+      
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎵 音声ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 音声の直接送信に失敗しました`
+        });
+
+        logger.info('Audio sent as text fallback', {
+          fileName: attachment.name,
+          lineMessageId: fallbackResult.messageId
+        });
+
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true,
+          warning: '音声送信失敗、テキストメッセージとして送信'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          fileName: attachment.name,
+          error: fallbackError.message
+        });
+        throw error;
+      }
     }
   }
 
@@ -517,9 +599,37 @@ class MediaService {
       logger.error('Failed to process Discord document', {
         fileName: attachment.name,
         attachmentUrl: attachment.url,
-        error: error.message
+        error: error.message,
+        status: error.status,
+        statusCode: error.statusCode
       });
-      throw error;
+      
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `📄 ドキュメント: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ ドキュメントの直接送信に失敗しました`
+        });
+
+        logger.info('Document sent as text fallback', {
+          fileName: attachment.name,
+          lineMessageId: fallbackResult.messageId
+        });
+
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true,
+          warning: 'ドキュメント送信失敗、テキストメッセージとして送信'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          fileName: attachment.name,
+          error: fallbackError.message
+        });
+        throw error;
+      }
     }
   }
 
@@ -532,11 +642,23 @@ class MediaService {
    */
   async processDiscordFile(attachment, lineUserId, lineService) {
     try {
+      logger.info('Processing Discord file', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        contentType: attachment.contentType,
+        url: attachment.url
+      });
+
       // ファイルをLINEに送信
       const result = await lineService.pushMessage(lineUserId, {
         type: 'file',
         fileName: attachment.name,
         originalContentUrl: attachment.url
+      });
+
+      logger.info('File sent successfully to LINE', {
+        fileName: attachment.name,
+        lineMessageId: result.messageId
       });
 
       return {
@@ -546,10 +668,39 @@ class MediaService {
       };
     } catch (error) {
       logger.error('Failed to process Discord file', {
+        fileName: attachment.name,
         attachmentUrl: attachment.url,
-        error: error.message
+        error: error.message,
+        status: error.status,
+        statusCode: error.statusCode
       });
-      throw error;
+      
+      // フォールバック: テキストメッセージとして送信
+      try {
+        const fallbackResult = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `📎 ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ ファイルの直接送信に失敗しました`
+        });
+
+        logger.info('File sent as text fallback', {
+          fileName: attachment.name,
+          lineMessageId: fallbackResult.messageId
+        });
+
+        return {
+          success: true,
+          lineMessageId: fallbackResult.messageId,
+          type: 'text',
+          fallback: true,
+          warning: 'ファイル送信失敗、テキストメッセージとして送信'
+        };
+      } catch (fallbackError) {
+        logger.error('Fallback text message also failed', {
+          fileName: attachment.name,
+          error: fallbackError.message
+        });
+        throw error;
+      }
     }
   }
 
