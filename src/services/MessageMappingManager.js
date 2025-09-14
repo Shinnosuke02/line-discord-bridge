@@ -110,14 +110,16 @@ class MessageMappingManager {
    * @param {string} discordMessageId - DiscordメッセージID
    * @param {string} lineUserId - LINEユーザーID
    * @param {string} discordChannelId - DiscordチャンネルID
+   * @param {string} content - メッセージ内容
    */
-  async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId) {
+  async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId, content = '') {
     try {
       const mapping = {
         lineMessageId,
         discordMessageId,
         lineUserId,
         discordChannelId,
+        content,
         timestamp: new Date().toISOString()
       };
       
@@ -146,14 +148,16 @@ class MessageMappingManager {
    * @param {string} lineMessageId - LINEメッセージID
    * @param {string} lineUserId - LINEユーザーID
    * @param {string} discordChannelId - DiscordチャンネルID
+   * @param {string} content - メッセージ内容
    */
-  async mapDiscordToLine(discordMessageId, lineMessageId, lineUserId, discordChannelId) {
+  async mapDiscordToLine(discordMessageId, lineMessageId, lineUserId, discordChannelId, content = '') {
     try {
       const mapping = {
         discordMessageId,
         lineMessageId,
         lineUserId,
         discordChannelId,
+        content,
         timestamp: new Date().toISOString()
       };
       

@@ -12,6 +12,7 @@ const ChannelManager = require('./ChannelManager');
 const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
 const ReplyService = require('./ReplyService');
+const SafeReplyService = require('./SafeReplyService');
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 
 /**
@@ -101,8 +102,8 @@ class MessageBridge {
       // MessageMappingManagerを初期化
       await this.messageMappingManager.initialize();
       
-      // ReplyServiceを初期化
-      this.replyService = new ReplyService(
+      // SafeReplyServiceを初期化（安全なリプライ機能）
+      this.replyService = new SafeReplyService(
         this.messageMappingManager,
         this.lineService,
         this.discord
@@ -224,11 +225,13 @@ class MessageBridge {
 
       // メッセージマッピングを記録
       if (sentMessage) {
+        const messageContent = this.extractMessageContent(event.message);
         await this.messageMappingManager.mapLineToDiscord(
           event.message.id,
           sentMessage.id,
           event.source.userId,
-          mapping.discordChannelId
+          mapping.discordChannelId,
+          messageContent
         );
       }
 
@@ -317,11 +320,13 @@ class MessageBridge {
 
       // メッセージマッピングを記録
       if (lineMessageId) {
+        const messageContent = message.content || 'Discordメッセージ';
         await this.messageMappingManager.mapDiscordToLine(
           message.id,
           lineMessageId,
           lineUserId,
-          message.channelId
+          message.channelId,
+          messageContent
         );
       }
 
@@ -698,6 +703,32 @@ class MessageBridge {
       logger.info('MessageBridge stopped successfully');
     } catch (error) {
       logger.error('Failed to stop MessageBridge', { error: error.message });
+    }
+  }
+
+  /**
+   * LINEメッセージから内容を抽出
+   * @param {Object} message - LINEメッセージオブジェクト
+   * @returns {string} メッセージ内容
+   */
+  extractMessageContent(message) {
+    switch (message.type) {
+      case 'text':
+        return message.text || '';
+      case 'sticker':
+        return 'ステッカー';
+      case 'image':
+        return '画像メッセージ';
+      case 'video':
+        return '動画メッセージ';
+      case 'audio':
+        return '音声メッセージ';
+      case 'file':
+        return `ファイル: ${message.fileName || 'ファイル'}`;
+      case 'location':
+        return `位置情報: ${message.address || '位置情報'}`;
+      default:
+        return `${message.type}メッセージ`;
     }
   }
 }
