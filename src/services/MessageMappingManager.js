@@ -86,7 +86,8 @@ class MessageMappingManager {
       const mappings = {
         lineToDiscord: Object.fromEntries(this.lineToDiscord),
         discordToLine: Object.fromEntries(this.discordToLine),
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        version: '3.0.0'
       };
       
       await fs.writeFile(this.mappingFile, JSON.stringify(mappings, null, 2));
