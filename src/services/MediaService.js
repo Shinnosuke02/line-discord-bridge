@@ -286,7 +286,7 @@ class MediaService {
   }
 
   /**
-   * LINEスタンプを処理
+   * LINEスタンプを処理（フォールバックメッセージのみ）
    * @param {Object} message - LINEメッセージ
    * @returns {Object} 処理結果
    */
@@ -294,16 +294,16 @@ class MediaService {
     try {
       const packageId = message.packageId;
       const stickerId = message.stickerId;
-      // LINEのスタンプ静的画像URL（一般的な表示用）
-      const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone/sticker@2x.png`;
-      const resp = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(resp.data);
-      const fileName = `sticker_${stickerId}.png`;
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
-      return {
-        content: '',
-        files: [attachment]
+      
+      logger.info('LINE sticker received, sending fallback message', {
+        messageId: message.id,
+        packageId: packageId,
+        stickerId: stickerId
+      });
+      
+      // フォールバックメッセージとして送信
+      return { 
+        content: '🎭 LINEステッカーは送信できません' 
       };
     } catch (error) {
       logger.error('Failed to process LINE sticker', {

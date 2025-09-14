@@ -410,6 +410,20 @@ describe('MediaService', () => {
       expect(result.startsWith('very_long_discord_sticker_filename_that_exce')).toBe(true);
     });
 
+    test('LINEステッカー処理がフォールバックメッセージを返す', async () => {
+      const message = {
+        id: 'line123',
+        packageId: '123',
+        stickerId: '456'
+      };
+
+      const result = await mediaService.processLineSticker(message);
+
+      expect(result).toHaveProperty('content');
+      expect(result.content).toBe('🎭 LINEステッカーは送信できません');
+      expect(result).not.toHaveProperty('files');
+    });
+
     test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {
       const attachment = {
         name: '20250908101102.pdf', // Discord側で処理済み（日本語削除済み）
