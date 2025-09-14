@@ -294,13 +294,78 @@ class MediaService {
     try {
       const packageId = message.packageId;
       const stickerId = message.stickerId;
+      
+      logger.info('Processing LINE sticker', {
+        messageId: message.id,
+        packageId: packageId,
+        stickerId: stickerId
+      });
+      
       // LINEのスタンプ静的画像URL（一般的な表示用）
       const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone/sticker@2x.png`;
+      
+      logger.debug('Downloading sticker image', {
+        stickerId: stickerId,
+        url: stickerUrl
+      });
+      
       const resp = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(resp.data);
+      
+      logger.debug('Sticker downloaded successfully', {
+        stickerId: stickerId,
+        bufferSize: buffer.length,
+        contentType: resp.headers['content-type']
+      });
+      
+      // 画像変換処理を追加（Discord対応のため）
+      let processedBuffer = buffer;
+      const fileTypeInfo = await this.detectFileType(buffer);
+      
+      if (fileTypeInfo) {
+        logger.debug('Detected file type', {
+          stickerId: stickerId,
+          mimeType: fileTypeInfo.mime,
+          extension: fileTypeInfo.ext
+        });
+        
+        // APNGの場合は静止画PNGに変換
+        if (fileTypeInfo.mime === 'image/apng') {
+          logger.info('Converting APNG to static PNG', {
+            stickerId: stickerId
+          });
+          processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
+        }
+        // WebPの場合はPNGに変換（Discord対応）
+        else if (fileTypeInfo.mime === 'image/webp') {
+          logger.info('Converting WebP to PNG', {
+            stickerId: stickerId
+          });
+          processedBuffer = await sharp(buffer).png().toBuffer();
+        }
+        // その他の形式もPNGに統一
+        else if (!fileTypeInfo.mime.startsWith('image/png')) {
+          logger.info('Converting to PNG format', {
+            stickerId: stickerId,
+            originalMime: fileTypeInfo.mime
+          });
+          processedBuffer = await sharp(buffer).png().toBuffer();
+        }
+      }
+      
+      // シンプルなファイル名を使用（昨日時点の処理に合わせる）
       const fileName = `sticker_${stickerId}.png`;
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
+      const attachment = new AttachmentBuilder(processedBuffer, { name: fileName });
+      
+      logger.info('LINE sticker processed successfully', {
+        messageId: message.id,
+        stickerId: stickerId,
+        fileName: fileName,
+        originalBufferSize: buffer.length,
+        processedBufferSize: processedBuffer.length,
+        converted: buffer.length !== processedBuffer.length
+      });
+      
       return {
         content: '',
         files: [attachment]
@@ -308,8 +373,13 @@ class MediaService {
     } catch (error) {
       logger.error('Failed to process LINE sticker', {
         messageId: message.id,
-        error: error.message
+        packageId: message.packageId,
+        stickerId: message.stickerId,
+        error: error.message,
+        stack: error.stack
       });
+      
+      // フォールバックメッセージ
       return { content: '😊 Sticker message' };
     }
   }
