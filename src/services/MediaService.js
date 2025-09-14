@@ -251,10 +251,20 @@ class MediaService {
       const fileName = message.fileName || `file_${message.id}`;
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
-      const ext = typeInfo?.ext ? `.${typeInfo.ext}` : '';
-      const attachment = new AttachmentBuilder(buffer, { name: `${fileName}${ext}` });
+      
+      // ファイル名の拡張子処理を改善
+      let finalFileName = fileName;
+      if (typeInfo?.ext) {
+        const detectedExt = `.${typeInfo.ext}`;
+        // 既に拡張子が含まれている場合は追加しない
+        if (!fileName.toLowerCase().endsWith(detectedExt.toLowerCase())) {
+          finalFileName = `${fileName}${detectedExt}`;
+        }
+      }
+      
+      const attachment = new AttachmentBuilder(buffer, { name: finalFileName });
       return {
-        content: `File: ${fileName}`,
+        content: `File: ${fileName}`, // 表示用は元のファイル名を使用
         files: [attachment]
       };
     } catch (error) {
@@ -464,9 +474,11 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
+        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
+        const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎥 動画ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 動画の直接送信に失敗しました`
+          text: `🎥 動画ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 動画の直接送信に失敗しました`
         });
 
         logger.info('Video sent as text fallback', {
@@ -535,9 +547,11 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
+        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
+        const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎵 音声ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 音声の直接送信に失敗しました`
+          text: `🎵 音声ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 音声の直接送信に失敗しました`
         });
 
         logger.info('Audio sent as text fallback', {
@@ -606,9 +620,11 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
+        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
+        const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📄 ドキュメント: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ ドキュメントの直接送信に失敗しました`
+          text: `📄 ドキュメント: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ ドキュメントの直接送信に失敗しました`
         });
 
         logger.info('Document sent as text fallback', {
@@ -677,9 +693,11 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
+        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
+        const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ ファイルの直接送信に失敗しました`
+          text: `📎 ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ ファイルの直接送信に失敗しました`
         });
 
         logger.info('File sent as text fallback', {
@@ -1299,9 +1317,11 @@ class MediaService {
 
       // フォールバック: テキストメッセージとして送信
       try {
+        // ファイル名の取得を改善（Discordの短縮ファイル名に対応）
+        const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 大容量ファイル: ${attachment.name}\n🔗 URL: ${attachment.url}\n⚠️ 注意: このリンクは24時間で無効になります`
+          text: `📎 大容量ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 注意: このリンクは24時間で無効になります`
         });
 
         return {

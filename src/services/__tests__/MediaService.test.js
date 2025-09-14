@@ -212,6 +212,69 @@ describe('MediaService', () => {
     });
   });
 
+  describe('ファイル名処理', () => {
+    test('LINE⇒Discordで重複拡張子が回避される', async () => {
+      const lineMessage = {
+        id: 'msg123',
+        fileName: 'document.pdf',
+        type: 'file'
+      };
+
+      mockLineService.getMessageContent.mockResolvedValue(Buffer.from('PDF content'));
+      mockDetectFileType.mockResolvedValue({ ext: 'pdf', mime: 'application/pdf' });
+
+      const result = await mediaService.processLineFile(lineMessage, mockLineService);
+
+      expect(result.files[0].name).toBe('document.pdf'); // 重複しない
+      expect(result.content).toBe('File: document.pdf');
+    });
+
+    test('LINE⇒Discordで拡張子がないファイルに拡張子が追加される', async () => {
+      const lineMessage = {
+        id: 'msg123',
+        fileName: 'document',
+        type: 'file'
+      };
+
+      mockLineService.getMessageContent.mockResolvedValue(Buffer.from('PDF content'));
+      mockDetectFileType.mockResolvedValue({ ext: 'pdf', mime: 'application/pdf' });
+
+      const result = await mediaService.processLineFile(lineMessage, mockLineService);
+
+      expect(result.files[0].name).toBe('document.pdf'); // 拡張子が追加される
+      expect(result.content).toBe('File: document');
+    });
+
+    test('Discord⇒LINEでファイル名がnullの場合にフォールバックが動作する', async () => {
+      const attachment = {
+        name: null,
+        size: 3 * 1024 * 1024,
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/document.pdf'
+      };
+
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
+
+      const result = await mediaService.processDiscordDocument(
+        attachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('unknown_file')
+        })
+      );
+    });
+  });
+
   describe('統合テスト', () => {
     test('通常サイズのファイルは通常処理される', async () => {
       const normalAttachment = {
