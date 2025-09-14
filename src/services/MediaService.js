@@ -179,7 +179,9 @@ class MediaService {
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
       const ext = typeInfo?.ext || 'jpg';
-      const attachment = new AttachmentBuilder(buffer, { name: `image_${message.id}.${ext}` });
+      const fileName = `image_${message.id}.${ext}`;
+      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
+      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
       return {
         content: 'Image message',
         files: [attachment]
@@ -203,7 +205,9 @@ class MediaService {
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
       const ext = typeInfo?.ext || 'mp4';
-      const attachment = new AttachmentBuilder(buffer, { name: `video_${message.id}.${ext}` });
+      const fileName = `video_${message.id}.${ext}`;
+      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
+      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
       return {
         content: 'Video message',
         files: [attachment]
@@ -227,7 +231,9 @@ class MediaService {
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
       const ext = typeInfo?.ext || 'm4a';
-      const attachment = new AttachmentBuilder(buffer, { name: `audio_${message.id}.${ext}` });
+      const fileName = `audio_${message.id}.${ext}`;
+      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
+      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
       return {
         content: 'Audio message',
         files: [attachment]
@@ -262,7 +268,10 @@ class MediaService {
         }
       }
       
-      const attachment = new AttachmentBuilder(buffer, { name: finalFileName });
+      // Discordの2バイト文字問題に対応
+      const discordSafeFileName = this.sanitizeFileNameForDiscord(finalFileName);
+      
+      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
       return {
         content: `File: ${fileName}`, // 表示用は元のファイル名を使用
         files: [attachment]
@@ -289,7 +298,9 @@ class MediaService {
       const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone/sticker@2x.png`;
       const resp = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(resp.data);
-      const attachment = new AttachmentBuilder(buffer, { name: `sticker_${stickerId}.png` });
+      const fileName = `sticker_${stickerId}.png`;
+      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
+      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
       return {
         content: '',
         files: [attachment]
@@ -1099,6 +1110,44 @@ class MediaService {
       });
       return null;
     }
+  }
+
+  /**
+   * Discord用にファイル名をサニタイズ
+   * Discordは2バイト文字（日本語など）を自動削除するため、
+   * 元のファイル名を保持しつつ、Discord安全なファイル名を生成
+   * @param {string} fileName - 元のファイル名
+   * @returns {string} Discord安全なファイル名
+   */
+  sanitizeFileNameForDiscord(fileName) {
+    if (!fileName) return 'file';
+    
+    // 元のファイル名をログに記録
+    logger.info('Sanitizing filename for Discord', { originalFileName: fileName });
+    
+    // 拡張子を分離
+    const lastDotIndex = fileName.lastIndexOf('.');
+    const nameWithoutExt = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
+    const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
+    
+    // 2バイト文字を検出
+    const hasMultiByteChars = /[^\x00-\x7F]/.test(nameWithoutExt);
+    
+    if (hasMultiByteChars) {
+      // 2バイト文字が含まれている場合、タイムスタンプベースのファイル名を生成
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+      const sanitizedName = `file_${timestamp}`;
+      
+      logger.warn('Filename contains multi-byte characters, using fallback name', {
+        originalFileName: fileName,
+        fallbackName: `${sanitizedName}${extension}`
+      });
+      
+      return `${sanitizedName}${extension}`;
+    }
+    
+    // 2バイト文字が含まれていない場合はそのまま返す
+    return fileName;
   }
 
   /**

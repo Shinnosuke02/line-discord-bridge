@@ -273,6 +273,36 @@ describe('MediaService', () => {
         })
       );
     });
+
+    test('Discord用ファイル名サニタイズ機能が正しく動作する', () => {
+      // 2バイト文字が含まれていない場合
+      expect(mediaService.sanitizeFileNameForDiscord('document.pdf')).toBe('document.pdf');
+      expect(mediaService.sanitizeFileNameForDiscord('image_123.jpg')).toBe('image_123.jpg');
+
+      // 2バイト文字が含まれている場合
+      const japaneseFileName = '電気料金請求書.pdf';
+      const sanitized = mediaService.sanitizeFileNameForDiscord(japaneseFileName);
+      expect(sanitized).toMatch(/^file_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/);
+      expect(sanitized).not.toBe(japaneseFileName);
+    });
+
+    test('2バイト文字を含むファイル名でLINE⇒Discord処理が動作する', async () => {
+      const lineMessage = {
+        id: 'msg123',
+        fileName: '電気料金請求書.pdf',
+        type: 'file'
+      };
+
+      mockLineService.getMessageContent.mockResolvedValue(Buffer.from('PDF content'));
+      mockDetectFileType.mockResolvedValue({ ext: 'pdf', mime: 'application/pdf' });
+
+      const result = await mediaService.processLineFile(lineMessage, mockLineService);
+
+      // Discord安全なファイル名が使用される
+      expect(result.files[0].name).toMatch(/^file_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.pdf$/);
+      // 表示用は元のファイル名が保持される
+      expect(result.content).toBe('File: 電気料金請求書.pdf');
+    });
   });
 
   describe('統合テスト', () => {
