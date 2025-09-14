@@ -11,8 +11,7 @@ const MediaService = require('./MediaService');
 const ChannelManager = require('./ChannelManager');
 const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
-const ReplyService = require('./ReplyService');
-const SafeReplyService = require('./SafeReplyService');
+// リプライ機能は削除（複雑すぎるため）
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 
 /**
@@ -102,12 +101,8 @@ class MessageBridge {
       // MessageMappingManagerを初期化
       await this.messageMappingManager.initialize();
       
-      // SafeReplyServiceを初期化（安全なリプライ機能）
-      this.replyService = new SafeReplyService(
-        this.messageMappingManager,
-        this.lineService,
-        this.discord
-      );
+      // リプライ機能は削除（複雑すぎるため）
+      this.replyService = null;
       
       // ChannelManagerを初期化
       this.channelManager = new ChannelManager(this.discord, this.lineService);
@@ -151,10 +146,8 @@ class MessageBridge {
       isReply: !!message.reference?.messageId
     });
 
-    // 返信メッセージの処理
-    if (message.reference?.messageId && this.replyService) {
-      await this.replyService.handleDiscordReply(message, lineUserId);
-    }
+    // リプライ機能は削除（複雑すぎるため）
+    // 通常のメッセージ転送のみ実行
 
     // メッセージをLINEに転送
     await this.processDiscordToLine(message, lineUserId);
@@ -199,10 +192,8 @@ class MessageBridge {
       // チャンネル名を更新（表示名が変更された場合）
       await this.updateChannelNameIfNeeded(sourceId, displayName, event);
 
-      // 返信メッセージの処理
-      if (this.replyService) {
-        await this.replyService.handleLineReply(event, mapping.discordChannelId);
-      }
+      // リプライ機能は削除（複雑すぎるため）
+      // 通常のメッセージ転送のみ実行
 
       const discordMessage = await this.createDiscordMessage(event, displayName);
       if (!discordMessage) return;
@@ -225,13 +216,11 @@ class MessageBridge {
 
       // メッセージマッピングを記録
       if (sentMessage) {
-        const messageContent = this.extractMessageContent(event.message);
         await this.messageMappingManager.mapLineToDiscord(
           event.message.id,
           sentMessage.id,
           event.source.userId,
-          mapping.discordChannelId,
-          messageContent
+          mapping.discordChannelId
         );
       }
 
@@ -320,13 +309,11 @@ class MessageBridge {
 
       // メッセージマッピングを記録
       if (lineMessageId) {
-        const messageContent = message.content || 'Discordメッセージ';
         await this.messageMappingManager.mapDiscordToLine(
           message.id,
           lineMessageId,
           lineUserId,
-          message.channelId,
-          messageContent
+          message.channelId
         );
       }
 
@@ -706,31 +693,6 @@ class MessageBridge {
     }
   }
 
-  /**
-   * LINEメッセージから内容を抽出
-   * @param {Object} message - LINEメッセージオブジェクト
-   * @returns {string} メッセージ内容
-   */
-  extractMessageContent(message) {
-    switch (message.type) {
-      case 'text':
-        return message.text || '';
-      case 'sticker':
-        return 'ステッカー';
-      case 'image':
-        return '画像メッセージ';
-      case 'video':
-        return '動画メッセージ';
-      case 'audio':
-        return '音声メッセージ';
-      case 'file':
-        return `ファイル: ${message.fileName || 'ファイル'}`;
-      case 'location':
-        return `位置情報: ${message.address || '位置情報'}`;
-      default:
-        return `${message.type}メッセージ`;
-    }
-  }
 }
 
 module.exports = MessageBridge;
