@@ -372,6 +372,13 @@ describe('MediaService', () => {
       expect(result.success).toBe(true);
       expect(result.fallback).toBe(true);
       expect(result.warning).toContain('動画送信失敗');
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('LINEの制限により、動画を直接表示できません')
+        })
+      );
       expect(mockLineService.pushMessage).toHaveBeenCalledTimes(2);
     });
 
@@ -396,6 +403,13 @@ describe('MediaService', () => {
       expect(result.success).toBe(true);
       expect(result.fallback).toBe(true);
       expect(result.warning).toContain('音声送信失敗');
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('LINEの制限により、音声を直接再生できません')
+        })
+      );
     });
 
     test('ドキュメント送信失敗時にフォールバックが実行される', async () => {
@@ -419,6 +433,13 @@ describe('MediaService', () => {
       expect(result.success).toBe(true);
       expect(result.fallback).toBe(true);
       expect(result.warning).toContain('ドキュメント送信失敗');
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('LINEの制限により、ドキュメントを直接表示できません')
+        })
+      );
     });
   });
 

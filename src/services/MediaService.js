@@ -478,7 +478,7 @@ class MediaService {
         const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎥 動画ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 動画の直接送信に失敗しました`
+          text: `🎥 動画ファイル: ${displayName}\n🔗 ダウンロードリンク: ${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
         });
 
         logger.info('Video sent as text fallback', {
@@ -551,7 +551,7 @@ class MediaService {
         const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎵 音声ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 音声の直接送信に失敗しました`
+          text: `🎵 音声ファイル: ${displayName}\n🔗 ダウンロードリンク: ${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
         });
 
         logger.info('Audio sent as text fallback', {
@@ -624,7 +624,7 @@ class MediaService {
         const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📄 ドキュメント: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ ドキュメントの直接送信に失敗しました`
+          text: `📄 ドキュメント: ${displayName}\n🔗 ダウンロードリンク: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
         });
 
         logger.info('Document sent as text fallback', {
@@ -697,7 +697,7 @@ class MediaService {
         const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ ファイルの直接送信に失敗しました`
+          text: `📎 ファイル: ${displayName}\n🔗 ダウンロードリンク: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
         });
 
         logger.info('File sent as text fallback', {
@@ -1321,7 +1321,7 @@ class MediaService {
         const displayName = attachment.name || 'unknown_file';
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 大容量ファイル: ${displayName}\n🔗 URL: ${attachment.url}\n⚠️ 注意: このリンクは24時間で無効になります`
+          text: `📎 大容量ファイル: ${displayName}\n🔗 ダウンロードリンク: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
         });
 
         return {
