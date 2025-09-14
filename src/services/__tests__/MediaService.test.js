@@ -43,6 +43,8 @@ describe('MediaService', () => {
       expect(mediaService.getLineLimitForMimeType('video/mp4')).toBe(config.file.lineLimits.video);
       expect(mediaService.getLineLimitForMimeType('audio/mpeg')).toBe(config.file.lineLimits.audio);
       expect(mediaService.getLineLimitForMimeType('application/pdf')).toBe(config.file.lineLimits.file);
+      expect(mediaService.getLineLimitForMimeType('application/msword')).toBe(config.file.lineLimits.file);
+      expect(mediaService.getLineLimitForMimeType('text/plain')).toBe(config.file.lineLimits.file);
     });
 
     test('ファイルサイズ検証が正しく動作する', () => {
@@ -160,6 +162,56 @@ describe('MediaService', () => {
     });
   });
 
+  describe('ドキュメント処理', () => {
+    test('PDFファイルが正しく処理される', async () => {
+      const pdfAttachment = {
+        name: 'document.pdf',
+        size: 3 * 1024 * 1024, // 3MB
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/document.pdf'
+      };
+
+      mockLineService.pushMessage.mockResolvedValue({ messageId: 'pdf123' });
+
+      const result = await mediaService.processDiscordDocument(
+        pdfAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.type).toBe('document');
+      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+        'user123',
+        expect.objectContaining({
+          type: 'file',
+          fileName: pdfAttachment.name,
+          originalContentUrl: pdfAttachment.url
+        })
+      );
+    });
+
+    test('Word文書が正しく処理される', async () => {
+      const wordAttachment = {
+        name: 'report.docx',
+        size: 2 * 1024 * 1024, // 2MB
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        url: 'https://cdn.discordapp.com/attachments/123/456/report.docx'
+      };
+
+      mockLineService.pushMessage.mockResolvedValue({ messageId: 'word123' });
+
+      const result = await mediaService.processDiscordDocument(
+        wordAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.type).toBe('document');
+    });
+  });
+
   describe('統合テスト', () => {
     test('通常サイズのファイルは通常処理される', async () => {
       const normalAttachment = {
@@ -212,6 +264,26 @@ describe('MediaService', () => {
       expect(result.success).toBe(true);
       expect(result.cdnUsed).toBe(true);
       expect(result.warning).toContain('24時間有効期限');
+    });
+
+    test('PDFファイルはドキュメント処理される', async () => {
+      const pdfAttachment = {
+        name: 'manual.pdf',
+        size: 5 * 1024 * 1024, // 5MB
+        contentType: 'application/pdf',
+        url: 'https://cdn.discordapp.com/attachments/123/456/manual.pdf'
+      };
+
+      mockLineService.pushMessage.mockResolvedValue({ messageId: 'pdf123' });
+
+      const result = await mediaService.processDiscordAttachment(
+        pdfAttachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.type).toBe('document');
     });
   });
 

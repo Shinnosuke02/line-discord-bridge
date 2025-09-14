@@ -23,6 +23,7 @@ class MediaService {
     this.supportedImageTypes = config.file.supportedImageMimeTypes;
     this.supportedVideoTypes = config.file.supportedVideoMimeTypes;
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
+    this.supportedDocumentTypes = config.file.supportedDocumentMimeTypes;
     
     // サンドボックスクリンナップ設定
     this.cleanupInterval = 30 * 60 * 1000; // 30分間隔でクリンナップ
@@ -372,6 +373,11 @@ class MediaService {
         return await this.processDiscordAudio(attachment, lineUserId, lineService);
       }
 
+      // ドキュメントファイルの処理
+      if (this.supportedDocumentTypes.includes(mimeType)) {
+        return await this.processDiscordDocument(attachment, lineUserId, lineService);
+      }
+
       // その他のファイル
       return await this.processDiscordFile(attachment, lineUserId, lineService);
 
@@ -467,6 +473,49 @@ class MediaService {
       };
     } catch (error) {
       logger.error('Failed to process Discord audio', {
+        attachmentUrl: attachment.url,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Discordドキュメントを処理
+   * @param {Object} attachment - Discord添付ファイル
+   * @param {string} lineUserId - LINEユーザーID
+   * @param {Object} lineService - LINEサービス
+   * @returns {Object} 処理結果
+   */
+  async processDiscordDocument(attachment, lineUserId, lineService) {
+    try {
+      logger.info('Processing Discord document', {
+        fileName: attachment.name,
+        fileSize: attachment.size,
+        contentType: attachment.contentType,
+        url: attachment.url
+      });
+
+      // ドキュメントファイルをLINEに送信
+      const result = await lineService.pushMessage(lineUserId, {
+        type: 'file',
+        fileName: attachment.name,
+        originalContentUrl: attachment.url
+      });
+
+      logger.info('Document sent successfully to LINE', {
+        fileName: attachment.name,
+        lineMessageId: result.messageId
+      });
+
+      return {
+        success: true,
+        lineMessageId: result.messageId,
+        type: 'document'
+      };
+    } catch (error) {
+      logger.error('Failed to process Discord document', {
+        fileName: attachment.name,
         attachmentUrl: attachment.url,
         error: error.message
       });
@@ -1035,6 +1084,8 @@ class MediaService {
       return this.lineLimits.video;
     } else if (this.supportedAudioTypes.includes(mimeType)) {
       return this.lineLimits.audio;
+    } else if (this.supportedDocumentTypes.includes(mimeType)) {
+      return this.lineLimits.file;
     } else {
       return this.lineLimits.file;
     }

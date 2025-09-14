@@ -56,6 +56,18 @@ const config = {
       'audio/wav',
       'audio/ogg',
       'audio/mp4'
+    ],
+    // ドキュメントファイルのサポート（PDF、Office文書など）
+    supportedDocumentMimeTypes: [
+      'application/pdf',
+      'text/plain',
+      'text/csv',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     ]
   },
 
