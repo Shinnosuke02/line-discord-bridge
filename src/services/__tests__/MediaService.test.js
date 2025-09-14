@@ -362,9 +362,21 @@ describe('MediaService', () => {
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('ドキュメントファイル')
+          text: expect.stringContaining('PDFドキュメント')
         })
       );
+    });
+
+    test('ファイルタイプ表示名機能が正しく動作する', () => {
+      // 各種ファイルタイプの表示名テスト
+      expect(mediaService.getFileTypeDisplayName('application/pdf')).toBe('PDFドキュメント');
+      expect(mediaService.getFileTypeDisplayName('image/jpeg')).toBe('画像ファイル');
+      expect(mediaService.getFileTypeDisplayName('video/mp4')).toBe('動画ファイル');
+      expect(mediaService.getFileTypeDisplayName('audio/mpeg')).toBe('音声ファイル');
+      expect(mediaService.getFileTypeDisplayName('application/msword')).toBe('Word文書');
+      expect(mediaService.getFileTypeDisplayName('application/vnd.ms-excel')).toBe('Excelファイル');
+      expect(mediaService.getFileTypeDisplayName('application/zip')).toBe('圧縮ファイル');
+      expect(mediaService.getFileTypeDisplayName('unknown/type')).toBe('ファイル');
     });
 
     test('Discord⇒LINEでファイル名復元機能がフォールバック処理で動作する', async () => {

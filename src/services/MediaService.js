@@ -487,10 +487,23 @@ class MediaService {
       try {
         // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
         const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
-        const displayName = recoveredFileName || 'unknown_file';
+        let displayName = recoveredFileName || 'unknown_file';
+        
+        // ファイル名が破損している場合の特別な処理
+        if (this.isCorruptedFilename(displayName)) {
+          const fileTypeDisplay = this.getFileTypeDisplayName(attachment.contentType);
+          displayName = fileTypeDisplay;
+          logger.warn('Using file type display name for corrupted filename', {
+            originalName: attachment.name,
+            recoveredName: recoveredFileName,
+            contentType: attachment.contentType,
+            fallbackName: displayName
+          });
+        }
+        
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎥 動画ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
+          text: `🎥 ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
         });
 
         logger.info('Video sent as text fallback', {
@@ -561,10 +574,23 @@ class MediaService {
       try {
         // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
         const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
-        const displayName = recoveredFileName || 'unknown_file';
+        let displayName = recoveredFileName || 'unknown_file';
+        
+        // ファイル名が破損している場合の特別な処理
+        if (this.isCorruptedFilename(displayName)) {
+          const fileTypeDisplay = this.getFileTypeDisplayName(attachment.contentType);
+          displayName = fileTypeDisplay;
+          logger.warn('Using file type display name for corrupted filename', {
+            originalName: attachment.name,
+            recoveredName: recoveredFileName,
+            contentType: attachment.contentType,
+            fallbackName: displayName
+          });
+        }
+        
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `🎵 音声ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
+          text: `🎵 ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
         });
 
         logger.info('Audio sent as text fallback', {
@@ -639,17 +665,19 @@ class MediaService {
         
         // ファイル名が破損している場合の特別な処理
         if (this.isCorruptedFilename(displayName)) {
-          displayName = 'ドキュメントファイル';
-          logger.warn('Using fallback display name for corrupted filename', {
+          const fileTypeDisplay = this.getFileTypeDisplayName(attachment.contentType);
+          displayName = fileTypeDisplay;
+          logger.warn('Using file type display name for corrupted filename', {
             originalName: attachment.name,
             recoveredName: recoveredFileName,
+            contentType: attachment.contentType,
             fallbackName: displayName
           });
         }
         
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📄 ドキュメント: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
+          text: `📄 ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
         });
 
         logger.info('Document sent as text fallback', {
@@ -720,10 +748,23 @@ class MediaService {
       try {
         // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
         const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
-        const displayName = recoveredFileName || 'unknown_file';
+        let displayName = recoveredFileName || 'unknown_file';
+        
+        // ファイル名が破損している場合の特別な処理
+        if (this.isCorruptedFilename(displayName)) {
+          const fileTypeDisplay = this.getFileTypeDisplayName(attachment.contentType);
+          displayName = fileTypeDisplay;
+          logger.warn('Using file type display name for corrupted filename', {
+            originalName: attachment.name,
+            recoveredName: recoveredFileName,
+            contentType: attachment.contentType,
+            fallbackName: displayName
+          });
+        }
+        
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
+          text: `📎 ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
         });
 
         logger.info('File sent as text fallback', {
@@ -1258,6 +1299,38 @@ class MediaService {
   }
 
   /**
+   * ファイルタイプから適切な表示名を生成
+   * @param {string} mimeType - MIMEタイプ
+   * @param {string} contentType - コンテンツタイプ
+   * @returns {string} ファイルタイプの表示名
+   */
+  getFileTypeDisplayName(mimeType, contentType) {
+    const type = mimeType || contentType || '';
+    
+    if (type.includes('pdf')) {
+      return 'PDFドキュメント';
+    } else if (type.includes('image/')) {
+      return '画像ファイル';
+    } else if (type.includes('video/')) {
+      return '動画ファイル';
+    } else if (type.includes('audio/')) {
+      return '音声ファイル';
+    } else if (type.includes('text/')) {
+      return 'テキストファイル';
+    } else if (type.includes('application/msword') || type.includes('application/vnd.openxmlformats-officedocument.wordprocessingml')) {
+      return 'Word文書';
+    } else if (type.includes('application/vnd.ms-excel') || type.includes('application/vnd.openxmlformats-officedocument.spreadsheetml')) {
+      return 'Excelファイル';
+    } else if (type.includes('application/vnd.ms-powerpoint') || type.includes('application/vnd.openxmlformats-officedocument.presentationml')) {
+      return 'PowerPointファイル';
+    } else if (type.includes('application/zip') || type.includes('application/x-rar')) {
+      return '圧縮ファイル';
+    } else {
+      return 'ファイル';
+    }
+  }
+
+  /**
    * フォールバック用のファイル名を生成
    * @param {string} originalName - 元のファイル名
    * @param {string} url - URL
@@ -1500,10 +1573,23 @@ class MediaService {
       try {
         // ファイル名の復元を試行（Discord URLから元のファイル名を推測）
         const recoveredFileName = this.recoverFileNameFromDiscordURL(attachment.name, attachment.url);
-        const displayName = recoveredFileName || 'unknown_file';
+        let displayName = recoveredFileName || 'unknown_file';
+        
+        // ファイル名が破損している場合の特別な処理
+        if (this.isCorruptedFilename(displayName)) {
+          const fileTypeDisplay = this.getFileTypeDisplayName(attachment.contentType || mimeType);
+          displayName = fileTypeDisplay;
+          logger.warn('Using file type display name for corrupted filename', {
+            originalName: attachment.name,
+            recoveredName: recoveredFileName,
+            contentType: attachment.contentType || mimeType,
+            fallbackName: displayName
+          });
+        }
+        
         const fallbackResult = await lineService.pushMessage(lineUserId, {
           type: 'text',
-          text: `📎 大容量ファイル: ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
+          text: `📎 ${displayName}\n🔗 リンク先で参照できます: ${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
         });
 
         return {
