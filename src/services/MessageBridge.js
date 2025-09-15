@@ -279,9 +279,36 @@ class MessageBridge {
           }
         } else {
           const processedText = processDiscordEmoji(text);
-          const urlResults = await this.mediaService.processUrls(processedText, lineUserId, this.lineService);
           
-          if (urlResults.length === 0) {
+          // GoogleMapsリンクの検出
+          const googleMapsResult = this.detectGoogleMapsLink(processedText);
+          
+          if (googleMapsResult) {
+            // GoogleMapsリンクの場合は位置情報として送信
+            const result = await this.lineService.pushMessage(lineUserId, {
+              type: 'location',
+              title: googleMapsResult.title,
+              address: googleMapsResult.address,
+              latitude: googleMapsResult.latitude,
+              longitude: googleMapsResult.longitude
+            });
+            if (result?.messageId) {
+              lineMessageId = result.messageId;
+            }
+            
+            // 元のテキストも送信（GoogleMapsリンク以外の部分）
+            const remainingText = processedText.replace(googleMapsResult.url, '').trim();
+            if (remainingText) {
+              const textResult = await this.lineService.pushMessage(lineUserId, {
+                type: 'text',
+                text: remainingText
+              });
+              if (textResult?.messageId) {
+                lineMessageId = textResult.messageId;
+              }
+            }
+          } else {
+            // GoogleMapsリンクでない場合は通常のテキストとして送信
             const result = await this.lineService.pushMessage(lineUserId, {
               type: 'text',
               text: processedText
@@ -289,8 +316,6 @@ class MessageBridge {
             if (result?.messageId) {
               lineMessageId = result.messageId;
             }
-          } else if (urlResults[0]?.lineMessageId) {
-            lineMessageId = urlResults[0].lineMessageId;
           }
         }
       }
@@ -347,6 +372,35 @@ class MessageBridge {
     return {
       content: content
     };
+  }
+
+  /**
+   * GoogleMapsリンクを検出
+   * @param {string} text - Discordメッセージテキスト
+   * @returns {Object|null} GoogleMapsリンク情報またはnull
+   */
+  detectGoogleMapsLink(text) {
+    // GoogleマップのURLパターンを検出
+    const googleMapsPattern = /https:\/\/www\.google\.com\/maps\?q=([+-]?\d+\.?\d*),([+-]?\d+\.?\d*)/;
+    const match = text.match(googleMapsPattern);
+    
+    if (match) {
+      const latitude = parseFloat(match[1]);
+      const longitude = parseFloat(match[2]);
+      
+      // 座標の妥当性をチェック
+      if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+        return {
+          url: match[0],
+          title: '位置情報',
+          address: null, // Discordからは住所情報が取得できない
+          latitude: latitude,
+          longitude: longitude
+        };
+      }
+    }
+    
+    return null;
   }
 
   /**
