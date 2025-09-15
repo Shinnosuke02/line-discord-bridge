@@ -284,19 +284,7 @@ class MessageBridge {
           const googleMapsResult = this.detectGoogleMapsLink(processedText);
           
           if (googleMapsResult) {
-            // GoogleMapsリンクの場合は位置情報として送信
-            const result = await this.lineService.pushMessage(lineUserId, {
-              type: 'location',
-              title: googleMapsResult.title,
-              address: googleMapsResult.address,
-              latitude: googleMapsResult.latitude,
-              longitude: googleMapsResult.longitude
-            });
-            if (result?.messageId) {
-              lineMessageId = result.messageId;
-            }
-            
-            // 元のテキストも送信（GoogleMapsリンク以外の部分）
+            // 元のテキストを先に送信（GoogleMapsリンク以外の部分）
             const remainingText = processedText.replace(googleMapsResult.url, '').trim();
             if (remainingText) {
               const textResult = await this.lineService.pushMessage(lineUserId, {
@@ -306,6 +294,18 @@ class MessageBridge {
               if (textResult?.messageId) {
                 lineMessageId = textResult.messageId;
               }
+            }
+            
+            // その後、位置情報として送信
+            const locationResult = await this.lineService.pushMessage(lineUserId, {
+              type: 'location',
+              title: googleMapsResult.title,
+              address: googleMapsResult.address,
+              latitude: googleMapsResult.latitude,
+              longitude: googleMapsResult.longitude
+            });
+            if (locationResult?.messageId) {
+              lineMessageId = locationResult.messageId;
             }
           } else {
             // GoogleMapsリンクでない場合は通常のテキストとして送信
