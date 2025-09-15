@@ -1,16 +1,16 @@
 # LINE-Discord Bridge
 
-[![Version](https://img.shields.io/badge/version-3.1.0-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Version](https://img.shields.io/badge/version-3.1.1-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-**Version 3.1.0** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、メディア処理、Webhook表示、位置情報共有をサポートします。
+**Version 3.1.1** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、メディア処理、Webhook表示、位置情報共有、ステッカー処理をサポートします。
 
 ## ✨ 特徴
 
 - 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
-- 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理
+- 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理（APNG/WebP対応）
 - 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示（LINEユーザー名・アイコン）
 - 📍 **位置情報共有**: Googleマップリンク付きの位置情報共有
 - 📊 **メッセージマッピング**: 自動的なメッセージID管理
@@ -417,9 +417,18 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - **Discord API**: v10（Discord.js v14経由）
 - **Node.js**: v18+（最新LTS）
 
-## 🎯 Version 3.1.0 - Enhanced Features
+## 🎯 Version 3.1.1 - Enhanced Sticker Processing
 
 ### 新機能・改善点
+
+- **ステッカー処理の完全復元**: LINE⇒Discordのステッカー送信が正常に動作
+- **画像変換処理の強化**: APNG、WebP、PNG等の形式に対応した適切な変換
+- **Discord API対応**: Discordの仕様に合わせた最適化された処理
+- **詳細ログ出力**: デバッグが容易な詳細なログ機能
+- **エラーハンドリング強化**: 安定した処理のための包括的なエラー処理
+- **設定の簡素化**: カテゴリ設定の整理と不要項目の削除
+
+### 以前の改善点（v3.1.0）
 
 - **絵文字処理の改善**: UTF-8エンコーディング問題を完全解決
 - **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理を実装
@@ -439,7 +448,7 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 ### 主要機能
 
 - ✅ **双方向メッセージング**: 完全に動作
-- ✅ **メディア処理**: 画像、動画、音声、ファイル、ステッカー
+- ✅ **メディア処理**: 画像、動画、音声、ファイル、ステッカー（APNG/WebP対応）
 - ✅ **Webhook表示**: LINEユーザー名・アイコン表示
 - ✅ **位置情報共有**: Googleマップリンク付き
 - ✅ **チャンネル管理**: 自動作成・日本語対応

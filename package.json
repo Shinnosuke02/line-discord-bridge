@@ -1,7 +1,7 @@
 {
   "name": "line-discord-bridge",
-  "version": "3.1.0",
-  "description": "Advanced LINE-Discord Bridge with bidirectional messaging, enhanced reply functionality, and emoji processing",
+  "version": "3.1.1",
+  "description": "Advanced LINE-Discord Bridge with bidirectional messaging, enhanced sticker processing, and emoji processing",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
