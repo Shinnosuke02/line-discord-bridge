@@ -13,6 +13,9 @@ const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
 // リプライ機能は削除（複雑すぎるため）
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
+const lineLimitHandler = require('../middleware/lineLimitHandler');
+const LineUsageMonitor = require('./LineUsageMonitor');
+const MessageBatcher = require('../utils/messageBatcher');
 
 /**
  * メッセージブリッジクラス
@@ -34,6 +37,8 @@ class MessageBridge {
     this.replyService = null;
     this.channelManager = null;
     this.webhookManager = null;
+    this.lineUsageMonitor = new LineUsageMonitor();
+    this.messageBatcher = new MessageBatcher();
     
     // DiscordServiceにクライアントを設定
     this.discordService.setClient(this.discord);
@@ -116,6 +121,12 @@ class MessageBridge {
       
       // 保留中のメッセージを処理
       await this.processPendingMessages();
+      
+      // メッセージバッチング設定を初期化
+      this.initializeMessageBatching();
+      
+      // LINE使用量監視を開始
+      this.startLineUsageMonitoring();
       
       logger.info('MessageBridge initialized successfully');
     } catch (error) {
@@ -267,15 +278,27 @@ class MessageBridge {
         // 位置情報の検出と処理
         const locationResult = this.detectAndProcessLocation(text);
         if (locationResult) {
-          const result = await this.lineService.pushMessage(lineUserId, {
+          const lineMessage = {
             type: 'location',
             title: locationResult.title,
             address: locationResult.address,
             latitude: locationResult.latitude,
             longitude: locationResult.longitude
-          });
-          if (result?.messageId) {
-            lineMessageId = result.messageId;
+          };
+          
+          // 月間制限チェック
+          const limitCheck = lineLimitHandler.shouldLimitMessage(lineMessage);
+          if (limitCheck.allowed) {
+            const result = await this.lineService.pushMessage(lineUserId, lineMessage);
+            if (result?.messageId) {
+              lineMessageId = result.messageId;
+              lineLimitHandler.recordMessageSent();
+            }
+          } else {
+            logger.warn('LINE message blocked due to monthly limit', {
+              messageType: 'location',
+              reason: limitCheck.reason
+            });
           }
         } else {
           const processedText = processDiscordEmoji(text);
@@ -287,35 +310,45 @@ class MessageBridge {
             // 元のテキストを先に送信（GoogleMapsリンク以外の部分）
             const remainingText = processedText.replace(googleMapsResult.url, '').trim();
             if (remainingText) {
-              const textResult = await this.lineService.pushMessage(lineUserId, {
+              const textMessage = {
                 type: 'text',
                 text: remainingText
-              });
-              if (textResult?.messageId) {
-                lineMessageId = textResult.messageId;
-              }
+              };
+              
+              // テキストメッセージはバッチングして送信
+              await this.sendMessageWithBatching(lineUserId, textMessage);
             }
             
             // その後、位置情報として送信
-            const locationResult = await this.lineService.pushMessage(lineUserId, {
+            const locationMessage = {
               type: 'location',
               title: googleMapsResult.title,
               address: googleMapsResult.address,
               latitude: googleMapsResult.latitude,
               longitude: googleMapsResult.longitude
-            });
-            if (locationResult?.messageId) {
-              lineMessageId = locationResult.messageId;
+            };
+            
+            const limitCheck = lineLimitHandler.shouldLimitMessage(locationMessage);
+            if (limitCheck.allowed) {
+              const locationResult = await this.lineService.pushMessage(lineUserId, locationMessage);
+              if (locationResult?.messageId) {
+                lineMessageId = locationResult.messageId;
+                lineLimitHandler.recordMessageSent();
+              }
+            } else {
+              logger.warn('LINE location message blocked due to monthly limit', {
+                reason: limitCheck.reason
+              });
             }
           } else {
             // GoogleMapsリンクでない場合は通常のテキストとして送信
-            const result = await this.lineService.pushMessage(lineUserId, {
+            const textMessage = {
               type: 'text',
               text: processedText
-            });
-            if (result?.messageId) {
-              lineMessageId = result.messageId;
-            }
+            };
+            
+            // テキストメッセージはバッチングして送信
+            await this.sendMessageWithBatching(lineUserId, textMessage);
           }
         }
       }
@@ -697,6 +730,119 @@ class MessageBridge {
   }
 
   /**
+   * メッセージバッチング設定を初期化
+   */
+  initializeMessageBatching() {
+    try {
+      const batchTimeout = parseInt(process.env.MESSAGE_BATCH_TIMEOUT) || 120000; // デフォルト2分
+      const maxBatchSize = parseInt(process.env.MESSAGE_BATCH_MAX_SIZE) || 10; // デフォルト10メッセージ
+
+      this.messageBatcher.updateConfig({
+        batchTimeout,
+        maxBatchSize
+      });
+
+      logger.info('Message batching initialized', {
+        batchTimeout,
+        maxBatchSize
+      });
+    } catch (error) {
+      logger.error('Failed to initialize message batching', {
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * バッチング機能を使用してメッセージを送信
+   * @param {string} userId - LINEユーザーID
+   * @param {Object} message - メッセージ
+   */
+  async sendMessageWithBatching(userId, message) {
+    try {
+      // 送信コールバック関数
+      const sendCallback = async (messages) => {
+        for (const msg of messages) {
+          const limitCheck = lineLimitHandler.shouldLimitMessage(msg);
+          if (limitCheck.allowed) {
+            const result = await this.lineService.pushMessage(userId, msg);
+            if (result?.messageId) {
+              lineLimitHandler.recordMessageSent();
+              logger.debug('Batched message sent to LINE', {
+                userId,
+                messageType: msg.type,
+                messageId: result.messageId
+              });
+            }
+          } else {
+            logger.warn('Batched message blocked due to monthly limit', {
+              userId,
+              messageType: msg.type,
+              reason: limitCheck.reason
+            });
+          }
+        }
+      };
+
+      // メッセージをバッチに追加
+      this.messageBatcher.addToBatch(userId, message, sendCallback);
+      
+    } catch (error) {
+      logger.error('Failed to send message with batching', {
+        userId,
+        messageType: message.type,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * LINE使用量監視を開始
+   */
+  startLineUsageMonitoring() {
+    try {
+      // 管理者向けのアラート送信関数
+      const sendAlertToAdmins = async (alertMessage) => {
+        try {
+          // 管理者のLINEユーザーIDを設定（環境変数から取得）
+          const adminUserIds = (process.env.LINE_ADMIN_USER_IDS || '').split(',').filter(id => id.trim());
+          
+          if (adminUserIds.length === 0) {
+            logger.warn('No admin user IDs configured for LINE usage alerts');
+            return;
+          }
+
+          // 各管理者にアラートを送信
+          for (const adminUserId of adminUserIds) {
+            try {
+              await this.lineService.pushMessage(adminUserId.trim(), alertMessage);
+              logger.info('LINE usage alert sent to admin', { adminUserId });
+            } catch (error) {
+              logger.error('Failed to send LINE usage alert to admin', {
+                adminUserId,
+                error: error.message
+              });
+            }
+          }
+        } catch (error) {
+          logger.error('Failed to send LINE usage alerts to admins', {
+            error: error.message
+          });
+        }
+      };
+
+      // 監視を開始（1時間ごとにチェック）
+      this.lineUsageMonitor.startMonitoring(sendAlertToAdmins, 60);
+      
+      logger.info('LINE usage monitoring started');
+    } catch (error) {
+      logger.error('Failed to start LINE usage monitoring', {
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * メトリクスを取得
    * @returns {Object} メトリクス
    */
@@ -705,7 +851,10 @@ class MessageBridge {
       ...this.metrics,
       uptime: Date.now() - this.metrics.startTime,
       isInitialized: this.isInitialized,
-      pendingMessages: this.pendingMessages.length
+      pendingMessages: this.pendingMessages.length,
+      lineLimitStatus: lineLimitHandler.getLimitStatus(),
+      lineUsageMonitoring: this.lineUsageMonitor.getMonitoringStatus(),
+      messageBatching: this.messageBatcher.getBatchStatus()
     };
   }
 
@@ -727,6 +876,9 @@ class MessageBridge {
    */
   async stop() {
     try {
+      // 全てのバッチを強制送信
+      this.messageBatcher.flushAllBatches();
+      
       if (this.webhookManager) {
         await this.webhookManager.stop();
       }
