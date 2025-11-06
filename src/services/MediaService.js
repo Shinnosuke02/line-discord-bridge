@@ -178,12 +178,16 @@ class MediaService {
     try {
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
-      const ext = typeInfo?.ext || 'jpg';
+      const isHeic = typeInfo?.mime === 'image/heic' || typeInfo?.mime === 'image/heif';
+      const convertedBuffer = isHeic
+        ? await sharp(buffer, { animated: false }).jpeg({ quality: 85 }).toBuffer()
+        : buffer;
+      const ext = isHeic ? 'jpg' : (typeInfo?.ext || 'jpg');
       const fileName = `image_${message.id}.${ext}`;
       const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
+      const attachment = new AttachmentBuilder(convertedBuffer, { name: discordSafeFileName });
       return {
-        content: 'Image message',
+        content: '',
         files: [attachment]
       };
     } catch (error) {
@@ -191,7 +195,7 @@ class MediaService {
         messageId: message.id,
         error: error.message
       });
-      return { content: '📷 Image message (processing failed)' };
+      return { content: '', files: [] };
     }
   }
 
@@ -257,10 +261,18 @@ class MediaService {
       const fileName = message.fileName || `file_${message.id}`;
       const buffer = await lineService.getMessageContent(message.id);
       const typeInfo = await this.detectFileType(buffer);
+      const isHeic = typeInfo?.mime === 'image/heic' || typeInfo?.mime === 'image/heif' || /\.(heic|heif)$/i.test(fileName);
+      const outputBuffer = isHeic
+        ? await sharp(buffer, { animated: false }).jpeg({ quality: 85 }).toBuffer()
+        : buffer;
       
       // ファイル名の拡張子処理を改善
       let finalFileName = fileName;
-      if (typeInfo?.ext) {
+      if (isHeic) {
+        // HEIC/HEIF は JPEG に変換して送る
+        const base = fileName.replace(/\.[^.]+$/, '');
+        finalFileName = `${base}.jpg`;
+      } else if (typeInfo?.ext) {
         const detectedExt = `.${typeInfo.ext}`;
         // 既に拡張子が含まれている場合は追加しない
         if (!fileName.toLowerCase().endsWith(detectedExt.toLowerCase())) {
@@ -271,7 +283,7 @@ class MediaService {
       // Discordの2バイト文字問題に対応
       const discordSafeFileName = this.sanitizeFileNameForDiscord(finalFileName);
       
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
+      const attachment = new AttachmentBuilder(outputBuffer, { name: discordSafeFileName });
       return {
         content: `File: ${fileName}`, // 表示用は元のファイル名を使用
         files: [attachment]
@@ -490,7 +502,81 @@ class MediaService {
    */
   async processDiscordImage(attachment, lineUserId, lineService) {
     try {
-      // 画像をLINEに送信
+      // LINEが確実に表示できるのは JPEG/PNG
+      const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+
+      // HEIC/HEIF は JPEG へ変換
+      const isHeic = /image\/(heic|heif|heic-sequence|heif-sequence)/i.test(mime) || /\.(heic|heif)$/i.test(attachment.name || '');
+      if (isHeic) {
+        try {
+          const resp = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+          const buffer = Buffer.from(resp.data);
+          const jpgBuffer = await sharp(buffer, { animated: false }).jpeg({ quality: 85 }).toBuffer();
+
+          const safeName = this.sanitizeFileNameForLine(
+            (attachment.name || 'image').replace(/\.[^.]+$/, '') + '.jpg'
+          );
+          const uploaded = await this.uploadToSelf(jpgBuffer, safeName);
+
+          const result = await lineService.pushMessage(lineUserId, {
+            type: 'image',
+            originalContentUrl: uploaded.url,
+            previewImageUrl: uploaded.url
+          });
+
+          return {
+            success: true,
+            lineMessageId: result.messageId,
+            type: 'image',
+            converted: true,
+            from: mime,
+            to: 'image/jpeg'
+          };
+        } catch (heicErr) {
+          const result = await lineService.pushMessage(lineUserId, {
+            type: 'text',
+            text: `🖼️ 画像ファイル（HEIC）\n🔗 ${attachment.url}\n📱 LINE互換形式(JPEG)への変換に失敗したためリンクを送信しました`
+          });
+          return { success: true, lineMessageId: result.messageId, type: 'text', fallback: true };
+        }
+      }
+
+      // 非対応形式（例: WebP/GIF/BMP等）の場合はPNGへ変換して自己ホストURLで送信
+      if (!['image/jpeg', 'image/png'].includes(mime)) {
+        try {
+          const resp = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+          const buffer = Buffer.from(resp.data);
+          const pngBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
+
+          const safeName = this.sanitizeFileNameForLine(
+            (attachment.name || 'image').replace(/\.[^.]+$/, '') + '.png'
+          );
+          const uploaded = await this.uploadToSelf(pngBuffer, safeName);
+
+          const result = await lineService.pushMessage(lineUserId, {
+            type: 'image',
+            originalContentUrl: uploaded.url,
+            previewImageUrl: uploaded.url
+          });
+
+          return {
+            success: true,
+            lineMessageId: result.messageId,
+            type: 'image',
+            converted: true,
+            from: mime
+          };
+        } catch (convErr) {
+          // 変換に失敗したらファイル/テキストにフォールバック
+          const result = await lineService.pushMessage(lineUserId, {
+            type: 'text',
+            text: `🖼️ 画像ファイル\n🔗 ${attachment.url}\n📱 LINEの仕様により直接表示できない形式のためリンクを送信しました`
+          });
+          return { success: true, lineMessageId: result.messageId, type: 'text', fallback: true };
+        }
+      }
+
+      // そのまま送信（JPEG/PNG）
       const result = await lineService.pushMessage(lineUserId, {
         type: 'image',
         originalContentUrl: attachment.url,
@@ -527,7 +613,16 @@ class MediaService {
         url: attachment.url
       });
 
-      // 動画をLINEに送信
+      // LINEが想定するのは MP4(H.264/AAC)。それ以外はファイル/テキストにフォールバック
+      const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+      if (!mime.includes('video/mp4')) {
+        const fallback = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎥 動画ファイル（MP4以外）\n🔗 ${attachment.url}\n📱 LINEの仕様により直接再生できない形式のためリンクを送信しました`
+        });
+        return { success: true, lineMessageId: fallback.messageId, type: 'text', fallback: true };
+      }
+
       const result = await lineService.pushMessage(lineUserId, {
         type: 'video',
         originalContentUrl: attachment.url,
@@ -611,7 +706,16 @@ class MediaService {
         url: attachment.url
       });
 
-      // 音声をLINEに送信
+      // LINE推奨は m4a(AAC)。それ以外はテキストフォールバック
+      const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+      if (!(mime.includes('audio/mp4') || mime.includes('audio/aac') || attachment.name?.toLowerCase().endsWith('.m4a'))) {
+        const fallback = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎵 音声ファイル（m4a以外）\n🔗 ${attachment.url}\n📱 LINEの仕様により直接再生できない形式のためリンクを送信しました`
+        });
+        return { success: true, lineMessageId: fallback.messageId, type: 'text', fallback: true };
+      }
+
       const result = await lineService.pushMessage(lineUserId, {
         type: 'audio',
         originalContentUrl: attachment.url,
@@ -890,7 +994,7 @@ class MediaService {
       await fs.mkdir(path.dirname(tempPath), { recursive: true });
       await fs.writeFile(tempPath, buffer);
       
-      const url = `http://localhost:${config.port}/temp/${fileName}`;
+      const url = `http://localhost:${config.server.port}/temp/${fileName}`;
       
       logger.debug('File uploaded to self', {
         fileName,
