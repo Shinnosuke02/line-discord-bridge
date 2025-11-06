@@ -576,17 +576,54 @@ class MediaService {
         }
       }
 
-      // そのまま送信（JPEG/PNG）
+      // JPEG/PNG は一度こちらで取得し、必要に応じて再エンコード・プレビュー生成して自己ホストURLで送信
+      const resp = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+      const originalBuffer = Buffer.from(resp.data);
+      const detected = await this.detectFileType(originalBuffer);
+      const isPng = (detected?.mime || mime) === 'image/png';
+      const isJpeg = (detected?.mime || mime) === 'image/jpeg';
+
+      // サイズ超過時は再エンコード/圧縮
+      let sendBuffer = originalBuffer;
+      if (originalBuffer.length > this.lineLimits.image) {
+        if (isPng) {
+          // PNG→JPEG圧縮でサイズ削減
+          sendBuffer = await sharp(originalBuffer, { animated: false }).jpeg({ quality: 85 }).toBuffer();
+        } else if (isJpeg) {
+          sendBuffer = await sharp(originalBuffer).jpeg({ quality: 85 }).toBuffer();
+        }
+      }
+
+      // プレビュー用サムネイル（軽量化）
+      let previewBuffer;
+      try {
+        previewBuffer = await sharp(sendBuffer)
+          .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 70 })
+          .toBuffer();
+      } catch (_) {
+        previewBuffer = sendBuffer;
+      }
+
+      // ファイル名
+      const baseName = (attachment.name || 'image').replace(/\.[^.]+$/, '');
+      const mainExt = (isJpeg || (!isPng)) ? '.jpg' : '.png';
+      const previewExt = '.jpg';
+
+      const uploadedMain = await this.uploadToSelf(sendBuffer, this.sanitizeFileNameForLine(`${baseName}${mainExt}`));
+      const uploadedPreview = await this.uploadToSelf(previewBuffer, this.sanitizeFileNameForLine(`${baseName}_preview${previewExt}`));
+
       const result = await lineService.pushMessage(lineUserId, {
         type: 'image',
-        originalContentUrl: attachment.url,
-        previewImageUrl: attachment.url
+        originalContentUrl: uploadedMain.url,
+        previewImageUrl: uploadedPreview.url
       });
 
       return {
         success: true,
         lineMessageId: result.messageId,
-        type: 'image'
+        type: 'image',
+        rehosted: true
       };
     } catch (error) {
       logger.error('Failed to process Discord image', {
