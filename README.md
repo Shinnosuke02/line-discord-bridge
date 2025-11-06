@@ -1,11 +1,11 @@
 # LINE-Discord Bridge
 
-[![Version](https://img.shields.io/badge/version-3.1.1-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Version](https://img.shields.io/badge/version-3.1.2-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-**Version 3.1.1** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、メディア処理、Webhook表示、位置情報共有、ステッカー処理をサポートします。
+**Version 3.1.2** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。
 
 ## ✨ 特徴
 
@@ -152,11 +152,16 @@ temp/                     # 一時ファイル
 
 - **自動MIME判定**: ファイル内容から正確なMIMEタイプを判定
 - **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理
+- **HEIC/HEIF変換**: HEIC/HEIF画像をJPEGに自動変換（LINE⇄Discord両方向対応）
+- **画像送信の堅牢性**: PNG/JPEG画像を自己ホストURL経由で送信し、CDN URL失敗を回避
+- **プレビュー生成**: 画像送信時に軽量プレビューを自動生成
+- **サイズ超過時の再圧縮**: 10MB超過画像を自動的にJPEG圧縮して送信
 - **大容量ファイル対応**: Discord CDN URLを活用した大容量ファイル送信
 - **画像圧縮**: Sharpを使用した画像の自動圧縮
 - **ステッカー処理**: DiscordステッカーをLINE画像として送信
 - **外部URL**: LINE Bot API v7の外部URL機能を活用
 - **フォールバック機能**: 処理失敗時の自動的な代替処理
+- **形式変換**: WebP/GIF/BMP等の非対応形式をPNG/JPEGに自動変換
 
 ### ステッカー処理
 
@@ -417,9 +422,19 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - **Discord API**: v10（Discord.js v14経由）
 - **Node.js**: v18+（最新LTS）
 
-## 🎯 Version 3.1.1 - Enhanced Sticker Processing
+## 🎯 Version 3.1.2 - Enhanced Media Processing & Reliability
 
-### 新機能・改善点
+### 最新の改善点（v3.1.2）
+
+- **HEIC/HEIF画像対応**: LINE⇄Discord両方向でHEIC/HEIF画像をJPEGに自動変換
+- **画像送信の堅牢性向上**: PNG/JPEG画像を自己ホストURL経由で送信し、Discord CDN URL失敗を回避
+- **プレビュー画像生成**: 画像送信時に軽量プレビューを自動生成してLINE表示を最適化
+- **サイズ超過時の自動再圧縮**: 10MB超過画像を自動的にJPEG圧縮（品質85%）して送信
+- **非対応形式の自動変換**: WebP/GIF/BMP等をPNG/JPEGに自動変換
+- **動画・音声の形式チェック**: MP4/m4a以外の形式は適切にフォールバック
+- **LINE→Discord画像表示改善**: 画像のみ送信時の余計なテキストを削除
+
+### 以前の改善点（v3.1.1）
 
 - **ステッカー処理の完全復元**: LINE⇒Discordのステッカー送信が正常に動作
 - **画像変換処理の強化**: APNG、WebP、PNG等の形式に対応した適切な変換
@@ -448,7 +463,7 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 ### 主要機能
 
 - ✅ **双方向メッセージング**: 完全に動作
-- ✅ **メディア処理**: 画像、動画、音声、ファイル、ステッカー（APNG/WebP対応）
+- ✅ **メディア処理**: 画像、動画、音声、ファイル、ステッカー（APNG/WebP/HEIC対応、自動変換機能付き）
 - ✅ **Webhook表示**: LINEユーザー名・アイコン表示
 - ✅ **位置情報共有**: Googleマップリンク付き
 - ✅ **チャンネル管理**: 自動作成・日本語対応
