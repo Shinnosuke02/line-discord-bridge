@@ -1,15 +1,16 @@
 # LINE-Discord Bridge
 
-[![Version](https://img.shields.io/badge/version-3.1.3-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Version](https://img.shields.io/badge/version-3.1.4-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-**Version 3.1.3** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
+**Version 3.1.4** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理、LINE→Discord返信機能をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
 
 ## ✨ 特徴
 
 - 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
+- 💬 **返信機能**: LINE→Discordの返信機能をサポート（返信元メッセージの特定）
 - 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理（APNG/WebP対応）
 - 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示（LINEユーザー名・アイコン）
 - 📍 **位置情報共有**: Googleマップリンク付きの位置情報共有
@@ -124,8 +125,16 @@ temp/                     # 一時ファイル
 
 ### メッセージ転送
 
-- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報
+- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報、返信メッセージ
 - **Discord → LINE**: テキスト、画像、動画、音声、ファイル、ステッカー（画像として送信）、位置情報（Googleマップリンク検出）
+
+### 返信機能（v3.1.4新機能）
+
+- **LINE → Discord 返信**: LINEで返信されたメッセージをDiscordで返信として表示
+  - LINEの`quotedMessageId`を使用して返信元メッセージを特定
+  - Webhook/Bot両方で返信メッセージを送信可能
+  - 返信元が取得できない場合、通常のメッセージとして送信
+  - 返信機能が失敗しても既存のメッセージ転送に影響しない安全な設計
 
 ### Webhook表示機能
 
@@ -303,10 +312,11 @@ WEBHOOK_ENABLED=true
 
 ### 現在の不具合・制限
 
-1. **返信機能（実験的実装）**
-   - **状態**: 動作未確認
-   - **問題**: DiscordとLINE間の返信機能が正常に動作しない場合がある
-   - **回避策**: 通常のメッセージ送信を使用
+1. **返信機能（LINE→Discord）**
+   - **状態**: 実装済み（v3.1.4）
+   - **機能**: LINEからDiscordへの返信機能をサポート
+   - **制限**: LINE APIの`quotedMessageId`が存在する場合のみ返信として表示されます
+   - **注意**: 返信元が取得できない場合、通常のメッセージとして送信されます
 
 2. **LOTTIEスタンプ**
    - **状態**: 制限あり
@@ -328,7 +338,19 @@ WEBHOOK_ENABLED=true
    - **問題**: LINE Bot APIの制限により大量メッセージ送信時に制限される場合がある
    - **回避策**: メッセージ送信間隔の調整
 
-### 最新の改善点（v3.1.0）
+### 最新の改善点（v3.1.4）
+
+- ✅ **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装（返信元メッセージの特定に対応）
+- ✅ **返信機能の安全性**: 返信機能が失敗しても既存のメッセージ転送に影響しない設計
+- ✅ **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底し、安定性を向上
+
+### 以前の改善点（v3.1.3）
+
+- ✅ **最新API仕様対応**: LINE Bot SDK v7.5.2（最新版）、Discord.js v14.16.3に更新
+- ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
+- ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
+
+### 以前の改善点（v3.1.0）
 
 - ✅ **絵文字処理の改善**: UTF-8エンコーディング問題を完全解決
 - ✅ **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理を実装

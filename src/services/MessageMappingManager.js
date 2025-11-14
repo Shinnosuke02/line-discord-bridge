@@ -110,8 +110,9 @@ class MessageMappingManager {
    * @param {string} discordMessageId - DiscordメッセージID
    * @param {string} lineUserId - LINEユーザーID
    * @param {string} discordChannelId - DiscordチャンネルID
+   * @param {string} replyToken - LINE返信用トークン（オプショナル）
    */
-  async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId) {
+  async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId, replyToken = null) {
     try {
       const mapping = {
         lineMessageId,
@@ -121,6 +122,14 @@ class MessageMappingManager {
         timestamp: new Date().toISOString()
       };
       
+      // replyTokenが提供されている場合のみ保存（返信機能用）
+      if (replyToken) {
+        // replyTokenの有効期限は30秒（LINE API仕様）
+        const replyTokenExpiry = new Date(Date.now() + 30000).toISOString();
+        mapping.replyToken = replyToken;
+        mapping.replyTokenExpiry = replyTokenExpiry;
+      }
+      
       this.lineToDiscord.set(lineMessageId, mapping);
       await this.saveMappings();
       
@@ -128,7 +137,8 @@ class MessageMappingManager {
         lineMessageId,
         discordMessageId,
         lineUserId,
-        discordChannelId
+        discordChannelId,
+        hasReplyToken: !!replyToken
       });
     } catch (error) {
       logger.error('Failed to create LINE to Discord mapping', {
@@ -184,6 +194,19 @@ class MessageMappingManager {
   getDiscordMessageIdForLineReply(lineMessageId) {
     const mapping = this.lineToDiscord.get(lineMessageId);
     return mapping ? mapping.discordMessageId : null;
+  }
+
+  /**
+   * LINEメッセージIDから返信元のDiscordメッセージIDを取得（返信機能用）
+   * @param {string} lineMessageId - LINEメッセージID
+   * @returns {string|null} 返信元のDiscordメッセージID
+   */
+  getReplyTargetDiscordMessageId(lineMessageId) {
+    const mapping = this.lineToDiscord.get(lineMessageId);
+    if (!mapping) return null;
+    
+    // 返信元のDiscordメッセージIDを返す
+    return mapping.discordMessageId || null;
   }
 
   /**
