@@ -193,6 +193,20 @@ class MessageBridge {
    */
   async processLineToDiscord(event) {
     try {
+      // 重複チェック: 既に処理済みのメッセージIDの場合はスキップ
+      const lineMessageId = event.message?.id;
+      if (lineMessageId) {
+        const existingMapping = this.messageMappingManager.getLineToDiscordMapping(lineMessageId);
+        if (existingMapping) {
+          logger.debug('Skipping duplicate LINE message', {
+            lineMessageId,
+            discordMessageId: existingMapping.discordMessageId,
+            timestamp: existingMapping.timestamp
+          });
+          return;
+        }
+      }
+
       const sourceId = event.source.groupId || event.source.userId;
       const mapping = await this.channelManager.getOrCreateChannel(sourceId);
       if (!mapping) return;

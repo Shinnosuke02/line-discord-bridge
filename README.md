@@ -1,11 +1,11 @@
 # LINE-Discord Bridge
 
-[![Version](https://img.shields.io/badge/version-3.1.2-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Version](https://img.shields.io/badge/version-3.1.3-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-**Version 3.1.2** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。
+**Version 3.1.3** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
 
 ## ✨ 特徴
 
@@ -409,8 +409,8 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 ### 使用技術
 
 - **Node.js**: v18.0.0以上
-- **Discord.js**: v14.14.1
-- **LINE Bot SDK**: v7.5.2
+- **Discord.js**: v14.16.3（v14/v15互換）
+- **LINE Bot SDK**: v7.5.2（最新）
 - **Express**: v4.18.2
 - **Sharp**: v0.33.0（画像処理）
 - **Winston**: v3.11.0（ログ管理）
@@ -418,13 +418,29 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 
 ### API対応
 
-- **LINE Bot API**: v7（最新）
-- **Discord API**: v10（Discord.js v14経由）
+- **LINE Bot API**: v7（最新仕様対応）
+- **Discord API**: v10（Discord.js v14/v15互換）
 - **Node.js**: v18+（最新LTS）
+
+### 最新仕様への対応（v3.1.3）
+
+- ✅ **LINE API最新仕様対応**: LINE Bot SDK v7.5.2（最新版）に対応
+- ✅ **Discord.js最新版対応**: Discord.js v14.16.3に更新（v14/v15互換）
+- ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
+- ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
+
+## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
+
+### 最新の改善点（v3.1.3）
+
+- **最新API仕様対応**: LINE Bot SDK v7.5.2（最新版）、Discord.js v14.16.3に更新
+- **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止する重複チェック機能を追加
+- **イベントハンドリング改善**: Discord.js v14/v15の両方のイベント（`ready`/`clientReady`）に対応
+- **コード品質向上**: 最新仕様に準拠したコードベースの整理
 
 ## 🎯 Version 3.1.2 - Enhanced Media Processing & Reliability
 
-### 最新の改善点（v3.1.2）
+### 改善点（v3.1.2）
 
 - **HEIC/HEIF画像対応**: LINE⇄Discord両方向でHEIC/HEIF画像をJPEGに自動変換
 - **画像送信の堅牢性向上**: PNG/JPEG画像を自己ホストURL経由で送信し、Discord CDN URL失敗を回避
@@ -482,4 +498,8 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 
 ---
 
-**注意**: このアプリケーションはLINE Bot API v7とDiscord.js v14を使用しています。古いバージョンとの互換性は保証されません。
+**注意**: このアプリケーションはLINE Bot API v7とDiscord.js v14（v15互換）を使用しています。古いバージョンとの互換性は保証されません。
+
+### 重複メッセージ防止機能
+
+サーバーがスリープ状態から復帰した際、LINE APIが以前送信したWebhookイベントを再送することがあります。本アプリケーションでは、メッセージIDの重複チェック機能により、既に処理済みのメッセージを自動的にスキップし、二重送信を防止します。
