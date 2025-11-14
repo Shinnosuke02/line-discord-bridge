@@ -444,16 +444,33 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - **Discord API**: v10（Discord.js v14/v15互換）
 - **Node.js**: v18+（最新LTS）
 
-### 最新仕様への対応（v3.1.3）
+### 最新仕様への対応（v3.1.4）
+
+- ✅ **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装
+- ✅ **返信機能の安全性**: 返信機能が失敗しても既存のメッセージ転送に影響しない設計
+- ✅ **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底
+
+### 以前の対応（v3.1.3）
 
 - ✅ **LINE API最新仕様対応**: LINE Bot SDK v7.5.2（最新版）に対応
 - ✅ **Discord.js最新版対応**: Discord.js v14.16.3に更新（v14/v15互換）
 - ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
 - ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
 
+## 🎯 Version 3.1.4 - LINE→Discord Reply Feature
+
+### 最新の改善点（v3.1.4）
+
+- **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装
+  - LINEの`quotedMessageId`を使用して返信元メッセージを特定
+  - Webhook/Bot両方で返信メッセージを送信可能
+  - 返信機能が失敗しても既存のメッセージ転送に影響しない安全な設計
+- **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底し、安定性を向上
+- **メッセージマッピング拡張**: `replyToken`の保存機能を追加（将来のDiscord→LINE返信機能用）
+
 ## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
 
-### 最新の改善点（v3.1.3）
+### 改善点（v3.1.3）
 
 - **最新API仕様対応**: LINE Bot SDK v7.5.2（最新版）、Discord.js v14.16.3に更新
 - **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止する重複チェック機能を追加
