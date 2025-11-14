@@ -115,9 +115,10 @@ class WebhookManager {
    * @param {Object} message - メッセージ
    * @param {string} username - ユーザー名
    * @param {string} avatarUrl - アバターURL
+   * @param {string} replyToMessageId - 返信先のメッセージID（オプショナル）
    * @returns {Object} 送信されたメッセージ
    */
-  async sendMessage(channelId, message, username, avatarUrl = null) {
+  async sendMessage(channelId, message, username, avatarUrl = null, replyToMessageId = null) {
     try {
       if (!config.webhook.enabled) {
         throw new Error('Webhook is disabled');
@@ -132,11 +133,20 @@ class WebhookManager {
         files: message.files || []
       };
 
+      // 返信先メッセージIDが指定されている場合、返信として送信
+      if (replyToMessageId) {
+        webhookMessage.messageReference = {
+          messageId: replyToMessageId
+        };
+      }
+
       logger.debug('Sending webhook message', {
         channelId,
         username,
         avatarURL: avatarUrl,
-        hasFiles: (message.files || []).length > 0
+        hasFiles: (message.files || []).length > 0,
+        isReply: !!replyToMessageId,
+        replyToMessageId
       });
 
       const sentMessage = await webhook.send(webhookMessage);
@@ -145,7 +155,8 @@ class WebhookManager {
         channelId,
         webhookId: webhook.id,
         messageId: sentMessage.id,
-        username
+        username,
+        isReply: !!replyToMessageId
       });
 
       return sentMessage;
@@ -153,6 +164,7 @@ class WebhookManager {
       logger.error('Failed to send message via webhook', {
         channelId,
         username,
+        isReply: !!replyToMessageId,
         error: error.message
       });
       throw error;

@@ -237,22 +237,45 @@ class MessageBridge {
         hasWebhookManager: !!this.webhookManager
       });
       
+      // 返信元のDiscordメッセージIDを取得（返信機能用）
+      // 注意: 返信機能が失敗しても、通常のメッセージ転送は継続される
+      let replyTargetDiscordMessageId = null;
+      try {
+        replyTargetDiscordMessageId = this.getReplyTargetDiscordMessageId(event);
+        if (replyTargetDiscordMessageId) {
+          webhookOptions.replyToMessageId = replyTargetDiscordMessageId;
+          logger.debug('Reply target found, will send as reply', {
+            replyTargetDiscordMessageId,
+            lineMessageId: event.message.id
+          });
+        }
+      } catch (replyError) {
+        // 返信元の取得に失敗しても、通常のメッセージ転送は継続
+        logger.debug('Failed to get reply target, will send as normal message', {
+          error: replyError.message,
+          lineMessageId: event.message.id
+        });
+      }
+
       const sentMessage = await this.sendToDiscord(mapping.discordChannelId, discordMessage, webhookOptions);
 
-      // メッセージマッピングを記録
+      // メッセージマッピングを記録（replyTokenも保存）
       if (sentMessage) {
+        const replyToken = event.replyToken || null;
         await this.messageMappingManager.mapLineToDiscord(
           event.message.id,
           sentMessage.id,
           event.source.userId,
-          mapping.discordChannelId
+          mapping.discordChannelId,
+          replyToken
         );
       }
 
       logger.info('Message forwarded from LINE to Discord', {
         lineMessageId: event.message.id,
         discordMessageId: sentMessage?.id,
-        displayName
+        displayName,
+        isReply: !!replyTargetDiscordMessageId
       });
 
     } catch (error) {
@@ -582,6 +605,45 @@ class MessageBridge {
   }
 
   /**
+   * LINEイベントから返信元のDiscordメッセージIDを取得（返信機能用）
+   * @param {Object} event - LINEイベント
+   * @returns {string|null} 返信元のDiscordメッセージID
+   */
+  getReplyTargetDiscordMessageId(event) {
+    try {
+      // LINEイベントから返信元のメッセージIDを取得
+      // 注意: LINE APIの仕様により、返信元メッセージIDの取得方法は限定的
+      // 以下の方法で返信元を特定を試みる:
+      
+      // 1. quotedMessageId（引用メッセージID）が存在する場合
+      if (event.message?.quotedMessageId) {
+        const replyTargetDiscordId = this.messageMappingManager.getDiscordMessageIdForLineReply(
+          event.message.quotedMessageId
+        );
+        if (replyTargetDiscordId) {
+          logger.debug('Found reply target from quotedMessageId', {
+            lineMessageId: event.message.quotedMessageId,
+            discordMessageId: replyTargetDiscordId
+          });
+          return replyTargetDiscordId;
+        }
+      }
+      
+      // 2. メッセージ内容から返信元を推測（将来的な拡張用）
+      // 現時点では実装しない
+      
+      return null;
+    } catch (error) {
+      // 返信元の取得に失敗しても、通常のメッセージ転送は継続
+      logger.debug('Failed to get reply target Discord message ID', {
+        error: error.message,
+        eventId: event.message?.id
+      });
+      return null;
+    }
+  }
+
+  /**
    * チャンネル名を必要に応じて更新（グループのみ）
    * @param {string} sourceId - ソースID
    * @param {string} displayName - 表示名
@@ -656,22 +718,37 @@ class MessageBridge {
         logger.debug('Using webhook to send message', {
           channelId,
           username: options.username,
-          hasAvatar: !!options.avatarUrl
+          hasAvatar: !!options.avatarUrl,
+          isReply: !!options.replyToMessageId
         });
         return await this.webhookManager.sendMessage(
           channelId,
           message,
           options.username,
-          options.avatarUrl
+          options.avatarUrl,
+          options.replyToMessageId || null
         );
       } else {
         logger.debug('Using regular bot to send message', {
           channelId,
           useWebhook: options.useWebhook,
           hasUsername: !!options.username,
-          hasWebhookManager: !!this.webhookManager
+          hasWebhookManager: !!this.webhookManager,
+          isReply: !!options.replyToMessageId
         });
         const channel = await this.discord.channels.fetch(channelId);
+        
+        // 返信先メッセージIDが指定されている場合、返信として送信
+        if (options.replyToMessageId) {
+          const replyMessage = {
+            ...message,
+            messageReference: {
+              messageId: options.replyToMessageId
+            }
+          };
+          return await channel.send(replyMessage);
+        }
+        
         return await channel.send(message);
       }
     } catch (error) {
