@@ -5,7 +5,6 @@
 const { AttachmentBuilder } = require('discord.js');
 const axios = require('axios');
 const sharp = require('sharp');
-const { fileTypeFromBuffer } = require('file-type');
 const mimeTypes = require('mime-types');
 const fs = require('fs').promises;
 const path = require('path');
@@ -435,59 +434,60 @@ class MediaService {
   async processDiscordAttachment(attachment, lineUserId, lineService) {
     try {
       // ファイルタイプを判定
-      const mimeType = attachment.contentType || mimeTypes.lookup(attachment.name);
-      
-      // LINE側の制限を考慮したファイルサイズチェック
-      const lineLimit = this.getLineLimitForMimeType(mimeType);
-      if (attachment.size > lineLimit) {
-        logger.warn('File exceeds LINE limit, attempting to use Discord CDN URL', {
-          fileSize: attachment.size,
-          lineLimit: lineLimit,
-          mimeType: mimeType,
-          attachmentUrl: attachment.url
-        });
-        
-        // Discord CDN URLを直接使用（24時間有効期限あり）
-        return await this.processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, mimeType);
-      }
+      const defaultMime = attachment.contentType || mimeTypes.lookup(attachment.name) || 'application/octet-stream';
 
-      // 通常のファイルサイズチェック
-      if (attachment.size > this.maxFileSize) {
-        throw new Error(`File too large: ${attachment.size} bytes`);
-      }
-      
-      // ファイルをダウンロードしてファイルタイプを判定
       const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data);
       const fileTypeInfo = await fileTypeFromBuffer(buffer);
+      const detectedMime = fileTypeInfo?.mime || defaultMime;
+      const detectedExt = fileTypeInfo?.ext || (attachment.name?.split('.').pop() || 'bin');
+
+      // LINE側の制限を考慮したファイルサイズチェック
+      const lineLimit = this.getLineLimitForMimeType(detectedMime);
+      if (buffer.length > lineLimit) {
+        logger.warn('File exceeds LINE limit, attempting CDN fallback', {
+          fileSize: buffer.length,
+          lineLimit,
+          mimeType: detectedMime,
+          attachmentUrl: attachment.url
+        });
+
+        return await this.processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, detectedMime, buffer);
+      }
+
+      // 通常のファイルサイズチェック
+      if (buffer.length > this.maxFileSize) {
+        throw new Error(`File too large: ${buffer.length} bytes`);
+      }
 
       // 画像ファイルの処理
-      if (this.supportedImageTypes.includes(mimeType)) {
-        return await this.processDiscordImage(attachment, lineUserId, lineService);
+      if (this.supportedImageTypes.includes(detectedMime)) {
+        return await this.processDiscordImage({ ...attachment, contentType: detectedMime, name: attachment.name || `image.${detectedExt}` }, lineUserId, lineService);
       }
 
       // 動画ファイルの処理
-      if (this.supportedVideoTypes.includes(mimeType)) {
-        return await this.processDiscordVideo(attachment, lineUserId, lineService);
+      if (this.supportedVideoTypes.includes(detectedMime)) {
+        return await this.processDiscordVideo({ ...attachment, contentType: detectedMime, name: attachment.name || `video.${detectedExt}` }, lineUserId, lineService);
       }
 
       // 音声ファイルの処理
-      if (this.supportedAudioTypes.includes(mimeType)) {
-        return await this.processDiscordAudio(attachment, lineUserId, lineService);
+      if (this.supportedAudioTypes.includes(detectedMime)) {
+        return await this.processDiscordAudio({ ...attachment, contentType: detectedMime, name: attachment.name || `audio.${detectedExt}` }, lineUserId, lineService);
       }
 
       // ドキュメントファイルの処理
-      if (this.supportedDocumentTypes.includes(mimeType)) {
-        return await this.processDiscordDocument(attachment, lineUserId, lineService);
+      if (this.supportedDocumentTypes.includes(detectedMime)) {
+        return await this.processDiscordDocument({ ...attachment, contentType: detectedMime, name: attachment.name || `file.${detectedExt}` }, lineUserId, lineService);
       }
 
       // その他のファイル
-      return await this.processDiscordFile(attachment, lineUserId, lineService);
+      return await this.processDiscordFile({ ...attachment, contentType: detectedMime, name: attachment.name || `file.${detectedExt}` }, lineUserId, lineService);
 
     } catch (error) {
       logger.error('Failed to process Discord attachment', {
         attachmentUrl: attachment.url,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       });
       throw error;
     }
@@ -948,7 +948,6 @@ class MediaService {
       
       // フォールバック: テキストメッセージとして送信
       try {
-        // ファイルタイプベースの表示名を生成（ファイル名は使用しない）
         const fileTypeDisplay = this.getFileTypeDisplayName(
           attachment.contentType, 
           attachment.contentType, 
@@ -985,6 +984,88 @@ class MediaService {
         });
         throw error;
       }
+    }
+  }
+
+  async processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, mimeType, buffer = null) {
+    try {
+      // 可能な場合、直接Discord CDN URLでLINEに送信
+      if (mimeType.startsWith('image/')) {
+        const url = attachment.url;
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'image',
+          originalContentUrl: url,
+          previewImageUrl: url
+        });
+        return {
+          success: true,
+          lineMessageId: result.messageId,
+          type: 'image',
+          fallback: true,
+          note: 'sent via CDN URL'
+        };
+      }
+
+      if (mimeType.startsWith('video/')) {
+        const url = attachment.url;
+        const fallback = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎥 動画が大きすぎます。リンクで参照してください:\n${url}`
+        });
+        return {
+          success: true,
+          lineMessageId: fallback.messageId,
+          type: 'text',
+          fallback: true
+        };
+      }
+
+      if (mimeType.startsWith('audio/')) {
+        const url = attachment.url;
+        const fallback = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `🎵 音声が大きすぎます。リンクで参照してください:\n${url}`
+        });
+        return {
+          success: true,
+          lineMessageId: fallback.messageId,
+          type: 'text',
+          fallback: true
+        };
+      }
+
+      // 画像以外はファイルメッセージとして送信し、失敗したらリンク
+      try {
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'file',
+          fileName: attachment.name || 'attachment',
+          originalContentUrl: attachment.url
+        });
+        return {
+          success: true,
+          lineMessageId: result.messageId,
+          type: 'file',
+          fallback: true
+        };
+      } catch (fallbackError) {
+        const textFallback = await lineService.pushMessage(lineUserId, {
+          type: 'text',
+          text: `📎 ファイルを送信できませんでした。リンクを参照してください:\n${attachment.url}`
+        });
+        return {
+          success: true,
+          lineMessageId: textFallback.messageId,
+          type: 'text',
+          fallback: true
+        };
+      }
+    } catch (error) {
+      logger.error('Failed to process Discord attachment with CDN fallback', {
+        attachmentUrl: attachment.url,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
     }
   }
 
@@ -1303,6 +1384,7 @@ class MediaService {
    */
   async detectFileType(buffer) {
     try {
+      const { fileTypeFromBuffer } = await import('file-type');
       const fileTypeInfo = await fileTypeFromBuffer(buffer);
       
       logger.debug('File type detected', {
@@ -1533,36 +1615,45 @@ class MediaService {
       stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
     }
     
+    if (!stickerUrl && sticker.asset) {
+      // Discord.js v14 sticker.asset may provide static URL
+      stickerUrl = sticker.asset.url;
+    }
+
     if (!stickerUrl) {
       throw new Error('No sticker URL or ID available');
     }
-    
-    // LOTTIEスタンプの場合は静止画URLに変換
-    if (sticker.format === 3) { // LOTTIE
-      stickerUrl = stickerUrl.replace('.json', '.png');
-      logger.debug('Converted LOTTIE URL to PNG', { 
-        stickerId: sticker.id, 
-        originalUrl: sticker.url,
-        convertedUrl: stickerUrl 
-      });
-    }
-    
-    // .jsonで終わる場合は.pngに置換
+
+    // LOTTIEスタンプの可能性: URLが .json なら .png に変換
     if (stickerUrl.endsWith('.json')) {
-      stickerUrl = stickerUrl.replace('.json', '.png');
-      logger.debug('Converted .json URL to .png', { 
-        stickerId: sticker.id, 
+      stickerUrl = stickerUrl.replace(/\.json$/, '.png');
+      logger.debug('Converted LOTTIE URL to PNG', {
+        stickerId: sticker.id,
         originalUrl: sticker.url,
-        convertedUrl: stickerUrl 
+        convertedUrl: stickerUrl
       });
     }
-    
-    logger.debug('Downloading sticker image', { 
-      stickerId: sticker.id, 
+
+    // .jsonクエリ付きの場合も変換
+    if (stickerUrl.includes('.json?')) {
+      stickerUrl = stickerUrl.replace(/\.json\?.*$/, '.png');
+    }
+
+    // sticker.format が LOTTIE の場合、Discord CDN の PNG を試す
+    if (sticker.format === 3 && !stickerUrl.endsWith('.png')) {
+      stickerUrl = `https://cdn.discordapp.com/stickers/${sticker.id}.png`;
+      logger.debug('LOTTIE fallback to static PNG URL', {
+        stickerId: sticker.id,
+        convertedUrl: stickerUrl
+      });
+    }
+
+    logger.debug('Downloading sticker image', {
+      stickerId: sticker.id,
       url: stickerUrl,
-      format: sticker.format 
+      format: sticker.format
     });
-    
+
     const response = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   }

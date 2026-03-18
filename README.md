@@ -254,7 +254,26 @@ npm test -- --coverage
 - App: ミドルウェア、ルート、ヘルスチェック
 - emojiHandler: 絵文字正規化、検出、変換
 
-## 🚀 デプロイ
+## � 今回のアップデート（2026年3月）
+
+このリポジトリでは以下の改善を実施しました。
+
+- ✅ Discord→LINEメディア送信の堅牢化
+  - Discord添付を実際のバイナリから MIME を判定
+  - LINE制限を超える場合は CDN/リンクフォールバック
+  - スタンプURL周りの LOTTIE/.json 変換安定化
+
+- ✅ LINE→Discord 絵文字エンコード改善
+  - Unicode 正規化（NFC）、不正サロゲート除去
+  - `(emoji)` 等の絵文字化け回復
+  - Discordカスタム絵文字 `<:name:id>` を安全変換
+
+- ✅ 既存チャネル・メッセージマッピングは再起動後も永続化対応
+  - `data/channel-mappings.json` と `data/message-mappings.json` に保存
+
+---
+
+## �🚀 デプロイ
 
 ### PM2を使用
 

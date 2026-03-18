@@ -61,20 +61,16 @@ function processEmojiText(text) {
   try {
     // まず正規化を実行
     let processed = normalizeEmojis(text);
-    
-    // 絵文字が含まれているかチェック
-    if (isValidEmoji(processed)) {
-      return processed;
-    }
-    
-    // 絵文字が見つからない場合は、元のテキストを返す
-    // ただし、明らかに文字化けしている場合は警告を出す
-    if (text.includes('(emoji)') || text.includes('emoji')) {
-      console.warn('Potential emoji encoding issue detected:', text);
-      // 可能であれば絵文字を復元するか、代替テキストを提供
-      return text.replace(/\(emoji\)/g, '😊'); // デフォルトの絵文字
-    }
-    
+
+    // 無効なサロゲートペアを削除
+    processed = processed.replace(/([\uD800-\uDBFF])(?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '');
+
+    // 絵文字化けプレースホルダーを置換
+    processed = processed.replace(/\(emoji\)/gi, '😊');
+
+    // 認識できない絵文字シーケンスを正規化
+    processed = Array.from(processed).join('');
+
     return processed;
   } catch (error) {
     console.error('Emoji processing failed:', error);
@@ -96,11 +92,14 @@ function processLineEmoji(text) {
     
     // LINEの絵文字コードを標準絵文字に変換（必要に応じて）
     const lineEmojiMap = {
-      // LINE特有の絵文字マッピング（必要に応じて追加）
+      '\uE001': '😀',
+      '\uE002': '😂',
+      '\uE0E0': '❤️',
+      '\uE0E3': '😊'
     };
     
     Object.entries(lineEmojiMap).forEach(([lineEmoji, standardEmoji]) => {
-      processed = processed.replace(new RegExp(lineEmoji, 'g'), standardEmoji);
+      processed = processed.split(lineEmoji).join(standardEmoji);
     });
     
     return processed;
@@ -122,9 +121,8 @@ function processDiscordEmoji(text) {
     // Discord特有の絵文字処理
     let processed = processEmojiText(text);
     
-    // Discordの絵文字形式をLINE対応形式に変換
-    // <:emoji_name:id> 形式を標準絵文字に変換（必要に応じて）
-    processed = processed.replace(/<:[^:]+:\d+>/g, '😊');
+    // Discordのカスタム絵文字 <:name:id> 形式を標準絵文字に変換
+    processed = processed.replace(/<a?:[^:]+:\d+>/g, '😊');
     
     return processed;
   } catch (error) {
