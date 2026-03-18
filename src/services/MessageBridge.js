@@ -688,32 +688,19 @@ class MessageBridge {
    */
   async sendToDiscord(channelId, message, options = {}) {
     try {
-      if (options.replyToMessageId) {
-        logger.debug('Using regular bot reply to send message', {
-          channelId,
-          isReply: true
-        });
-        const channel = await this.discord.channels.fetch(channelId);
-        return await channel.send({
-          ...message,
-          reply: {
-            messageReference: options.replyToMessageId
-          }
-        });
-      }
-
       if (options.useWebhook && options.username && this.webhookManager) {
         logger.debug('Using webhook to send message', {
           channelId,
           username: options.username,
           hasAvatar: !!options.avatarUrl,
-          isReply: false
+          isReply: !!options.replyToMessageId
         });
         return await this.webhookManager.sendMessage(
           channelId,
           message,
           options.username,
-          options.avatarUrl
+          options.avatarUrl,
+          options.replyToMessageId || null
         );
       }
 
@@ -722,9 +709,18 @@ class MessageBridge {
         useWebhook: options.useWebhook,
         hasUsername: !!options.username,
         hasWebhookManager: !!this.webhookManager,
-        isReply: false
+        isReply: !!options.replyToMessageId
       });
       const channel = await this.discord.channels.fetch(channelId);
+      if (options.replyToMessageId) {
+        return await channel.send({
+          ...message,
+          reply: {
+            messageReference: options.replyToMessageId
+          }
+        });
+      }
+
       return await channel.send(message);
     } catch (error) {
       logger.error('Failed to send message to Discord', {
