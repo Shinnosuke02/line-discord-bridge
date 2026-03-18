@@ -23,7 +23,8 @@ const config = {
   server: {
     port: parseInt(process.env.PORT) || 3000,
     host: process.env.HOST || '0.0.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || ''
   },
 
   // ファイル処理設定

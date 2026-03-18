@@ -1111,8 +1111,19 @@ class MediaService {
       // tempディレクトリが存在しない場合は作成
       await fs.mkdir(path.dirname(tempPath), { recursive: true });
       await fs.writeFile(tempPath, buffer);
-      
-      const url = `http://localhost:${config.server.port}/temp/${fileName}`;
+
+      // 公開URLの設定。LINE APIでは https:// 必須
+      let baseUrl = config.server.publicBaseUrl || '';
+      if (!baseUrl) {
+        // Fallback: local URL
+        baseUrl = `http://localhost:${config.server.port}`;
+      }
+
+      if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+        baseUrl = `https://${baseUrl}`;
+      }
+
+      const url = `${baseUrl.replace(/\/$/, '')}/temp/${encodeURIComponent(fileName)}`;
       
       logger.debug('File uploaded to self', {
         fileName,
@@ -1120,6 +1131,12 @@ class MediaService {
         size: buffer.length
       });
       
+      if (!url.startsWith('https://')) {
+        logger.warn('Using non-HTTPS URL for LINE content. LINE may reject this.', {
+          url
+        });
+      }
+
       return { url, fileName };
     } catch (error) {
       logger.error('Failed to upload file to self', {

@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
+> 最新化注意: このコードでは `PUBLIC_BASE_URL` を指定しないとデフォルト `http://localhost:${process.env.PORT || 3000}` でメディアURLを作成しますが、LINE APIでは公開の HTTPS URL が必要です。
+
 **Version 3.1.4** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
 
 ## ✨ 特徴
@@ -65,6 +67,9 @@ DISCORD_CLIENT_ID=your_discord_client_id
 WEBHOOK_ENABLED=true
 WEBHOOK_NAME=LINE Bridge
 
+# 公開URL（LINEに送信する画像/動画などを外部から読み込ませる場合）
+PUBLIC_BASE_URL=https://your-domain.example
+
 # その他の設定
 NODE_ENV=production
 PORT=3000
@@ -90,8 +95,7 @@ npm run pm2:start
 src/
 ├── app.js                 # メインアプリケーション
 ├── config/
-│   ├── index.js          # メイン設定
-│   └── fileProcessing.js # ファイル処理設定
+│   └── index.js          # メイン設定
 ├── services/
 │   ├── MessageBridge.js  # メッセージブリッジ
 │   ├── LineService.js    # LINE APIサービス
@@ -100,7 +104,8 @@ src/
 │   ├── ChannelManager.js # チャンネル管理
 │   ├── WebhookManager.js # Webhook管理
 │   ├── MessageMappingManager.js # メッセージマッピング
-│   └── ReplyService.js   # 返信機能
+│   ├── LineUsageMonitor.js # LINE使用量監視
+│   └── MessageQueue.js   # メッセージキュー
 ├── middleware/
 │   ├── errorHandler.js   # エラーハンドリング
 │   ├── requestLogger.js  # リクエストログ
