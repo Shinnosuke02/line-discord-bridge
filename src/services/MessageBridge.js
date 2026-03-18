@@ -746,12 +746,14 @@ class MessageBridge {
 
   buildBotReplyPayload(message, originalMessage, replyToMessageId, replierName, replierAvatar) {
     const embeds = [];
+    const replyText = message.content || '';
 
     embeds.push({
       author: {
         name: replierName || 'LINE User',
         ...(replierAvatar ? { icon_url: replierAvatar } : {})
       },
+      ...(replyText ? { description: replyText } : {}),
       color: 0x5865F2
     });
 
@@ -761,7 +763,7 @@ class MessageBridge {
 
     return {
       ...message,
-      content: message.content || '',
+      content: '',
       embeds,
       reply: {
         messageReference: replyToMessageId,
