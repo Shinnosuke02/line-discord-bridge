@@ -158,7 +158,7 @@ describe('MessageBridge webhook reply routing', () => {
     expect(mockChannel.messages.fetch).toHaveBeenCalledWith('discord-origin-1');
     expect(mockChannel.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: 'reply body',
+        content: '',
         reply: {
           messageReference: 'discord-origin-1',
           failIfNotExists: false
@@ -168,7 +168,8 @@ describe('MessageBridge webhook reply routing', () => {
             author: {
               name: 'LINE User',
               icon_url: 'https://example.com/avatar.png'
-            }
+            },
+            description: 'reply body'
           })
         ]
       })
