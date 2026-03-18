@@ -99,6 +99,12 @@ const config = {
     timeout: parseInt(process.env.WEBHOOK_TIMEOUT) || 30000
   },
 
+  // ブリッジ機能設定
+  features: {
+    replyBridgeEnabled: process.env.BRIDGE_REPLY_ENABLED !== 'false',
+    reactionBridgeEnabled: process.env.BRIDGE_REACTION_ENABLED === 'true'
+  },
+
   // ログ設定
   logging: {
     level: process.env.LOG_LEVEL || 'info',

@@ -11,7 +11,7 @@ const MediaService = require('./MediaService');
 const ChannelManager = require('./ChannelManager');
 const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
-// リプライ機能は削除（複雑すぎるため）
+const BridgeFeatureManager = require('../features/BridgeFeatureManager');
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 const lineLimitHandler = require('../middleware/lineLimitHandler');
 const LineUsageMonitor = require('./LineUsageMonitor');
@@ -26,6 +26,8 @@ class MessageBridge {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.MessageContent,
       ],
     });
@@ -34,7 +36,9 @@ class MessageBridge {
     this.discordService = new DiscordService();
     this.mediaService = new MediaService();
     this.messageMappingManager = new MessageMappingManager();
-    this.replyService = null;
+    this.featureManager = new BridgeFeatureManager({
+      messageMappingManager: this.messageMappingManager
+    });
     this.channelManager = null;
     this.webhookManager = null;
     this.lineUsageMonitor = new LineUsageMonitor();
@@ -106,8 +110,7 @@ class MessageBridge {
       // MessageMappingManagerを初期化
       await this.messageMappingManager.initialize();
       
-      // リプライ機能は削除（複雑すぎるため）
-      this.replyService = null;
+      await this.featureManager.initialize();
       
       // ChannelManagerを初期化
       this.channelManager = new ChannelManager(this.discord, this.lineService);
@@ -156,9 +159,6 @@ class MessageBridge {
       lineUserId,
       isReply: !!message.reference?.messageId
     });
-
-    // リプライ機能は削除（複雑すぎるため）
-    // 通常のメッセージ転送のみ実行
 
     // メッセージをLINEに転送
     await this.processDiscordToLine(message, lineUserId);
@@ -217,9 +217,6 @@ class MessageBridge {
       // チャンネル名を更新（表示名が変更された場合）
       await this.updateChannelNameIfNeeded(sourceId, displayName, event);
 
-      // リプライ機能は削除（複雑すぎるため）
-      // 通常のメッセージ転送のみ実行
-
       const discordMessage = await this.createDiscordMessage(event, displayName);
       if (!discordMessage) return;
 
@@ -237,11 +234,10 @@ class MessageBridge {
         hasWebhookManager: !!this.webhookManager
       });
       
-      // 返信元のDiscordメッセージIDを取得（返信機能用）
-      // 注意: 返信機能が失敗しても、通常のメッセージ転送は継続される
       let replyTargetDiscordMessageId = null;
       try {
-        replyTargetDiscordMessageId = this.getReplyTargetDiscordMessageId(event);
+        const featureOptions = await this.featureManager.resolveDiscordSendOptions(event);
+        replyTargetDiscordMessageId = featureOptions.replyToMessageId || null;
         if (replyTargetDiscordMessageId) {
           webhookOptions.replyToMessageId = replyTargetDiscordMessageId;
           logger.debug('Reply target found, will send as reply', {
@@ -262,12 +258,16 @@ class MessageBridge {
       // メッセージマッピングを記録（replyTokenも保存）
       if (sentMessage) {
         const replyToken = event.replyToken || null;
+        const quoteToken = event.message?.quoteToken || null;
         await this.messageMappingManager.mapLineToDiscord(
           event.message.id,
           sentMessage.id,
           event.source.userId,
           mapping.discordChannelId,
-          replyToken
+          {
+            replyToken,
+            quoteToken
+          }
         );
       }
 
@@ -295,6 +295,8 @@ class MessageBridge {
   async processDiscordToLine(message, lineUserId) {
     try {
       let lineMessageId = null;
+      let lineQuoteToken = null;
+      const lineSendContext = await this.featureManager.resolveLineSendContext(message);
 
       // 添付ファイルの処理
       if (message.attachments?.size > 0) {
@@ -322,13 +324,15 @@ class MessageBridge {
             latitude: locationResult.latitude,
             longitude: locationResult.longitude
           };
+          const outboundMessage = this.featureManager.applyLineSendContext(lineMessage, lineSendContext);
           
           // 月間制限チェック
-          const limitCheck = lineLimitHandler.shouldLimitMessage(lineMessage);
+          const limitCheck = lineLimitHandler.shouldLimitMessage(outboundMessage);
           if (limitCheck.allowed) {
-            const result = await this.lineService.pushMessage(lineUserId, lineMessage);
+            const result = await this.lineService.pushMessage(lineUserId, outboundMessage);
             if (result?.messageId) {
               lineMessageId = result.messageId;
+              lineQuoteToken = result.quoteToken || null;
               lineLimitHandler.recordMessageSent();
             }
           } else {
@@ -351,9 +355,11 @@ class MessageBridge {
                 type: 'text',
                 text: remainingText
               };
-              
-              // テキストメッセージはバッチングして送信
-              await this.sendMessageWithBatching(lineUserId, textMessage);
+              const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
+              if (textResult?.messageId) {
+                lineMessageId = textResult.messageId;
+                lineQuoteToken = textResult.quoteToken || lineQuoteToken;
+              }
             }
             
             // その後、位置情報として送信
@@ -364,12 +370,14 @@ class MessageBridge {
               latitude: googleMapsResult.latitude,
               longitude: googleMapsResult.longitude
             };
+            const outboundLocationMessage = this.featureManager.applyLineSendContext(locationMessage, lineSendContext);
             
-            const limitCheck = lineLimitHandler.shouldLimitMessage(locationMessage);
+            const limitCheck = lineLimitHandler.shouldLimitMessage(outboundLocationMessage);
             if (limitCheck.allowed) {
-              const locationResult = await this.lineService.pushMessage(lineUserId, locationMessage);
+              const locationResult = await this.lineService.pushMessage(lineUserId, outboundLocationMessage);
               if (locationResult?.messageId) {
                 lineMessageId = locationResult.messageId;
+                lineQuoteToken = locationResult.quoteToken || lineQuoteToken;
                 lineLimitHandler.recordMessageSent();
               }
             } else {
@@ -383,9 +391,11 @@ class MessageBridge {
               type: 'text',
               text: processedText
             };
-            
-            // テキストメッセージはバッチングして送信
-            await this.sendMessageWithBatching(lineUserId, textMessage);
+            const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
+            if (textResult?.messageId) {
+              lineMessageId = textResult.messageId;
+              lineQuoteToken = textResult.quoteToken || lineQuoteToken;
+            }
           }
         }
       }
@@ -408,7 +418,10 @@ class MessageBridge {
           message.id,
           lineMessageId,
           lineUserId,
-          message.channelId
+          message.channelId,
+          {
+            quoteToken: lineQuoteToken
+          }
         );
       }
 
@@ -605,45 +618,6 @@ class MessageBridge {
   }
 
   /**
-   * LINEイベントから返信元のDiscordメッセージIDを取得（返信機能用）
-   * @param {Object} event - LINEイベント
-   * @returns {string|null} 返信元のDiscordメッセージID
-   */
-  getReplyTargetDiscordMessageId(event) {
-    try {
-      // LINEイベントから返信元のメッセージIDを取得
-      // 注意: LINE APIの仕様により、返信元メッセージIDの取得方法は限定的
-      // 以下の方法で返信元を特定を試みる:
-      
-      // 1. quotedMessageId（引用メッセージID）が存在する場合
-      if (event.message?.quotedMessageId) {
-        const replyTargetDiscordId = this.messageMappingManager.getDiscordMessageIdForLineReply(
-          event.message.quotedMessageId
-        );
-        if (replyTargetDiscordId) {
-          logger.debug('Found reply target from quotedMessageId', {
-            lineMessageId: event.message.quotedMessageId,
-            discordMessageId: replyTargetDiscordId
-          });
-          return replyTargetDiscordId;
-        }
-      }
-      
-      // 2. メッセージ内容から返信元を推測（将来的な拡張用）
-      // 現時点では実装しない
-      
-      return null;
-    } catch (error) {
-      // 返信元の取得に失敗しても、通常のメッセージ転送は継続
-      logger.debug('Failed to get reply target Discord message ID', {
-        error: error.message,
-        eventId: event.message?.id
-      });
-      return null;
-    }
-  }
-
-  /**
    * チャンネル名を必要に応じて更新（グループのみ）
    * @param {string} sourceId - ソースID
    * @param {string} displayName - 表示名
@@ -714,43 +688,44 @@ class MessageBridge {
    */
   async sendToDiscord(channelId, message, options = {}) {
     try {
+      if (options.replyToMessageId) {
+        logger.debug('Using regular bot reply to send message', {
+          channelId,
+          isReply: true
+        });
+        const channel = await this.discord.channels.fetch(channelId);
+        return await channel.send({
+          ...message,
+          reply: {
+            messageReference: options.replyToMessageId
+          }
+        });
+      }
+
       if (options.useWebhook && options.username && this.webhookManager) {
         logger.debug('Using webhook to send message', {
           channelId,
           username: options.username,
           hasAvatar: !!options.avatarUrl,
-          isReply: !!options.replyToMessageId
+          isReply: false
         });
         return await this.webhookManager.sendMessage(
           channelId,
           message,
           options.username,
-          options.avatarUrl,
-          options.replyToMessageId || null
+          options.avatarUrl
         );
-      } else {
-        logger.debug('Using regular bot to send message', {
-          channelId,
-          useWebhook: options.useWebhook,
-          hasUsername: !!options.username,
-          hasWebhookManager: !!this.webhookManager,
-          isReply: !!options.replyToMessageId
-        });
-        const channel = await this.discord.channels.fetch(channelId);
-        
-        // 返信先メッセージIDが指定されている場合、返信として送信
-        if (options.replyToMessageId) {
-          const replyMessage = {
-            ...message,
-            messageReference: {
-              messageId: options.replyToMessageId
-            }
-          };
-          return await channel.send(replyMessage);
-        }
-        
-        return await channel.send(message);
       }
+
+      logger.debug('Using regular bot to send message', {
+        channelId,
+        useWebhook: options.useWebhook,
+        hasUsername: !!options.username,
+        hasWebhookManager: !!this.webhookManager,
+        isReply: false
+      });
+      const channel = await this.discord.channels.fetch(channelId);
+      return await channel.send(message);
     } catch (error) {
       logger.error('Failed to send message to Discord', {
         channelId,
@@ -885,6 +860,32 @@ class MessageBridge {
         error: error.message
       });
     }
+  }
+
+  async sendTrackedLineMessage(userId, message, lineSendContext = {}) {
+    const outboundMessage = this.featureManager.applyLineSendContext(message, lineSendContext);
+
+    if (!this.featureManager.requiresDirectLineTracking()) {
+      await this.sendMessageWithBatching(userId, outboundMessage);
+      return null;
+    }
+
+    const limitCheck = lineLimitHandler.shouldLimitMessage(outboundMessage);
+    if (!limitCheck.allowed) {
+      logger.warn('LINE message blocked due to monthly limit', {
+        userId,
+        messageType: outboundMessage.type,
+        reason: limitCheck.reason
+      });
+      return null;
+    }
+
+    const result = await this.lineService.pushMessage(userId, outboundMessage);
+    if (result?.messageId) {
+      lineLimitHandler.recordMessageSent();
+    }
+
+    return result;
   }
 
   /**
