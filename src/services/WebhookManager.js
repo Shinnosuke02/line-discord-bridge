@@ -2,6 +2,7 @@
  * Webhook管理サービス
  * Discord Webhookを使用したメッセージ送信を管理
  */
+const { MessagePayload, Routes } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -150,7 +151,9 @@ class WebhookManager {
         replyToMessageId
       });
 
-      const sentMessage = await webhook.send(webhookMessage);
+      const sentMessage = replyToMessageId
+        ? await this.sendReplyViaRest(webhook, webhookMessage, replyToMessageId)
+        : await webhook.send(webhookMessage);
 
       logger.debug('Message sent via webhook', {
         channelId,
@@ -170,6 +173,30 @@ class WebhookManager {
       });
       throw error;
     }
+  }
+
+  async sendReplyViaRest(webhook, webhookMessage, replyToMessageId) {
+    const messagePayload = MessagePayload.create(webhook, {
+      content: webhookMessage.content,
+      username: webhookMessage.username,
+      avatarURL: webhookMessage.avatarURL,
+      files: webhookMessage.files
+    }).resolveBody();
+
+    const { body, files } = await messagePayload.resolveFiles();
+    body.message_reference = {
+      message_id: replyToMessageId,
+      fail_if_not_exists: false
+    };
+
+    return await webhook.client.rest.post(Routes.webhook(webhook.id, webhook.token), {
+      body,
+      files,
+      query: {
+        wait: true
+      },
+      auth: false
+    });
   }
 
   /**
