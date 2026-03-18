@@ -438,7 +438,7 @@ class MediaService {
 
       const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data);
-      const fileTypeInfo = await fileTypeFromBuffer(buffer);
+      const fileTypeInfo = await this.detectFileType(buffer);
       const detectedMime = fileTypeInfo?.mime || defaultMime;
       const detectedExt = fileTypeInfo?.ext || (attachment.name?.split('.').pop() || 'bin');
 
@@ -452,7 +452,7 @@ class MediaService {
           attachmentUrl: attachment.url
         });
 
-        return await this.processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, detectedMime, buffer);
+        return await this.processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, detectedMime);
       }
 
       // 通常のファイルサイズチェック
@@ -504,9 +504,26 @@ class MediaService {
     try {
       // LINEが確実に表示できるのは JPEG/PNG
       const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+      const isHeic = /image\/(heic|heif|heic-sequence|heif-sequence)/i.test(mime) || /\.(heic|heif)$/i.test(attachment.name || '');
+
+      // JPEG/PNGはDiscord CDNのHTTPS URLをそのまま使う
+      if ((mime === 'image/jpeg' || mime === 'image/png') && attachment.url && attachment.url.startsWith('https://')) {
+        logger.debug('Sending JPEG/PNG directly from Discord URL to LINE', { url: attachment.url, mime });
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'image',
+          originalContentUrl: attachment.url,
+          previewImageUrl: attachment.url
+        });
+        return {
+          success: true,
+          lineMessageId: result.messageId,
+          type: 'image',
+          rehosted: false,
+          directUrl: true
+        };
+      }
 
       // HEIC/HEIF は JPEG へ変換
-      const isHeic = /image\/(heic|heif|heic-sequence|heif-sequence)/i.test(mime) || /\.(heic|heif)$/i.test(attachment.name || '');
       if (isHeic) {
         try {
           const resp = await axios.get(attachment.url, { responseType: 'arraybuffer' });
