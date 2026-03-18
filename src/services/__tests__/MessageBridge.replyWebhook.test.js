@@ -168,8 +168,7 @@ describe('MessageBridge webhook reply routing', () => {
             author: {
               name: 'LINE User',
               icon_url: 'https://example.com/avatar.png'
-            },
-            description: 'Reply to Original User\noriginal line content'
+            }
           })
         ]
       })

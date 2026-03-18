@@ -745,8 +745,6 @@ class MessageBridge {
   }
 
   buildBotReplyPayload(message, originalMessage, replyToMessageId, replierName, replierAvatar) {
-    const replyTargetName = this.getDiscordReplyTargetName(originalMessage);
-    const originalSnippet = this.getDiscordReplySnippet(originalMessage);
     const embeds = [];
 
     embeds.push({
@@ -754,7 +752,6 @@ class MessageBridge {
         name: replierName || 'LINE User',
         ...(replierAvatar ? { icon_url: replierAvatar } : {})
       },
-      description: `Reply to ${replyTargetName}\n${originalSnippet}`,
       color: 0x5865F2
     });
 
@@ -779,15 +776,6 @@ class MessageBridge {
       || originalMessage?.author?.displayName
       || originalMessage?.author?.username
       || 'Unknown User';
-  }
-
-  getDiscordReplySnippet(originalMessage) {
-    const rawText = originalMessage?.content?.trim();
-    if (!rawText) {
-      return 'Original message';
-    }
-
-    return rawText.length > 140 ? `${rawText.slice(0, 137)}...` : rawText;
   }
 
   /**
