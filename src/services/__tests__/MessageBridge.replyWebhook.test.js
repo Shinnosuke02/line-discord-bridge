@@ -166,10 +166,10 @@ describe('MessageBridge webhook reply routing', () => {
         embeds: [
           expect.objectContaining({
             author: {
-              name: 'Replying to Original User',
-              icon_url: 'https://example.com/original.png'
+              name: 'LINE User',
+              icon_url: 'https://example.com/avatar.png'
             },
-            description: 'original line content'
+            description: 'Reply to Original User\noriginal line content'
           })
         ]
       })

@@ -684,7 +684,7 @@ class MessageBridge {
           channelId,
           replyToMessageId: options.replyToMessageId
         });
-        return await this.sendLineReplyAsBot(channelId, message, options.replyToMessageId);
+        return await this.sendLineReplyAsBot(channelId, message, options);
       }
 
       if (options.useWebhook && options.username && this.webhookManager) {
@@ -730,25 +730,31 @@ class MessageBridge {
     }
   }
 
-  async sendLineReplyAsBot(channelId, message, replyToMessageId) {
+  async sendLineReplyAsBot(channelId, message, options) {
+    const { replyToMessageId, username, avatarUrl } = options;
     const channel = await this.discord.channels.fetch(channelId);
     const originalMessage = await channel.messages.fetch(replyToMessageId);
-    const replyPayload = this.buildBotReplyPayload(message, originalMessage, replyToMessageId);
+    const replyPayload = this.buildBotReplyPayload(
+      message,
+      originalMessage,
+      replyToMessageId,
+      username,
+      avatarUrl
+    );
     return await channel.send(replyPayload);
   }
 
-  buildBotReplyPayload(message, originalMessage, replyToMessageId) {
+  buildBotReplyPayload(message, originalMessage, replyToMessageId, replierName, replierAvatar) {
     const replyTargetName = this.getDiscordReplyTargetName(originalMessage);
-    const replyTargetAvatar = this.getDiscordReplyTargetAvatar(originalMessage);
     const originalSnippet = this.getDiscordReplySnippet(originalMessage);
     const embeds = [];
 
     embeds.push({
       author: {
-        name: `Replying to ${replyTargetName}`,
-        ...(replyTargetAvatar ? { icon_url: replyTargetAvatar } : {})
+        name: replierName || 'LINE User',
+        ...(replierAvatar ? { icon_url: replierAvatar } : {})
       },
-      description: originalSnippet,
+      description: `Reply to ${replyTargetName}\n${originalSnippet}`,
       color: 0x5865F2
     });
 
@@ -773,18 +779,6 @@ class MessageBridge {
       || originalMessage?.author?.displayName
       || originalMessage?.author?.username
       || 'Unknown User';
-  }
-
-  getDiscordReplyTargetAvatar(originalMessage) {
-    if (typeof originalMessage?.author?.displayAvatarURL === 'function') {
-      return originalMessage.author.displayAvatarURL({ size: 64 });
-    }
-
-    if (typeof originalMessage?.author?.avatarURL === 'function') {
-      return originalMessage.author.avatarURL({ size: 64 });
-    }
-
-    return null;
   }
 
   getDiscordReplySnippet(originalMessage) {
