@@ -91,6 +91,7 @@ describe('App', () => {
   describe('ヘルスチェック', () => {
     test('ヘルスチェックエンドポイントが正常に動作する', async () => {
       app.messageBridge = mockMessageBridge;
+      app.setupRoutes();
       
       const req = {};
       const res = {

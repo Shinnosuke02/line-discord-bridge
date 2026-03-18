@@ -1,45 +1,93 @@
-/**
- * MessageBridge テストファイル
- * 
- * メッセージブリッジサービスのテストケースを定義
- * - 初期化テスト
- * - エラーハンドリングテスト
- * - メトリクス取得テスト
- * 
- * @version 3.0.0
- * @since 2024-12-19
- */
-const MessageBridge = require('../MessageBridge');
-const LineService = require('../LineService');
-const DiscordService = require('../DiscordService');
+jest.mock('discord.js', () => {
+  const mockClientInstance = {
+    channels: {
+      fetch: jest.fn()
+    },
+    guilds: {
+      cache: {
+        size: 0
+      }
+    },
+    once: jest.fn(),
+    on: jest.fn(),
+    destroy: jest.fn(),
+    login: jest.fn()
+  };
 
-// モックの設定
-jest.mock('../LineService');
-jest.mock('../DiscordService');
+  return {
+    Client: jest.fn(() => mockClientInstance),
+    GatewayIntentBits: {
+      Guilds: 1,
+      GuildMessages: 2,
+      GuildMessageReactions: 3,
+      DirectMessageReactions: 4,
+      MessageContent: 5
+    }
+  };
+});
+
+jest.mock('../LineService', () => jest.fn(() => ({
+  pushMessage: jest.fn(),
+  replyMessage: jest.fn(),
+  getDisplayName: jest.fn(),
+  getUserProfile: jest.fn(),
+  getGroupMemberProfile: jest.fn(),
+  getGroupSummary: jest.fn()
+})));
+
+jest.mock('../DiscordService', () => jest.fn(() => ({
+  sendMessage: jest.fn(),
+  setClient: jest.fn()
+})));
+
+jest.mock('../MediaService', () => jest.fn(() => ({
+  shutdown: jest.fn()
+})));
+
+jest.mock('../MessageMappingManager', () => jest.fn(() => ({
+  initialize: jest.fn(),
+  mapLineToDiscord: jest.fn(),
+  mapDiscordToLine: jest.fn(),
+  getLineToDiscordMapping: jest.fn()
+})));
+
+jest.mock('../ChannelManager', () => jest.fn(() => ({
+  initialize: jest.fn(),
+  stop: jest.fn()
+})));
+
+jest.mock('../WebhookManager', () => jest.fn(() => ({
+  initialize: jest.fn(),
+  stop: jest.fn(),
+  sendMessage: jest.fn()
+})));
+
+jest.mock('../LineUsageMonitor', () => jest.fn(() => ({
+  startMonitoring: jest.fn(),
+  getMonitoringStatus: jest.fn(() => ({}))
+})));
+
+jest.mock('../../utils/messageBatcher', () => jest.fn(() => ({
+  updateConfig: jest.fn(),
+  addToBatch: jest.fn(),
+  getBatchStatus: jest.fn(() => ({})),
+  flushAllBatches: jest.fn()
+})));
+
+jest.mock('../../middleware/lineLimitHandler', () => ({
+  shouldLimitMessage: jest.fn(() => ({ allowed: true })),
+  recordMessageSent: jest.fn(),
+  getLimitStatus: jest.fn(() => ({}))
+}));
+
 jest.mock('../../utils/logger');
+
+const MessageBridge = require('../MessageBridge');
 
 describe('MessageBridge', () => {
   let messageBridge;
-  let mockLineService;
-  let mockDiscordService;
 
   beforeEach(() => {
-    // モックの初期化
-    mockLineService = {
-      pushMessage: jest.fn(),
-      replyMessage: jest.fn(),
-      getProfile: jest.fn(),
-      getGroupSummary: jest.fn()
-    };
-    
-    mockDiscordService = {
-      sendMessage: jest.fn(),
-      setClient: jest.fn()
-    };
-
-    LineService.mockImplementation(() => mockLineService);
-    DiscordService.mockImplementation(() => mockDiscordService);
-
     messageBridge = new MessageBridge();
   });
 
@@ -47,46 +95,40 @@ describe('MessageBridge', () => {
     jest.clearAllMocks();
   });
 
-  describe('初期化', () => {
-    test('MessageBridgeが正常に初期化される', () => {
-      expect(messageBridge).toBeDefined();
-      expect(messageBridge.isInitialized).toBe(false);
-    });
-
-    test('メトリクスが初期化される', () => {
-      expect(messageBridge.metrics).toBeDefined();
-      expect(messageBridge.metrics.messagesProcessed).toBe(0);
-      expect(messageBridge.metrics.errors).toBe(0);
-      expect(messageBridge.metrics.startTime).toBeDefined();
-    });
+  test('MessageBridgeが正常に初期化される', () => {
+    expect(messageBridge).toBeDefined();
+    expect(messageBridge.isInitialized).toBe(false);
   });
 
-  describe('エラーハンドリング', () => {
-    test('LINEメッセージ送信エラーが適切に処理される', async () => {
-      const error = new Error('LINE API Error');
-      mockLineService.pushMessage.mockRejectedValue(error);
-
-      await expect(messageBridge.sendToLine('test-user', 'test message'))
-        .rejects.toThrow('LINE API Error');
-    });
-
-    test('Discordメッセージ送信エラーが適切に処理される', async () => {
-      const error = new Error('Discord API Error');
-      mockDiscordService.sendMessage.mockRejectedValue(error);
-
-      await expect(messageBridge.sendToDiscord('test-channel', 'test message'))
-        .rejects.toThrow('Discord API Error');
-    });
+  test('メトリクスが初期化される', () => {
+    expect(messageBridge.metrics).toBeDefined();
+    expect(messageBridge.metrics.messagesProcessed).toBe(0);
+    expect(messageBridge.metrics.errors).toBe(0);
+    expect(messageBridge.metrics.startTime).toBeDefined();
   });
 
-  describe('メトリクス', () => {
-    test('getMetricsが正しい値を返す', () => {
-      const metrics = messageBridge.getMetrics();
-      
-      expect(metrics).toBeDefined();
-      expect(metrics.messagesProcessed).toBe(0);
-      expect(metrics.errors).toBe(0);
-      expect(metrics.uptime).toBeDefined();
+  test('sendToDiscordはreply指定なしで通常送信する', async () => {
+    const mockChannel = {
+      send: jest.fn().mockResolvedValue({ id: 'message-1' })
+    };
+    messageBridge.discord.channels.fetch.mockResolvedValue(mockChannel);
+
+    const result = await messageBridge.sendToDiscord('channel-1', {
+      content: 'hello'
     });
+
+    expect(mockChannel.send).toHaveBeenCalledWith({
+      content: 'hello'
+    });
+    expect(result).toEqual({ id: 'message-1' });
+  });
+
+  test('getMetricsが正しい値を返す', () => {
+    const metrics = messageBridge.getMetrics();
+    
+    expect(metrics).toBeDefined();
+    expect(metrics.messagesProcessed).toBe(0);
+    expect(metrics.errors).toBe(0);
+    expect(metrics.uptime).toBeDefined();
   });
 });

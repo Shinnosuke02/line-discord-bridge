@@ -2,6 +2,7 @@
  * Webhook管理サービス
  * Discord Webhookを使用したメッセージ送信を管理
  */
+const { MessagePayload, Routes } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -133,14 +134,6 @@ class WebhookManager {
         files: message.files || []
       };
 
-      // 返信先メッセージIDが指定されている場合、返信として送信
-      if (replyToMessageId) {
-        webhookMessage.reply = {
-          messageReference: replyToMessageId,
-          failIfNotExists: false
-        };
-      }
-
       logger.debug('Sending webhook message', {
         channelId,
         username,
@@ -150,7 +143,21 @@ class WebhookManager {
         replyToMessageId
       });
 
-      const sentMessage = await webhook.send(webhookMessage);
+      let sentMessage;
+      if (replyToMessageId) {
+        try {
+          sentMessage = await this.sendReplyViaRest(webhook, webhookMessage, replyToMessageId);
+        } catch (replyError) {
+          logger.warn('Failed to send webhook reply, falling back to normal webhook message', {
+            channelId,
+            replyToMessageId,
+            error: replyError.message
+          });
+          sentMessage = await webhook.send(webhookMessage);
+        }
+      } else {
+        sentMessage = await webhook.send(webhookMessage);
+      }
 
       logger.debug('Message sent via webhook', {
         channelId,
@@ -170,6 +177,30 @@ class WebhookManager {
       });
       throw error;
     }
+  }
+
+  async sendReplyViaRest(webhook, webhookMessage, replyToMessageId) {
+    const messagePayload = MessagePayload.create(webhook, {
+      content: webhookMessage.content,
+      username: webhookMessage.username,
+      avatarURL: webhookMessage.avatarURL,
+      files: webhookMessage.files
+    }).resolveBody();
+
+    const { body, files } = await messagePayload.resolveFiles();
+    body.message_reference = {
+      message_id: replyToMessageId,
+      fail_if_not_exists: false
+    };
+
+    return await webhook.client.rest.post(Routes.webhook(webhook.id, webhook.token), {
+      body,
+      files,
+      query: {
+        wait: true
+      },
+      auth: false
+    });
   }
 
   /**

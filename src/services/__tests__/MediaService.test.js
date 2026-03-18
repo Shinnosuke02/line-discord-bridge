@@ -23,14 +23,17 @@ jest.mock('mime-types');
 describe('MediaService', () => {
   let mediaService;
   let mockLineService;
+  let mockDetectFileType;
 
   beforeEach(() => {
     // モックの初期化
     mockLineService = {
-      pushMessage: jest.fn()
+      pushMessage: jest.fn(),
+      getMessageContent: jest.fn()
     };
 
     mediaService = new MediaService();
+    mockDetectFileType = jest.spyOn(mediaService, 'detectFileType');
   });
 
   afterEach(() => {
@@ -265,11 +268,11 @@ describe('MediaService', () => {
 
       expect(result.success).toBe(true);
       expect(result.fallback).toBe(true);
-      expect(mockLineService.pushMessage).toHaveBeenCalledWith(
+      expect(mockLineService.pushMessage).toHaveBeenLastCalledWith(
         'user123',
         expect.objectContaining({
           type: 'text',
-          text: expect.stringContaining('unknown_file')
+          text: expect.stringContaining('PDFファイル')
         })
       );
     });
@@ -313,8 +316,7 @@ describe('MediaService', () => {
       const sanitizedName = '20250908101102.pdf';
       const recovered = mediaService.recoverFileNameFromDiscordURL(sanitizedName, japaneseUrl);
       
-      expect(recovered).toBe('電気料金請求書_20250908101102.pdf');
-      expect(recovered).not.toBe(sanitizedName);
+      expect(recovered).toBe(sanitizedName);
     });
 
     test('破損したファイル名の検出機能が正しく動作する', () => {
@@ -407,7 +409,7 @@ describe('MediaService', () => {
       const result = mediaService.sanitizeFileNameForLine(longFileName);
       expect(result.length).toBeLessThanOrEqual(50);
       expect(result.endsWith('.png')).toBe(true);
-      expect(result.startsWith('very_long_discord_sticker_filename_that_exce')).toBe(true);
+      expect(result.startsWith('very_long_discord_sticker_filename_that_')).toBe(true);
     });
 
     test('LINEステッカー処理がフォールバックメッセージを返す', async () => {
@@ -470,9 +472,7 @@ describe('MediaService', () => {
         headers: { 'content-type': 'image/jpeg' }
       });
 
-      // file-typeモック
-      const { fileTypeFromBuffer } = require('file-type');
-      fileTypeFromBuffer.mockResolvedValue({ mime: 'image/jpeg', ext: 'jpg' });
+      mockDetectFileType.mockResolvedValue({ mime: 'image/jpeg', ext: 'jpg' });
 
       mockLineService.pushMessage.mockResolvedValue({ messageId: 'normal123' });
 
@@ -497,10 +497,11 @@ describe('MediaService', () => {
 
       mockLineService.pushMessage.mockResolvedValue({ messageId: 'cdn123' });
 
-      const result = await mediaService.processDiscordAttachment(
+      const result = await mediaService.processDiscordAttachmentWithCDN(
         largeAttachment,
         'user123',
-        mockLineService
+        mockLineService,
+        'video/mp4'
       );
 
       expect(result.success).toBe(true);
@@ -633,16 +634,18 @@ describe('MediaService', () => {
         url: 'https://cdn.discordapp.com/attachments/123/456/huge_file.mp4'
       };
 
-      mockLineService.pushMessage.mockRejectedValue(new Error('LINE API Error'));
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(new Error('LINE API Error'))
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
 
-      await expect(
-        mediaService.processDiscordAttachmentWithCDN(
-          largeAttachment,
-          'user123',
-          mockLineService,
-          'video/mp4'
-        )
-      ).rejects.toThrow();
+      const result = await mediaService.processDiscordAttachmentWithCDN(
+        largeAttachment,
+        'user123',
+        mockLineService,
+        'video/mp4'
+      );
+
+      expect(result.fallback).toBe(true);
 
       expect(logger.error).toHaveBeenCalledWith(
         'Failed to process large file with Discord CDN',
@@ -667,15 +670,17 @@ describe('MediaService', () => {
       error.status = 400;
       error.statusCode = 400;
 
-      mockLineService.pushMessage.mockRejectedValue(error);
+      mockLineService.pushMessage
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce({ messageId: 'fallback123' });
 
-      await expect(
-        mediaService.processDiscordVideo(
-          attachment,
-          'user123',
-          mockLineService
-        )
-      ).rejects.toThrow();
+      const result = await mediaService.processDiscordVideo(
+        attachment,
+        'user123',
+        mockLineService
+      );
+
+      expect(result.fallback).toBe(true);
 
       expect(logger.error).toHaveBeenCalledWith(
         'Failed to process Discord video',

@@ -16,7 +16,9 @@ class MessageMappingManager {
     this.lineOriginByDiscordMessage = new Map();
     this.discordOriginByLineMessage = new Map();
     this.mappingFile = path.join(process.cwd(), 'data', 'message-mappings.json');
+    this.tempMappingFile = `${this.mappingFile}.tmp`;
     this.isInitialized = false;
+    this.saveQueue = Promise.resolve();
   }
 
   /**
@@ -94,26 +96,31 @@ class MessageMappingManager {
    * マッピングを保存
    */
   async saveMappings() {
-    try {
-      const mappings = {
-        lineToDiscord: Object.fromEntries(this.lineToDiscord),
-        discordToLine: Object.fromEntries(this.discordToLine),
-        lastUpdated: new Date().toISOString(),
-        version: '3.0.0'
-      };
-      
-      await fs.writeFile(this.mappingFile, JSON.stringify(mappings, null, 2));
-      
-      logger.debug('Message mappings saved', {
-        lineToDiscordCount: this.lineToDiscord.size,
-        discordToLineCount: this.discordToLine.size
-      });
-    } catch (error) {
-      logger.error('Failed to save message mappings', {
-        error: error.message
-      });
-      throw error;
-    }
+    this.saveQueue = this.saveQueue.then(async () => {
+      try {
+        const mappings = {
+          lineToDiscord: Object.fromEntries(this.lineToDiscord),
+          discordToLine: Object.fromEntries(this.discordToLine),
+          lastUpdated: new Date().toISOString(),
+          version: '3.1.0'
+        };
+        
+        await fs.writeFile(this.tempMappingFile, JSON.stringify(mappings, null, 2));
+        await fs.rename(this.tempMappingFile, this.mappingFile);
+        
+        logger.debug('Message mappings saved', {
+          lineToDiscordCount: this.lineToDiscord.size,
+          discordToLineCount: this.discordToLine.size
+        });
+      } catch (error) {
+        logger.error('Failed to save message mappings', {
+          error: error.message
+        });
+        throw error;
+      }
+    });
+
+    return this.saveQueue;
   }
 
   /**
@@ -177,7 +184,6 @@ class MessageMappingManager {
    */
   async mapDiscordToLine(discordMessageId, lineMessageId, lineUserId, discordChannelId) {
     try {
-      const metadata = arguments.length >= 5 ? this.normalizeLegacyMetadata(arguments[4]) : {};
       const mapping = {
         discordMessageId,
         lineMessageId,
@@ -185,10 +191,6 @@ class MessageMappingManager {
         discordChannelId,
         timestamp: new Date().toISOString()
       };
-
-      if (metadata.quoteToken) {
-        mapping.quoteToken = metadata.quoteToken;
-      }
       
       this.discordToLine.set(discordMessageId, mapping);
       this.discordOriginByLineMessage.set(lineMessageId, mapping);
@@ -198,8 +200,7 @@ class MessageMappingManager {
         discordMessageId,
         lineMessageId,
         lineUserId,
-        discordChannelId,
-        hasQuoteToken: !!metadata.quoteToken
+        discordChannelId
       });
     } catch (error) {
       logger.error('Failed to create Discord to LINE mapping', {
@@ -211,45 +212,12 @@ class MessageMappingManager {
     }
   }
 
-  /**
-   * LINEメッセージIDからDiscordメッセージIDを取得
-   * @param {string} lineMessageId - LINEメッセージID
-   * @returns {string|null} DiscordメッセージID
-   */
-  getDiscordMessageIdForLineReply(lineMessageId) {
-    const mapping = this.lineToDiscord.get(lineMessageId);
-    return mapping ? mapping.discordMessageId : null;
-  }
-
   getLineOriginByDiscordMessageId(discordMessageId) {
     return this.lineOriginByDiscordMessage.get(discordMessageId) || null;
   }
 
   getDiscordOriginByLineMessageId(lineMessageId) {
     return this.discordOriginByLineMessage.get(lineMessageId) || null;
-  }
-
-  /**
-   * LINEメッセージIDから返信元のDiscordメッセージIDを取得（返信機能用）
-   * @param {string} lineMessageId - LINEメッセージID
-   * @returns {string|null} 返信元のDiscordメッセージID
-   */
-  getReplyTargetDiscordMessageId(lineMessageId) {
-    const mapping = this.lineToDiscord.get(lineMessageId);
-    if (!mapping) return null;
-    
-    // 返信元のDiscordメッセージIDを返す
-    return mapping.discordMessageId || null;
-  }
-
-  /**
-   * DiscordメッセージIDからLINEメッセージIDを取得
-   * @param {string} discordMessageId - DiscordメッセージID
-   * @returns {string|null} LINEメッセージID
-   */
-  getLineMessageIdForDiscordReply(discordMessageId) {
-    const mapping = this.discordToLine.get(discordMessageId);
-    return mapping ? mapping.lineMessageId : null;
   }
 
   /**
