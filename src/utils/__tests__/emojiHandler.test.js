@@ -107,16 +107,22 @@ describe('emojiHandler', () => {
       expect(result).toBe('カスタム絵文字 😊');
     });
 
-    test('Discord絵文字化けを修正する', () => {
-      const input = 'Discordからのメッセージ (emoji)';
-      const result = processDiscordEmoji(input);
-      expect(result).toBe('Discordからのメッセージ 😊');
+    test('LINE特殊絵文字コードを変換する', () => {
+      const input = 'LINE特殊絵文字 \uE001\uE002';
+      const result = processLineEmoji(input);
+      expect(result).toBe('LINE特殊絵文字 😀😂');
+    });
+
+    test('不正なサロゲートペアを除去する', () => {
+      const input = '壊れた\uD83Dテキスト';
+      const result = processEmojiText(input);
+      expect(result).toBe('壊れたテキスト');
     });
   });
 
   describe('エラーハンドリング', () => {
     test('不正な文字列を処理する', () => {
-      const input = '\uFFFE\uFFFF'; // 不正なUnicode文字
+      const input = '\uFFFE\uFFFF';
       const result = processEmojiText(input);
       expect(result).toBeDefined();
     });

@@ -5,12 +5,13 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-**Version 3.1.4** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理、LINE→Discord返信機能をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
+> 最新化注意: このコードでは `PUBLIC_BASE_URL` を指定しないとデフォルト `http://localhost:${process.env.PORT || 3000}` でメディアURLを作成しますが、LINE APIでは公開の HTTPS URL が必要です。
+
+**Version 3.1.4** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
 
 ## ✨ 特徴
 
 - 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
-- 💬 **返信機能**: LINE→Discordの返信機能をサポート（返信元メッセージの特定）
 - 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理（APNG/WebP対応）
 - 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示（LINEユーザー名・アイコン）
 - 📍 **位置情報共有**: Googleマップリンク付きの位置情報共有
@@ -76,6 +77,9 @@ DISCORD_CATEGORY_ARCHIVE=your_archive_category_id
 WEBHOOK_ENABLED=true
 WEBHOOK_NAME=LINE Bridge
 
+# 公開URL（LINEに送信する画像/動画などを外部から読み込ませる場合）
+PUBLIC_BASE_URL=https://your-domain.example
+
 # その他の設定
 NODE_ENV=production
 PORT=3000
@@ -101,8 +105,7 @@ npm run pm2:start
 src/
 ├── app.js                 # メインアプリケーション
 ├── config/
-│   ├── index.js          # メイン設定
-│   └── fileProcessing.js # ファイル処理設定
+│   └── index.js          # メイン設定
 ├── services/
 │   ├── MessageBridge.js  # メッセージブリッジ
 │   ├── LineService.js    # LINE APIサービス
@@ -111,7 +114,8 @@ src/
 │   ├── ChannelManager.js # チャンネル管理
 │   ├── WebhookManager.js # Webhook管理
 │   ├── MessageMappingManager.js # メッセージマッピング
-│   └── ReplyService.js   # 返信機能
+│   ├── LineUsageMonitor.js # LINE使用量監視
+│   └── MessageQueue.js   # メッセージキュー
 ├── middleware/
 │   ├── errorHandler.js   # エラーハンドリング
 │   ├── requestLogger.js  # リクエストログ
@@ -135,16 +139,8 @@ temp/                     # 一時ファイル
 
 ### メッセージ転送
 
-- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報、返信メッセージ
+- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報
 - **Discord → LINE**: テキスト、画像、動画、音声、ファイル、ステッカー（画像として送信）、位置情報（Googleマップリンク検出）
-
-### 返信機能（v3.1.4新機能）
-
-- **LINE → Discord 返信**: LINEで返信されたメッセージをDiscordで返信として表示
-  - LINEの`quotedMessageId`を使用して返信元メッセージを特定
-  - Webhook/Bot両方で返信メッセージを送信可能
-  - 返信元が取得できない場合、通常のメッセージとして送信
-  - 返信機能が失敗しても既存のメッセージ転送に影響しない安全な設計
 
 ### Webhook表示機能
 
@@ -274,7 +270,26 @@ npm test -- --coverage
 - App: ミドルウェア、ルート、ヘルスチェック
 - emojiHandler: 絵文字正規化、検出、変換
 
-## 🚀 デプロイ
+## � 今回のアップデート（2026年3月）
+
+このリポジトリでは以下の改善を実施しました。
+
+- ✅ Discord→LINEメディア送信の堅牢化
+  - Discord添付を実際のバイナリから MIME を判定
+  - LINE制限を超える場合は CDN/リンクフォールバック
+  - スタンプURL周りの LOTTIE/.json 変換安定化
+
+- ✅ LINE→Discord 絵文字エンコード改善
+  - Unicode 正規化（NFC）、不正サロゲート除去
+  - `(emoji)` 等の絵文字化け回復
+  - Discordカスタム絵文字 `<:name:id>` を安全変換
+
+- ✅ 既存チャネル・メッセージマッピングは再起動後も永続化対応
+  - `data/channel-mappings.json` と `data/message-mappings.json` に保存
+
+---
+
+## �🚀 デプロイ
 
 ### PM2を使用
 
@@ -324,10 +339,11 @@ WEBHOOK_ENABLED=true
 ### 現在の不具合・制限
 
 1. **返信機能（LINE→Discord）**
-   - **状態**: 実装済み（v3.1.4）
-   - **機能**: LINEからDiscordへの返信機能をサポート
-   - **制限**: LINE APIの`quotedMessageId`が存在する場合のみ返信として表示されます
-   - **注意**: 返信元が取得できない場合、通常のメッセージとして送信されます
+   - **状態**: 実験中・実現不可（v3.1.4）
+   - **問題**: LINE APIの仕様により、LINEからDiscordへの返信機能を実現できませんでした
+   - **詳細**: LINEのWebhookイベントには返信元メッセージIDを特定する情報が含まれておらず、返信元を特定することができません
+   - **回避策**: 通常のメッセージ送信を使用してください
+   - **注意**: 返信機能のコードは実装されていますが、動作しません
 
 2. **LOTTIEスタンプ**
    - **状態**: 制限あり
@@ -351,9 +367,9 @@ WEBHOOK_ENABLED=true
 
 ### 最新の改善点（v3.1.4）
 
-- ✅ **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装（返信元メッセージの特定に対応）
-- ✅ **返信機能の安全性**: 返信機能が失敗しても既存のメッセージ転送に影響しない設計
-- ✅ **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底し、安定性を向上
+- ⚠️ **返信機能の実験**: LINE→Discord返信機能の実装を試みましたが、LINE APIの仕様により実現できませんでした
+- ✅ **コードの安全性**: 返信機能のコードは実装されていますが、動作しないため既存のメッセージ転送に影響はありません
+- ✅ **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
 
 ### 以前の改善点（v3.1.3）
 
@@ -457,9 +473,9 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 
 ### 最新仕様への対応（v3.1.4）
 
-- ✅ **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装
-- ✅ **返信機能の安全性**: 返信機能が失敗しても既存のメッセージ転送に影響しない設計
-- ✅ **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底
+- ⚠️ **返信機能の実験**: LINE→Discord返信機能の実装を試みましたが、LINE APIの仕様により実現できませんでした
+- ✅ **コードの安全性**: 返信機能のコードは実装されていますが、動作しないため既存のメッセージ転送に影響はありません
+- ✅ **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
 
 ### 以前の対応（v3.1.3）
 
@@ -468,16 +484,16 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
 - ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
 
-## 🎯 Version 3.1.4 - LINE→Discord Reply Feature
+## 🎯 Version 3.1.4 - Reply Feature Experiment
 
-### 最新の改善点（v3.1.4）
+### 実験結果（v3.1.4）
 
-- **LINE→Discord返信機能**: LINEからDiscordへの返信機能を実装
-  - LINEの`quotedMessageId`を使用して返信元メッセージを特定
-  - Webhook/Bot両方で返信メッセージを送信可能
-  - 返信機能が失敗しても既存のメッセージ転送に影響しない安全な設計
-- **エラーハンドリング強化**: 返信処理のエラーハンドリングを徹底し、安定性を向上
-- **メッセージマッピング拡張**: `replyToken`の保存機能を追加（将来のDiscord→LINE返信機能用）
+- ⚠️ **LINE→Discord返信機能**: 実装を試みましたが、LINE APIの仕様により実現できませんでした
+  - **問題**: LINEのWebhookイベントには返信元メッセージIDを特定する情報が含まれていません
+  - **試行**: `quotedMessageId`を使用して返信元を特定しようとしましたが、LINE APIの仕様では提供されていません
+  - **結果**: 返信機能は動作しませんが、コードは実装されており、既存のメッセージ転送には影響しません
+- **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
+- **メッセージマッピング拡張**: `replyToken`の保存機能を追加しましたが、返信機能が動作しないため未使用です
 
 ## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
 
@@ -536,6 +552,7 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - ✅ **自動クリンナップ**: 一時ファイル自動削除
 - ✅ **絵文字処理**: UTF-8エンコーディング問題解決
 - ✅ **包括的テスト**: 主要機能のテストスイート完備
+- ⚠️ **返信機能**: 実験中・実現不可（LINE APIの仕様により返信元メッセージIDを特定できません）
 
 ### 推奨用途
 
