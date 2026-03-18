@@ -44,6 +44,7 @@ class MediaService {
     this.cleanupTimer = setInterval(() => {
       this.cleanupTempFiles();
     }, this.cleanupInterval);
+    this.cleanupTimer.unref?.();
     
     logger.info('Temp file cleanup timer started', {
       interval: this.cleanupInterval / 1000 / 60, // 分単位

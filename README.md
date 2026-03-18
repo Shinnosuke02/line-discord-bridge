@@ -117,8 +117,7 @@ src/
 
 data/                     # データファイル
 ├── channel-mappings.json # チャンネルマッピング
-├── message-mappings.json # メッセージマッピング
-└── reply-mappings.json  # 返信マッピング
+└── message-mappings.json # メッセージ/返信マッピング
 
 logs/                     # ログファイル
 uploads/                  # アップロードファイル
@@ -473,16 +472,14 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
 - ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
 
-## 🎯 Version 3.1.4 - Reply Feature Experiment
+## 🎯 Reply Bridge Status
 
-### 実験結果（v3.1.4）
+### 現在の実装方針
 
-- ⚠️ **LINE→Discord返信機能**: 実装を試みましたが、LINE APIの仕様により実現できませんでした
-  - **問題**: LINEのWebhookイベントには返信元メッセージIDを特定する情報が含まれていません
-  - **試行**: `quotedMessageId`を使用して返信元を特定しようとしましたが、LINE APIの仕様では提供されていません
-  - **結果**: 返信機能は動作しませんが、コードは実装されており、既存のメッセージ転送には影響しません
-- **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
-- **メッセージマッピング拡張**: `replyToken`の保存機能を追加しましたが、返信機能が動作しないため未使用です
+- ✅ **LINE→Discord返信機能**: `quotedMessageId` と Discord の reply reference を利用して連携
+- ✅ **Discord→LINE返信機能**: LINE Messaging API の `quoteToken` を利用して連携
+- ⚠️ **Discord→LINEはメッセージ単位の追跡が必要**: 返信対象を維持するため、通常時より細かいマッピングを保存
+- ⚠️ **リアクション相互通信**: Discord 側イベントは取得可能ですが、LINE Messaging API 側の公開仕様不足のため既定では無効
 
 ## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
 

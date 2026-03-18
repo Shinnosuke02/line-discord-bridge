@@ -134,14 +134,6 @@ class WebhookManager {
         files: message.files || []
       };
 
-      // 返信先メッセージIDが指定されている場合、返信として送信
-      if (replyToMessageId) {
-        webhookMessage.reply = {
-          messageReference: replyToMessageId,
-          failIfNotExists: false
-        };
-      }
-
       logger.debug('Sending webhook message', {
         channelId,
         username,
@@ -151,9 +143,21 @@ class WebhookManager {
         replyToMessageId
       });
 
-      const sentMessage = replyToMessageId
-        ? await this.sendReplyViaRest(webhook, webhookMessage, replyToMessageId)
-        : await webhook.send(webhookMessage);
+      let sentMessage;
+      if (replyToMessageId) {
+        try {
+          sentMessage = await this.sendReplyViaRest(webhook, webhookMessage, replyToMessageId);
+        } catch (replyError) {
+          logger.warn('Failed to send webhook reply, falling back to normal webhook message', {
+            channelId,
+            replyToMessageId,
+            error: replyError.message
+          });
+          sentMessage = await webhook.send(webhookMessage);
+        }
+      } else {
+        sentMessage = await webhook.send(webhookMessage);
+      }
 
       logger.debug('Message sent via webhook', {
         channelId,

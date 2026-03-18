@@ -295,15 +295,15 @@ class MessageBridge {
   async processDiscordToLine(message, lineUserId) {
     try {
       let lineMessageId = null;
-      let lineQuoteToken = null;
       const lineSendContext = await this.featureManager.resolveLineSendContext(message);
+      const trackedLineService = this.createTrackedLineService(lineUserId, lineSendContext);
 
       // 添付ファイルの処理
       if (message.attachments?.size > 0) {
         const results = await this.mediaService.processDiscordAttachments(
           Array.from(message.attachments.values()),
           lineUserId,
-          this.lineService
+          trackedLineService
         );
         if (results.length > 0 && results[0].lineMessageId) {
           lineMessageId = results[0].lineMessageId;
@@ -324,15 +324,13 @@ class MessageBridge {
             latitude: locationResult.latitude,
             longitude: locationResult.longitude
           };
-          const outboundMessage = this.featureManager.applyLineSendContext(lineMessage, lineSendContext);
           
           // 月間制限チェック
-          const limitCheck = lineLimitHandler.shouldLimitMessage(outboundMessage);
+          const limitCheck = lineLimitHandler.shouldLimitMessage(lineMessage);
           if (limitCheck.allowed) {
-            const result = await this.lineService.pushMessage(lineUserId, outboundMessage);
+            const result = await trackedLineService.pushMessage(lineUserId, lineMessage);
             if (result?.messageId) {
               lineMessageId = result.messageId;
-              lineQuoteToken = result.quoteToken || null;
               lineLimitHandler.recordMessageSent();
             }
           } else {
@@ -358,7 +356,6 @@ class MessageBridge {
               const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
               if (textResult?.messageId) {
                 lineMessageId = textResult.messageId;
-                lineQuoteToken = textResult.quoteToken || lineQuoteToken;
               }
             }
             
@@ -370,14 +367,12 @@ class MessageBridge {
               latitude: googleMapsResult.latitude,
               longitude: googleMapsResult.longitude
             };
-            const outboundLocationMessage = this.featureManager.applyLineSendContext(locationMessage, lineSendContext);
             
-            const limitCheck = lineLimitHandler.shouldLimitMessage(outboundLocationMessage);
+            const limitCheck = lineLimitHandler.shouldLimitMessage(locationMessage);
             if (limitCheck.allowed) {
-              const locationResult = await this.lineService.pushMessage(lineUserId, outboundLocationMessage);
+              const locationResult = await trackedLineService.pushMessage(lineUserId, locationMessage);
               if (locationResult?.messageId) {
                 lineMessageId = locationResult.messageId;
-                lineQuoteToken = locationResult.quoteToken || lineQuoteToken;
                 lineLimitHandler.recordMessageSent();
               }
             } else {
@@ -394,7 +389,6 @@ class MessageBridge {
             const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
             if (textResult?.messageId) {
               lineMessageId = textResult.messageId;
-              lineQuoteToken = textResult.quoteToken || lineQuoteToken;
             }
           }
         }
@@ -405,7 +399,7 @@ class MessageBridge {
         const results = await this.mediaService.processDiscordStickers(
           Array.from(message.stickers.values()),
           lineUserId,
-          this.lineService
+          trackedLineService
         );
         if (results.length > 0 && results[0].lineMessageId) {
           lineMessageId = results[0].lineMessageId;
@@ -418,10 +412,7 @@ class MessageBridge {
           message.id,
           lineMessageId,
           lineUserId,
-          message.channelId,
-          {
-            quoteToken: lineQuoteToken
-          }
+          message.channelId
         );
       }
 
@@ -884,6 +875,22 @@ class MessageBridge {
     return result;
   }
 
+  createTrackedLineService(lineUserId, lineSendContext = {}) {
+    return {
+      ...this.lineService,
+      pushMessage: async (targetUserId, message) => {
+        if (targetUserId !== lineUserId) {
+          return this.lineService.pushMessage(targetUserId, message);
+        }
+
+        return this.lineService.pushMessage(
+          targetUserId,
+          this.featureManager.applyLineSendContext(message, lineSendContext)
+        );
+      }
+    };
+  }
+
   /**
    * LINE使用量監視を開始
    */
@@ -965,7 +972,7 @@ class MessageBridge {
   async stop() {
     try {
       // 全てのバッチを強制送信
-      this.messageBatcher.flushAllBatches();
+      await this.messageBatcher.flushAllBatches();
       
       if (this.webhookManager) {
         await this.webhookManager.stop();

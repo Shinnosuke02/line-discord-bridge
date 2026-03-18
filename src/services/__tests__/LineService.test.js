@@ -18,7 +18,8 @@ jest.mock('@line/bot-sdk', () => ({
     pushMessage: jest.fn(),
     replyMessage: jest.fn(),
     getProfile: jest.fn(),
-    getGroupSummary: jest.fn()
+    getGroupSummary: jest.fn(),
+    getGroupMemberProfile: jest.fn()
   }))
 }));
 
@@ -69,13 +70,13 @@ describe('LineService', () => {
   });
 
   describe('プロフィール取得', () => {
-    test('getProfileが正常に動作する', async () => {
+    test('getUserProfileが正常に動作する', async () => {
       const userId = 'test-user';
       const mockProfile = { displayName: 'Test User' };
       
       lineService.client.getProfile.mockResolvedValue(mockProfile);
 
-      const result = await lineService.getProfile(userId);
+      const result = await lineService.getUserProfile(userId);
       
       expect(lineService.client.getProfile).toHaveBeenCalledWith(userId);
       expect(result).toEqual(mockProfile);

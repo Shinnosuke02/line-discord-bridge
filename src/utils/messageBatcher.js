@@ -21,8 +21,14 @@ class MessageBatcher {
     // テキストメッセージのみバッチング対象
     if (message.type !== 'text') {
       // テキスト以外は即座に送信
-      this.flushBatch(userId);
-      sendCallback([message]);
+      void this.flushBatch(userId);
+      void Promise.resolve(sendCallback([message])).catch((error) => {
+        logger.error('Failed to send non-batched message', {
+          userId,
+          messageType: message.type,
+          error: error.message
+        });
+      });
       return;
     }
 
@@ -54,8 +60,9 @@ class MessageBatcher {
     // タイムアウトを設定（最初のメッセージのみ）
     if (batch.messages.length === 1) {
       batch.timeout = setTimeout(() => {
-        this.flushBatch(userId);
+        void this.flushBatch(userId);
       }, this.batchTimeout);
+      batch.timeout.unref?.();
     }
   }
 
@@ -63,7 +70,7 @@ class MessageBatcher {
    * バッチを送信
    * @param {string} userId - LINEユーザーID
    */
-  flushBatch(userId) {
+  async flushBatch(userId) {
     const batch = this.batchQueue.get(userId);
     if (!batch || batch.messages.length === 0) {
       return;
@@ -78,7 +85,12 @@ class MessageBatcher {
     const mergedMessages = this.mergeMessages(batch.messages);
     
     // 送信
-    batch.sendCallback(mergedMessages);
+    await Promise.resolve(batch.sendCallback(mergedMessages)).catch((error) => {
+      logger.error('Failed to send message batch', {
+        userId,
+        error: error.message
+      });
+    });
     
     // バッチをクリア
     this.batchQueue.delete(userId);
@@ -121,9 +133,9 @@ class MessageBatcher {
   /**
    * 全てのバッチを強制送信
    */
-  flushAllBatches() {
+  async flushAllBatches() {
     for (const userId of this.batchQueue.keys()) {
-      this.flushBatch(userId);
+      await this.flushBatch(userId);
     }
   }
 
@@ -132,7 +144,7 @@ class MessageBatcher {
    * @param {string} userId - LINEユーザーID
    */
   flushUserBatch(userId) {
-    this.flushBatch(userId);
+    return this.flushBatch(userId);
   }
 
   /**
