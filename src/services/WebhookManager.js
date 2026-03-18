@@ -135,9 +135,7 @@ class WebhookManager {
 
       // 返信先メッセージIDが指定されている場合、返信として送信
       if (replyToMessageId) {
-        webhookMessage.messageReference = {
-          messageId: replyToMessageId
-        };
+        webhookMessage.messageReference = replyToMessageId;
       }
 
       logger.debug('Sending webhook message', {
