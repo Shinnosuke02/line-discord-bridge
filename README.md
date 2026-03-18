@@ -490,6 +490,7 @@ tail -f logs/application-$(date +%Y-%m-%d).log
 - ✅ **LINE→Discord返信機能**: `quotedMessageId` と Discord の reply reference を利用して連携
 - ✅ **Discord→LINE返信機能**: LINE Messaging API の `quoteToken` を利用して連携
 - ⚠️ **Discord→LINEはメッセージ単位の追跡が必要**: 返信対象を維持するため、通常時より細かいマッピングを保存
+- ⚙️ **LINE→Discord返信表示モード**: `.env` の `LINE_TO_DISCORD_REPLY_MODE` で `webhook` / `bot-reply` を切替可能
 - ⚠️ **リアクション相互通信**: Discord 側イベントは取得可能ですが、LINE Messaging API 側の公開仕様不足のため既定では無効
 
 ## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
