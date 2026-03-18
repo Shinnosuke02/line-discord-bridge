@@ -12,7 +12,7 @@ describe('WebhookManager reply payload', () => {
     jest.clearAllMocks();
   });
 
-  test('sendMessage passes messageReference as message id string', async () => {
+  test('sendMessage passes reply metadata for webhook replies', async () => {
     const webhookSend = jest.fn().mockResolvedValue({ id: 'sent-1' });
     const manager = new WebhookManager({});
     manager.getOrCreateWebhook = jest.fn().mockResolvedValue({
@@ -33,7 +33,10 @@ describe('WebhookManager reply payload', () => {
       username: 'LINE User',
       avatarURL: 'https://example.com/avatar.png',
       files: [],
-      messageReference: 'discord-origin-1'
+      reply: {
+        messageReference: 'discord-origin-1',
+        failIfNotExists: false
+      }
     });
   });
 });
