@@ -13,6 +13,8 @@ class MessageMappingManager {
   constructor() {
     this.lineToDiscord = new Map();
     this.discordToLine = new Map();
+    this.lineOriginByDiscordMessage = new Map();
+    this.discordOriginByLineMessage = new Map();
     this.mappingFile = path.join(process.cwd(), 'data', 'message-mappings.json');
     this.isInitialized = false;
   }
@@ -43,19 +45,30 @@ class MessageMappingManager {
     try {
       const data = await fs.readFile(this.mappingFile, 'utf8');
       const mappings = JSON.parse(data);
+
+      if (!mappings || Array.isArray(mappings)) {
+        this.resetMappings();
+        logger.info('Legacy or empty message mapping format detected, starting with empty mappings');
+        return;
+      }
       
-      this.lineToDiscord.clear();
-      this.discordToLine.clear();
+      this.resetMappings();
       
       if (mappings.lineToDiscord) {
         for (const [key, value] of Object.entries(mappings.lineToDiscord)) {
           this.lineToDiscord.set(key, value);
+          if (value?.discordMessageId) {
+            this.lineOriginByDiscordMessage.set(value.discordMessageId, value);
+          }
         }
       }
       
       if (mappings.discordToLine) {
         for (const [key, value] of Object.entries(mappings.discordToLine)) {
           this.discordToLine.set(key, value);
+          if (value?.lineMessageId) {
+            this.discordOriginByLineMessage.set(value.lineMessageId, value);
+          }
         }
       }
       
@@ -67,8 +80,7 @@ class MessageMappingManager {
       if (error.code === 'ENOENT') {
         // ファイルが存在しない場合は空のマッピングで開始
         logger.info('Message mapping file not found, starting with empty mappings');
-        this.lineToDiscord.clear();
-        this.discordToLine.clear();
+        this.resetMappings();
       } else {
         logger.error('Failed to load message mappings', {
           error: error.message
@@ -114,6 +126,7 @@ class MessageMappingManager {
    */
   async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId, replyToken = null) {
     try {
+      const metadata = this.normalizeLegacyMetadata(replyToken);
       const mapping = {
         lineMessageId,
         discordMessageId,
@@ -122,15 +135,19 @@ class MessageMappingManager {
         timestamp: new Date().toISOString()
       };
       
-      // replyTokenが提供されている場合のみ保存（返信機能用）
-      if (replyToken) {
+      if (metadata.replyToken) {
         // replyTokenの有効期限は30秒（LINE API仕様）
         const replyTokenExpiry = new Date(Date.now() + 30000).toISOString();
-        mapping.replyToken = replyToken;
+        mapping.replyToken = metadata.replyToken;
         mapping.replyTokenExpiry = replyTokenExpiry;
+      }
+
+      if (metadata.quoteToken) {
+        mapping.quoteToken = metadata.quoteToken;
       }
       
       this.lineToDiscord.set(lineMessageId, mapping);
+      this.lineOriginByDiscordMessage.set(discordMessageId, mapping);
       await this.saveMappings();
       
       logger.info('LINE to Discord mapping created', {
@@ -138,7 +155,8 @@ class MessageMappingManager {
         discordMessageId,
         lineUserId,
         discordChannelId,
-        hasReplyToken: !!replyToken
+        hasReplyToken: !!metadata.replyToken,
+        hasQuoteToken: !!metadata.quoteToken
       });
     } catch (error) {
       logger.error('Failed to create LINE to Discord mapping', {
@@ -159,6 +177,7 @@ class MessageMappingManager {
    */
   async mapDiscordToLine(discordMessageId, lineMessageId, lineUserId, discordChannelId) {
     try {
+      const metadata = arguments.length >= 5 ? this.normalizeLegacyMetadata(arguments[4]) : {};
       const mapping = {
         discordMessageId,
         lineMessageId,
@@ -166,15 +185,21 @@ class MessageMappingManager {
         discordChannelId,
         timestamp: new Date().toISOString()
       };
+
+      if (metadata.quoteToken) {
+        mapping.quoteToken = metadata.quoteToken;
+      }
       
       this.discordToLine.set(discordMessageId, mapping);
+      this.discordOriginByLineMessage.set(lineMessageId, mapping);
       await this.saveMappings();
       
       logger.info('Discord to LINE mapping created', {
         discordMessageId,
         lineMessageId,
         lineUserId,
-        discordChannelId
+        discordChannelId,
+        hasQuoteToken: !!metadata.quoteToken
       });
     } catch (error) {
       logger.error('Failed to create Discord to LINE mapping', {
@@ -194,6 +219,14 @@ class MessageMappingManager {
   getDiscordMessageIdForLineReply(lineMessageId) {
     const mapping = this.lineToDiscord.get(lineMessageId);
     return mapping ? mapping.discordMessageId : null;
+  }
+
+  getLineOriginByDiscordMessageId(discordMessageId) {
+    return this.lineOriginByDiscordMessage.get(discordMessageId) || null;
+  }
+
+  getDiscordOriginByLineMessageId(lineMessageId) {
+    return this.discordOriginByLineMessage.get(lineMessageId) || null;
   }
 
   /**
@@ -247,12 +280,20 @@ class MessageMappingManager {
       let removed = false;
       
       if (lineMessageId && this.lineToDiscord.has(lineMessageId)) {
+        const mapping = this.lineToDiscord.get(lineMessageId);
         this.lineToDiscord.delete(lineMessageId);
+        if (mapping?.discordMessageId) {
+          this.lineOriginByDiscordMessage.delete(mapping.discordMessageId);
+        }
         removed = true;
       }
       
       if (discordMessageId && this.discordToLine.has(discordMessageId)) {
+        const mapping = this.discordToLine.get(discordMessageId);
         this.discordToLine.delete(discordMessageId);
+        if (mapping?.lineMessageId) {
+          this.discordOriginByLineMessage.delete(mapping.lineMessageId);
+        }
         removed = true;
       }
       
@@ -289,6 +330,9 @@ class MessageMappingManager {
       for (const [lineMessageId, mapping] of this.lineToDiscord) {
         if (new Date(mapping.timestamp) < cutoffDate) {
           this.lineToDiscord.delete(lineMessageId);
+          if (mapping?.discordMessageId) {
+            this.lineOriginByDiscordMessage.delete(mapping.discordMessageId);
+          }
           removedCount++;
         }
       }
@@ -297,6 +341,9 @@ class MessageMappingManager {
       for (const [discordMessageId, mapping] of this.discordToLine) {
         if (new Date(mapping.timestamp) < cutoffDate) {
           this.discordToLine.delete(discordMessageId);
+          if (mapping?.lineMessageId) {
+            this.discordOriginByLineMessage.delete(mapping.lineMessageId);
+          }
           removedCount++;
         }
       }
@@ -316,6 +363,25 @@ class MessageMappingManager {
       });
       return 0;
     }
+  }
+
+  resetMappings() {
+    this.lineToDiscord.clear();
+    this.discordToLine.clear();
+    this.lineOriginByDiscordMessage.clear();
+    this.discordOriginByLineMessage.clear();
+  }
+
+  normalizeLegacyMetadata(metadata) {
+    if (!metadata) {
+      return {};
+    }
+
+    if (typeof metadata === 'string') {
+      return { replyToken: metadata };
+    }
+
+    return metadata;
   }
 
   /**

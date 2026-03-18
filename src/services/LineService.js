@@ -108,9 +108,10 @@ class LineService {
     try {
       const messageArray = Array.isArray(messages) ? messages : [messages];
       
-      const result = await this.executeWithRetry(async () => {
+      const rawResult = await this.executeWithRetry(async () => {
         return await this.client.pushMessage(userId, messageArray);
       });
+      const result = this.normalizeSendResult(rawResult);
       
       logger.debug('LINE message sent', {
         userId,
@@ -139,9 +140,10 @@ class LineService {
     try {
       const messageArray = Array.isArray(messages) ? messages : [messages];
       
-      const result = await this.executeWithRetry(async () => {
+      const rawResult = await this.executeWithRetry(async () => {
         return await this.client.replyMessage(replyToken, messageArray);
       });
+      const result = this.normalizeSendResult(rawResult);
       
       logger.debug('LINE reply sent', {
         replyToken,
@@ -399,6 +401,21 @@ class LineService {
       });
       throw error;
     }
+  }
+
+  normalizeSendResult(result) {
+    const firstSentMessage = result?.sentMessages?.[0] || null;
+
+    if (!firstSentMessage) {
+      return result || {};
+    }
+
+    return {
+      ...result,
+      messageId: result?.messageId || firstSentMessage.id || null,
+      quoteToken: result?.quoteToken || firstSentMessage.quoteToken || null,
+      sentMessage: firstSentMessage
+    };
   }
 }
 
