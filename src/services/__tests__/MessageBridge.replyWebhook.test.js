@@ -75,16 +75,21 @@ jest.mock('../../middleware/lineLimitHandler', () => ({
 
 jest.mock('../../utils/logger');
 
+const config = require('../../config');
 const MessageBridge = require('../MessageBridge');
 
 describe('MessageBridge webhook reply routing', () => {
   let messageBridge;
+  let originalReplyMode;
 
   beforeEach(() => {
+    originalReplyMode = config.features.lineToDiscordReplyMode;
+    config.features.lineToDiscordReplyMode = 'webhook';
     messageBridge = new MessageBridge();
   });
 
   afterEach(() => {
+    config.features.lineToDiscordReplyMode = originalReplyMode;
     jest.clearAllMocks();
   });
 
@@ -113,5 +118,63 @@ describe('MessageBridge webhook reply routing', () => {
       'discord-origin-1'
     );
     expect(result).toEqual({ id: 'discord-reply-1' });
+  });
+
+  test('sendToDiscord can switch LINE replies to bot-reply mode', async () => {
+    config.features.lineToDiscordReplyMode = 'bot-reply';
+    const replyPayloads = [];
+    const mockOriginalMessage = {
+      content: 'original line content',
+      member: {
+        displayName: 'Original User'
+      },
+      author: {
+        username: 'Original User',
+        displayAvatarURL: jest.fn(() => 'https://example.com/original.png')
+      }
+    };
+    const mockChannel = {
+      messages: {
+        fetch: jest.fn().mockResolvedValue(mockOriginalMessage)
+      },
+      send: jest.fn().mockImplementation(async (payload) => {
+        replyPayloads.push(payload);
+        return { id: 'discord-bot-reply-1' };
+      })
+    };
+    messageBridge.discord.channels.fetch.mockResolvedValue(mockChannel);
+
+    const result = await messageBridge.sendToDiscord(
+      'channel-1',
+      { content: 'reply body' },
+      {
+        useWebhook: true,
+        username: 'LINE User',
+        avatarUrl: 'https://example.com/avatar.png',
+        replyToMessageId: 'discord-origin-1'
+      }
+    );
+
+    expect(mockChannel.messages.fetch).toHaveBeenCalledWith('discord-origin-1');
+    expect(mockChannel.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'reply body',
+        reply: {
+          messageReference: 'discord-origin-1',
+          failIfNotExists: false
+        },
+        embeds: [
+          expect.objectContaining({
+            author: {
+              name: 'Replying to Original User',
+              icon_url: 'https://example.com/original.png'
+            },
+            description: 'original line content'
+          })
+        ]
+      })
+    );
+    expect(result).toEqual({ id: 'discord-bot-reply-1' });
+    expect(replyPayloads).toHaveLength(1);
   });
 });

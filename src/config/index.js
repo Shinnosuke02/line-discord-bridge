@@ -102,7 +102,8 @@ const config = {
   // ブリッジ機能設定
   features: {
     replyBridgeEnabled: process.env.BRIDGE_REPLY_ENABLED !== 'false',
-    reactionBridgeEnabled: process.env.BRIDGE_REACTION_ENABLED === 'true'
+    reactionBridgeEnabled: process.env.BRIDGE_REACTION_ENABLED === 'true',
+    lineToDiscordReplyMode: process.env.LINE_TO_DISCORD_REPLY_MODE || 'webhook'
   },
 
   // ログ設定
