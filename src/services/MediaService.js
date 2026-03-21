@@ -8,9 +8,13 @@ const sharp = require('sharp');
 const mimeTypes = require('mime-types');
 const fs = require('fs').promises;
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const config = require('../config');
 const logger = require('../utils/logger');
 const fileUtils = require('../utils/fileUtils');
+
+const execFileAsync = promisify(execFile);
 
 /**
  * メディアサービスクラス
@@ -306,76 +310,72 @@ class MediaService {
     try {
       const packageId = message.packageId;
       const stickerId = message.stickerId;
+      const stickerResourceType = message.stickerResourceType || 'STATIC';
       
       logger.info('Processing LINE sticker', {
         messageId: message.id,
         packageId: packageId,
-        stickerId: stickerId
-      });
-      
-      // LINEのスタンプ静的画像URL（一般的な表示用）
-      const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone/sticker@2x.png`;
-      
-      logger.debug('Downloading sticker image', {
         stickerId: stickerId,
-        url: stickerUrl
+        stickerResourceType
       });
-      
-      const resp = await axios.get(stickerUrl, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(resp.data);
-      
-      logger.debug('Sticker downloaded successfully', {
-        stickerId: stickerId,
-        bufferSize: buffer.length,
-        contentType: resp.headers['content-type']
-      });
-      
-      // 画像変換処理を追加（Discord対応のため）
-      let processedBuffer = buffer;
-      const fileTypeInfo = await this.detectFileType(buffer);
-      
-      if (fileTypeInfo) {
-        logger.debug('Detected file type', {
-          stickerId: stickerId,
-          mimeType: fileTypeInfo.mime,
-          extension: fileTypeInfo.ext
-        });
-        
-        // APNGの場合は静止画PNGに変換
-        if (fileTypeInfo.mime === 'image/apng') {
-          logger.info('Converting APNG to static PNG', {
-            stickerId: stickerId
+
+      const stickerAsset = await this.downloadLineStickerAsset(stickerId, stickerResourceType);
+      let processedBuffer = stickerAsset.buffer;
+      let fileName = `sticker_${stickerId}.png`;
+      const isAnimatedSticker = this.isAnimatedStickerResourceType(stickerResourceType);
+
+      if (isAnimatedSticker && this.isAnimatedPngBuffer(stickerAsset.buffer)) {
+        try {
+          processedBuffer = await this.convertAnimatedStickerToGif(stickerAsset.buffer, stickerId);
+          fileName = `sticker_${stickerId}.gif`;
+          logger.info('Converted LINE animated sticker to GIF for Discord', {
+            stickerId,
+            stickerResourceType
           });
-          processedBuffer = await sharp(buffer, { animated: true }).png().toBuffer();
-        }
-        // WebPの場合はPNGに変換（Discord対応）
-        else if (fileTypeInfo.mime === 'image/webp') {
-          logger.info('Converting WebP to PNG', {
-            stickerId: stickerId
+        } catch (conversionError) {
+          logger.warn('Failed to convert animated LINE sticker to GIF, falling back to static frame', {
+            stickerId,
+            stickerResourceType,
+            error: conversionError.message
           });
-          processedBuffer = await sharp(buffer).png().toBuffer();
+          processedBuffer = await sharp(stickerAsset.buffer, { animated: true }).png().toBuffer();
         }
-        // その他の形式もPNGに統一
-        else if (!fileTypeInfo.mime.startsWith('image/png')) {
-          logger.info('Converting to PNG format', {
+      } else {
+        const fileTypeInfo = await this.detectFileType(stickerAsset.buffer);
+
+        if (fileTypeInfo) {
+          logger.debug('Detected file type', {
             stickerId: stickerId,
-            originalMime: fileTypeInfo.mime
+            mimeType: fileTypeInfo.mime,
+            extension: fileTypeInfo.ext
           });
-          processedBuffer = await sharp(buffer).png().toBuffer();
+
+          if (fileTypeInfo.mime === 'image/webp') {
+            logger.info('Converting WebP to PNG', {
+              stickerId: stickerId
+            });
+            processedBuffer = await sharp(stickerAsset.buffer).png().toBuffer();
+          } else if (!fileTypeInfo.mime.startsWith('image/png')) {
+            logger.info('Converting to PNG format', {
+              stickerId: stickerId,
+              originalMime: fileTypeInfo.mime
+            });
+            processedBuffer = await sharp(stickerAsset.buffer).png().toBuffer();
+          }
         }
       }
-      
-      // シンプルなファイル名を使用（昨日時点の処理に合わせる）
-      const fileName = `sticker_${stickerId}.png`;
+
       const attachment = new AttachmentBuilder(processedBuffer, { name: fileName });
       
       logger.info('LINE sticker processed successfully', {
         messageId: message.id,
         stickerId: stickerId,
         fileName: fileName,
-        originalBufferSize: buffer.length,
+        stickerResourceType,
+        originalBufferSize: stickerAsset.buffer.length,
         processedBufferSize: processedBuffer.length,
-        converted: buffer.length !== processedBuffer.length
+        converted: stickerAsset.buffer.length !== processedBuffer.length,
+        sourceUrl: stickerAsset.url
       });
       
       return {
@@ -393,6 +393,91 @@ class MediaService {
       
       // フォールバックメッセージ
       return { content: '😊 Sticker message' };
+    }
+  }
+
+  isAnimatedStickerResourceType(stickerResourceType = '') {
+    return ['ANIMATION', 'ANIMATION_SOUND', 'POPUP', 'POPUP_SOUND'].includes(stickerResourceType);
+  }
+
+  isAnimatedPngBuffer(buffer) {
+    return Buffer.isBuffer(buffer) && buffer.includes(Buffer.from('acTL'));
+  }
+
+  getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
+    const baseUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone`;
+    const urls = [];
+
+    if (this.isAnimatedStickerResourceType(stickerResourceType)) {
+      urls.push(`${baseUrl}/sticker_animation@2x.png`);
+    }
+
+    urls.push(`${baseUrl}/sticker@2x.png`);
+    return urls;
+  }
+
+  async downloadLineStickerAsset(stickerId, stickerResourceType = 'STATIC') {
+    const candidateUrls = this.getLineStickerAssetUrls(stickerId, stickerResourceType);
+    let lastError = null;
+
+    for (const url of candidateUrls) {
+      try {
+        logger.debug('Downloading sticker image', {
+          stickerId,
+          stickerResourceType,
+          url
+        });
+
+        const response = await axios.get(url, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(response.data);
+
+        logger.debug('Sticker downloaded successfully', {
+          stickerId,
+          stickerResourceType,
+          url,
+          bufferSize: buffer.length,
+          contentType: response.headers['content-type']
+        });
+
+        return {
+          buffer,
+          url
+        };
+      } catch (error) {
+        lastError = error;
+        logger.warn('Failed to download LINE sticker candidate asset', {
+          stickerId,
+          stickerResourceType,
+          url,
+          error: error.message
+        });
+      }
+    }
+
+    throw lastError || new Error(`Failed to download sticker asset for ${stickerId}`);
+  }
+
+  async convertAnimatedStickerToGif(buffer, stickerId) {
+    const inputPath = path.join(this.tempDir, `line_sticker_${stickerId}_${Date.now()}.png`);
+    const outputPath = path.join(this.tempDir, `line_sticker_${stickerId}_${Date.now()}.gif`);
+
+    try {
+      await fs.writeFile(inputPath, buffer);
+      await execFileAsync('ffmpeg', [
+        '-y',
+        '-i',
+        inputPath,
+        '-vf',
+        'split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128',
+        outputPath
+      ]);
+
+      return await fs.readFile(outputPath);
+    } finally {
+      await Promise.allSettled([
+        fs.unlink(inputPath),
+        fs.unlink(outputPath)
+      ]);
     }
   }
 

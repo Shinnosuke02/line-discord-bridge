@@ -19,6 +19,9 @@ jest.mock('axios');
 jest.mock('sharp');
 jest.mock('file-type');
 jest.mock('mime-types');
+jest.mock('child_process', () => ({
+  execFile: jest.fn()
+}));
 
 describe('MediaService', () => {
   let mediaService;
@@ -216,6 +219,72 @@ describe('MediaService', () => {
   });
 
   describe('ファイル名処理', () => {
+    test('LINEアニメーションスタンプはDiscord向けにGIFへ変換される', async () => {
+      const axios = require('axios');
+      const animatedBuffer = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4E, 0x47]),
+        Buffer.from('acTL'),
+        Buffer.from('animated')
+      ]);
+      const gifBuffer = Buffer.from('GIF89a');
+
+      axios.get.mockResolvedValue({
+        data: animatedBuffer,
+        headers: { 'content-type': 'image/png' }
+      });
+
+      jest.spyOn(mediaService, 'convertAnimatedStickerToGif').mockResolvedValue(gifBuffer);
+
+      const result = await mediaService.processLineSticker({
+        id: 'msg-sticker-1',
+        packageId: '11538',
+        stickerId: '51626501',
+        stickerResourceType: 'ANIMATION'
+      });
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://stickershop.line-scdn.net/stickershop/v1/sticker/51626501/iPhone/sticker_animation@2x.png',
+        { responseType: 'arraybuffer' }
+      );
+      expect(mediaService.convertAnimatedStickerToGif).toHaveBeenCalledWith(animatedBuffer, '51626501');
+      expect(result.content).toBe('');
+      expect(result.files[0].name).toBe('sticker_51626501.gif');
+      expect(result.files[0].attachment).toBe(gifBuffer);
+    });
+
+    test('LINEアニメーションスタンプ取得失敗時は静止画URLにフォールバックする', async () => {
+      const axios = require('axios');
+      const staticBuffer = Buffer.from('static png');
+
+      axios.get
+        .mockRejectedValueOnce(new Error('404 Not Found'))
+        .mockResolvedValueOnce({
+          data: staticBuffer,
+          headers: { 'content-type': 'image/png' }
+        });
+
+      mockDetectFileType.mockResolvedValue({ mime: 'image/png', ext: 'png' });
+
+      const result = await mediaService.processLineSticker({
+        id: 'msg-sticker-2',
+        packageId: '11538',
+        stickerId: '51626501',
+        stickerResourceType: 'ANIMATION'
+      });
+
+      expect(axios.get).toHaveBeenNthCalledWith(
+        1,
+        'https://stickershop.line-scdn.net/stickershop/v1/sticker/51626501/iPhone/sticker_animation@2x.png',
+        { responseType: 'arraybuffer' }
+      );
+      expect(axios.get).toHaveBeenNthCalledWith(
+        2,
+        'https://stickershop.line-scdn.net/stickershop/v1/sticker/51626501/iPhone/sticker@2x.png',
+        { responseType: 'arraybuffer' }
+      );
+      expect(result.files[0].name).toBe('sticker_51626501.png');
+    });
+
     test('LINE⇒Discordで重複拡張子が回避される', async () => {
       const lineMessage = {
         id: 'msg123',
