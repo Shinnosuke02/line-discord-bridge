@@ -19,6 +19,9 @@ class App {
     this.app = express();
     this.messageBridge = null;
     this.server = null;
+    this.isShuttingDown = false;
+    this.shutdownHandlersRegistered = false;
+    this.shutdownHandlers = null;
   }
 
   /**
@@ -37,9 +40,6 @@ class App {
       
       // MessageBridgeの初期化
       await this.initializeMessageBridge();
-      
-      // 終了時のクリーンアップを設定
-      this.setupGracefulShutdown();
       
       logger.info('Application initialized successfully');
     } catch (error) {
@@ -223,25 +223,21 @@ class App {
    * グレースフルシャットダウンの設定
    */
   setupGracefulShutdown() {
+    if (this.shutdownHandlersRegistered) {
+      return;
+    }
+
     const shutdown = async (signal) => {
+      if (this.isShuttingDown) {
+        logger.warn('Shutdown already in progress', { signal });
+        return;
+      }
+
+      this.isShuttingDown = true;
       logger.info(`Received ${signal}, shutting down gracefully`);
       
       try {
-        // MessageBridgeの停止
-        if (this.messageBridge) {
-          await this.messageBridge.stop();
-          logger.info('MessageBridge stopped');
-        }
-        
-        // サーバーの停止
-        if (this.server) {
-          await new Promise((resolve) => {
-            this.server.close(() => {
-              logger.info('HTTP server closed');
-              resolve();
-            });
-          });
-        }
+        await this.stop();
         
         logger.info('Graceful shutdown completed');
         process.exit(0);
@@ -254,26 +250,35 @@ class App {
       }
     };
 
-    // シグナルハンドラーの設定
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    
-    // 未処理の例外とリジェクトをキャッチ
-    process.on('uncaughtException', (error) => {
+    const onSigterm = () => shutdown('SIGTERM');
+    const onSigint = () => shutdown('SIGINT');
+    const onUncaughtException = (error) => {
       logger.error('Uncaught exception', {
         error: error.message,
         stack: error.stack
       });
       shutdown('uncaughtException');
-    });
-    
-    process.on('unhandledRejection', (reason, promise) => {
+    };
+    const onUnhandledRejection = (reason, promise) => {
       logger.error('Unhandled rejection', {
         reason: reason,
         promise: promise
       });
       shutdown('unhandledRejection');
-    });
+    };
+
+    this.shutdownHandlers = {
+      onSigterm,
+      onSigint,
+      onUncaughtException,
+      onUnhandledRejection
+    };
+
+    process.on('SIGTERM', onSigterm);
+    process.on('SIGINT', onSigint);
+    process.on('uncaughtException', onUncaughtException);
+    process.on('unhandledRejection', onUnhandledRejection);
+    this.shutdownHandlersRegistered = true;
   }
 
   /**
@@ -285,10 +290,12 @@ class App {
         await new Promise((resolve) => {
           this.server.close(resolve);
         });
+        this.server = null;
       }
       
       if (this.messageBridge) {
         await this.messageBridge.stop();
+        this.messageBridge = null;
       }
       
       logger.info('Application stopped');
@@ -297,6 +304,8 @@ class App {
         error: error.message
       });
       throw error;
+    } finally {
+      this.isShuttingDown = false;
     }
   }
 }

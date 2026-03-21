@@ -28,8 +28,10 @@ MessageBridge.mockImplementation(() => mockMessageBridge);
 
 describe('App', () => {
   let app;
+  let processOnSpy;
 
   beforeEach(() => {
+    processOnSpy = jest.spyOn(process, 'on').mockImplementation(() => process);
     app = new App();
     jest.clearAllMocks();
   });
@@ -38,6 +40,7 @@ describe('App', () => {
     if (app.server) {
       app.server.close();
     }
+    processOnSpy.mockRestore();
   });
 
   describe('初期化', () => {
@@ -85,6 +88,16 @@ describe('App', () => {
   describe('グレースフルシャットダウン', () => {
     test('setupGracefulShutdownが正常に動作する', () => {
       expect(() => app.setupGracefulShutdown()).not.toThrow();
+    });
+
+    test('setupGracefulShutdownはシグナルハンドラを重複登録しない', () => {
+      app.setupGracefulShutdown();
+      const firstCallCount = processOnSpy.mock.calls.length;
+
+      app.setupGracefulShutdown();
+
+      expect(processOnSpy).toHaveBeenCalledTimes(firstCallCount);
+      expect(app.shutdownHandlersRegistered).toBe(true);
     });
   });
 

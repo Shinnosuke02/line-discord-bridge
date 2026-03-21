@@ -5,6 +5,7 @@
 const { Client } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
+const { sleep } = require('../utils/async');
 
 /**
  * LINEサービスクラス
@@ -41,7 +42,7 @@ class LineService {
     // 1秒あたりの制限チェック
     const timeSinceLastRequest = now - this.rateLimitInfo.lastRequestTime;
     if (timeSinceLastRequest < 100) { // 100ms待機（10リクエスト/秒）
-      await new Promise(resolve => setTimeout(resolve, 100 - timeSinceLastRequest));
+      await sleep(100 - timeSinceLastRequest);
     }
     
     // 1分あたりの制限チェック
@@ -49,7 +50,7 @@ class LineService {
       const waitTime = 60000 - (now - this.rateLimitInfo.windowStart);
       if (waitTime > 0) {
         logger.warn('Rate limit reached, waiting', { waitTime });
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+        await sleep(waitTime);
         this.rateLimitInfo.windowStart = Date.now();
         this.rateLimitInfo.requestCount = 0;
       }
@@ -85,7 +86,7 @@ class LineService {
           });
           
           if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryAfter));
+            await sleep(retryAfter);
             continue;
           }
         }
@@ -124,7 +125,7 @@ class LineService {
       logger.error('Failed to send LINE message', {
         userId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -156,7 +157,7 @@ class LineService {
       logger.error('Failed to send LINE reply', {
         replyToken,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -183,7 +184,7 @@ class LineService {
       logger.error('Failed to get LINE user profile', {
         userId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -213,7 +214,7 @@ class LineService {
         groupId,
         userId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -240,7 +241,7 @@ class LineService {
       logger.error('Failed to get LINE group summary', {
         groupId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -275,7 +276,7 @@ class LineService {
       logger.error('Failed to get LINE message content', {
         messageId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -370,7 +371,7 @@ class LineService {
         userId,
         richMenuId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -397,7 +398,7 @@ class LineService {
       logger.error('Failed to unlink LINE rich menu from user', {
         userId,
         error: error.message,
-        status: error.status || error.response?.status
+        status: this.getErrorStatus(error)
       });
       throw error;
     }
@@ -416,6 +417,10 @@ class LineService {
       quoteToken: result?.quoteToken || firstSentMessage.quoteToken || null,
       sentMessage: firstSentMessage
     };
+  }
+
+  getErrorStatus(error) {
+    return error.status || error.response?.status || null;
   }
 }
 

@@ -2,7 +2,15 @@
  * アプリケーション設定
  * 環境変数から設定を読み込み、デフォルト値を提供
  */
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+const dotenvPath = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : undefined);
+dotenv.config(dotenvPath ? { path: dotenvPath } : undefined);
+
+function parseInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
 
 const config = {
   // LINE Bot設定
@@ -21,7 +29,7 @@ const config = {
 
   // サーバー設定
   server: {
-    port: parseInt(process.env.PORT) || 3000,
+    port: parseInteger(process.env.PORT, 3000),
     host: process.env.HOST || '0.0.0.0',
     environment: process.env.NODE_ENV || 'development',
     publicBaseUrl: process.env.PUBLIC_BASE_URL || ''
@@ -30,7 +38,7 @@ const config = {
   // ファイル処理設定
   file: {
     // LINE側の制限を考慮したファイルサイズ制限
-    maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024, // 5MB（LINE側制限を考慮）
+    maxFileSize: parseInteger(process.env.MAX_FILE_SIZE, 5 * 1024 * 1024), // 5MB（LINE側制限を考慮）
     // LINE側の実際の制限値
     lineLimits: {
       image: 10 * 1024 * 1024, // 10MB
@@ -76,27 +84,27 @@ const config = {
   channel: {
     autoCreate: process.env.AUTO_CREATE_CHANNELS === 'true',
     channelPrefix: process.env.CHANNEL_PREFIX || 'line-',
-    maxChannels: parseInt(process.env.MAX_CHANNELS) || 100
+    maxChannels: parseInteger(process.env.MAX_CHANNELS, 100)
   },
 
   // メディア設定
   media: {
     imageResize: {
       enabled: process.env.IMAGE_RESIZE_ENABLED === 'true',
-      maxWidth: parseInt(process.env.IMAGE_MAX_WIDTH) || 1920,
-      maxHeight: parseInt(process.env.IMAGE_MAX_HEIGHT) || 1080,
-      quality: parseInt(process.env.IMAGE_QUALITY) || 80
+      maxWidth: parseInteger(process.env.IMAGE_MAX_WIDTH, 1920),
+      maxHeight: parseInteger(process.env.IMAGE_MAX_HEIGHT, 1080),
+      quality: parseInteger(process.env.IMAGE_QUALITY, 80)
     },
     videoCompression: {
       enabled: process.env.VIDEO_COMPRESSION_ENABLED === 'false',
-      maxSize: parseInt(process.env.VIDEO_MAX_SIZE) || 50 * 1024 * 1024 // 50MB
+      maxSize: parseInteger(process.env.VIDEO_MAX_SIZE, 50 * 1024 * 1024) // 50MB
     }
   },
 
   // Webhook設定
   webhook: {
     enabled: process.env.WEBHOOK_ENABLED === 'true',
-    timeout: parseInt(process.env.WEBHOOK_TIMEOUT) || 30000
+    timeout: parseInteger(process.env.WEBHOOK_TIMEOUT, 30000)
   },
 
   // ブリッジ機能設定
@@ -112,15 +120,15 @@ const config = {
     enableConsole: process.env.LOG_CONSOLE !== 'false',
     enableFile: process.env.LOG_FILE !== 'false',
     logDir: process.env.LOG_DIR || './logs',
-    maxLogFiles: parseInt(process.env.MAX_LOG_FILES) || 14
+    maxLogFiles: parseInteger(process.env.MAX_LOG_FILES, 14)
   },
 
   // セキュリティ設定
   security: {
     rateLimit: {
       enabled: process.env.RATE_LIMIT_ENABLED === 'true',
-      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) || 15 * 60 * 1000, // 15分
-      maxRequests: parseInt(process.env.RATE_LIMIT_MAX) || 100
+      windowMs: parseInteger(process.env.RATE_LIMIT_WINDOW, 15 * 60 * 1000), // 15分
+      maxRequests: parseInteger(process.env.RATE_LIMIT_MAX, 100)
     },
     cors: {
       enabled: process.env.CORS_ENABLED === 'true',
@@ -134,14 +142,14 @@ const config = {
     path: process.env.DB_PATH || './data',
     backup: {
       enabled: process.env.DB_BACKUP_ENABLED === 'true',
-      interval: parseInt(process.env.DB_BACKUP_INTERVAL) || 24 * 60 * 60 * 1000 // 24時間
+      interval: parseInteger(process.env.DB_BACKUP_INTERVAL, 24 * 60 * 60 * 1000) // 24時間
     }
   },
 
   // メトリクス設定
   metrics: {
     enabled: process.env.METRICS_ENABLED === 'true',
-    port: parseInt(process.env.METRICS_PORT) || 9090,
+    port: parseInteger(process.env.METRICS_PORT, 9090),
     path: process.env.METRICS_PATH || '/metrics'
   },
 
@@ -149,7 +157,7 @@ const config = {
   health: {
     enabled: process.env.HEALTH_CHECK_ENABLED !== 'false',
     path: process.env.HEALTH_CHECK_PATH || '/health',
-    timeout: parseInt(process.env.HEALTH_CHECK_TIMEOUT) || 5000
+    timeout: parseInteger(process.env.HEALTH_CHECK_TIMEOUT, 5000)
   }
 };
 
@@ -183,32 +191,36 @@ function validateConfig() {
 
 // 設定の初期化
 function initializeConfig() {
+  validateConfig();
+
+  // ディレクトリの作成
+  const fs = require('fs');
+
+  const dirs = [
+    config.file.uploadPath,
+    config.file.tempPath,
+    config.logging.logDir,
+    config.database.path
+  ];
+
+  dirs.forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+
+  return config;
+}
+
+function getConfig() {
   try {
-    validateConfig();
-    
-    // ディレクトリの作成
-    const fs = require('fs');
-    const path = require('path');
-    
-    const dirs = [
-      config.file.uploadPath,
-      config.file.tempPath,
-      config.logging.logDir,
-      config.database.path
-    ];
-    
-    dirs.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-    
-    return config;
+    return initializeConfig();
   } catch (error) {
-    // ログシステムが初期化される前にエラーが発生した場合のみconsole.errorを使用
-    console.error('Failed to initialize configuration:', error.message);
-    process.exit(1);
+    error.message = `Failed to initialize configuration: ${error.message}`;
+    throw error;
   }
 }
 
-module.exports = initializeConfig();
+module.exports = getConfig();
+module.exports.initializeConfig = initializeConfig;
+module.exports.validateConfig = validateConfig;
