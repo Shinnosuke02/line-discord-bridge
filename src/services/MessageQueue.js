@@ -4,6 +4,7 @@
  */
 const MessageOptimizer = require('../utils/messageOptimizer');
 const logger = require('../utils/logger');
+const { sleep } = require('../utils/async');
 
 class MessageQueue {
   constructor() {
@@ -95,7 +96,7 @@ class MessageQueue {
       }
 
       // レート制限を避けるため少し待機
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await sleep(100);
     }
 
     this.isProcessing = false;

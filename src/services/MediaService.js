@@ -13,6 +13,10 @@ const { promisify } = require('util');
 const config = require('../config');
 const logger = require('../utils/logger');
 const fileUtils = require('../utils/fileUtils');
+const { createLineMediaProcessors } = require('./media/lineMediaProcessors');
+const {
+  getLineStickerAssetUrls,
+} = require('../utils/lineSticker');
 
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +31,12 @@ class MediaService {
     this.supportedVideoTypes = config.file.supportedVideoMimeTypes;
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
     this.supportedDocumentTypes = config.file.supportedDocumentMimeTypes;
+    this.lineMediaProcessors = createLineMediaProcessors({
+      detectFileType: (...args) => this.detectFileType(...args),
+      sanitizeFileNameForDiscord: (...args) => this.sanitizeFileNameForDiscord(...args),
+      downloadLineStickerAsset: (...args) => this.downloadLineStickerAsset(...args),
+      convertAnimatedStickerToGif: (...args) => this.convertAnimatedStickerToGif(...args)
+    });
     
     // サンドボックスクリンナップ設定
     this.cleanupInterval = 30 * 60 * 1000; // 30分間隔でクリンナップ
@@ -149,20 +159,12 @@ class MediaService {
    */
   async processLineMedia(message, messageType, lineService) {
     try {
-      switch (messageType) {
-        case 'image':
-          return await this.processLineImage(message, lineService);
-        case 'video':
-          return await this.processLineVideo(message, lineService);
-        case 'audio':
-          return await this.processLineAudio(message, lineService);
-        case 'file':
-          return await this.processLineFile(message, lineService);
-        case 'sticker':
-          return await this.processLineSticker(message);
-        default:
-          return { content: `Unsupported message type: ${messageType}` };
+      const processor = this.lineMediaProcessors[messageType];
+      if (!processor) {
+        return { content: `Unsupported message type: ${messageType}` };
       }
+
+      return await processor(message, lineService);
     } catch (error) {
       logger.error('Failed to process LINE media', {
         messageType,
@@ -179,28 +181,7 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processLineImage(message, lineService) {
-    try {
-      const buffer = await lineService.getMessageContent(message.id);
-      const typeInfo = await this.detectFileType(buffer);
-      const isHeic = typeInfo?.mime === 'image/heic' || typeInfo?.mime === 'image/heif';
-      const convertedBuffer = isHeic
-        ? await sharp(buffer, { animated: false }).jpeg({ quality: 85 }).toBuffer()
-        : buffer;
-      const ext = isHeic ? 'jpg' : (typeInfo?.ext || 'jpg');
-      const fileName = `image_${message.id}.${ext}`;
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(convertedBuffer, { name: discordSafeFileName });
-      return {
-        content: '',
-        files: [attachment]
-      };
-    } catch (error) {
-      logger.error('Failed to process LINE image', {
-        messageId: message.id,
-        error: error.message
-      });
-      return { content: '', files: [] };
-    }
+    return this.lineMediaProcessors.image(message, lineService);
   }
 
   /**
@@ -209,24 +190,7 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processLineVideo(message, lineService) {
-    try {
-      const buffer = await lineService.getMessageContent(message.id);
-      const typeInfo = await this.detectFileType(buffer);
-      const ext = typeInfo?.ext || 'mp4';
-      const fileName = `video_${message.id}.${ext}`;
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
-      return {
-        content: 'Video message',
-        files: [attachment]
-      };
-    } catch (error) {
-      logger.error('Failed to process LINE video', {
-        messageId: message.id,
-        error: error.message
-      });
-      return { content: '🎥 Video message (processing failed)' };
-    }
+    return this.lineMediaProcessors.video(message, lineService);
   }
 
   /**
@@ -235,24 +199,7 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processLineAudio(message, lineService) {
-    try {
-      const buffer = await lineService.getMessageContent(message.id);
-      const typeInfo = await this.detectFileType(buffer);
-      const ext = typeInfo?.ext || 'm4a';
-      const fileName = `audio_${message.id}.${ext}`;
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(fileName);
-      const attachment = new AttachmentBuilder(buffer, { name: discordSafeFileName });
-      return {
-        content: 'Audio message',
-        files: [attachment]
-      };
-    } catch (error) {
-      logger.error('Failed to process LINE audio', {
-        messageId: message.id,
-        error: error.message
-      });
-      return { content: '🎵 Audio message (processing failed)' };
-    }
+    return this.lineMediaProcessors.audio(message, lineService);
   }
 
   /**
@@ -261,44 +208,7 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processLineFile(message, lineService) {
-    try {
-      const fileName = message.fileName || `file_${message.id}`;
-      const buffer = await lineService.getMessageContent(message.id);
-      const typeInfo = await this.detectFileType(buffer);
-      const isHeic = typeInfo?.mime === 'image/heic' || typeInfo?.mime === 'image/heif' || /\.(heic|heif)$/i.test(fileName);
-      const outputBuffer = isHeic
-        ? await sharp(buffer, { animated: false }).jpeg({ quality: 85 }).toBuffer()
-        : buffer;
-      
-      // ファイル名の拡張子処理を改善
-      let finalFileName = fileName;
-      if (isHeic) {
-        // HEIC/HEIF は JPEG に変換して送る
-        const base = fileName.replace(/\.[^.]+$/, '');
-        finalFileName = `${base}.jpg`;
-      } else if (typeInfo?.ext) {
-        const detectedExt = `.${typeInfo.ext}`;
-        // 既に拡張子が含まれている場合は追加しない
-        if (!fileName.toLowerCase().endsWith(detectedExt.toLowerCase())) {
-          finalFileName = `${fileName}${detectedExt}`;
-        }
-      }
-      
-      // Discordの2バイト文字問題に対応
-      const discordSafeFileName = this.sanitizeFileNameForDiscord(finalFileName);
-      
-      const attachment = new AttachmentBuilder(outputBuffer, { name: discordSafeFileName });
-      return {
-        content: `File: ${fileName}`, // 表示用は元のファイル名を使用
-        files: [attachment]
-      };
-    } catch (error) {
-      logger.error('Failed to process LINE file', {
-        messageId: message.id,
-        error: error.message
-      });
-      return { content: '📎 File message (processing failed)' };
-    }
+    return this.lineMediaProcessors.file(message, lineService);
   }
 
   /**
@@ -307,113 +217,11 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processLineSticker(message) {
-    try {
-      const packageId = message.packageId;
-      const stickerId = message.stickerId;
-      const stickerResourceType = message.stickerResourceType || 'STATIC';
-      
-      logger.info('Processing LINE sticker', {
-        messageId: message.id,
-        packageId: packageId,
-        stickerId: stickerId,
-        stickerResourceType
-      });
-
-      const stickerAsset = await this.downloadLineStickerAsset(stickerId, stickerResourceType);
-      let processedBuffer = stickerAsset.buffer;
-      let fileName = `sticker_${stickerId}.png`;
-      const isAnimatedSticker = this.isAnimatedStickerResourceType(stickerResourceType);
-
-      if (isAnimatedSticker && this.isAnimatedPngBuffer(stickerAsset.buffer)) {
-        try {
-          processedBuffer = await this.convertAnimatedStickerToGif(stickerAsset.buffer, stickerId);
-          fileName = `sticker_${stickerId}.gif`;
-          logger.info('Converted LINE animated sticker to GIF for Discord', {
-            stickerId,
-            stickerResourceType
-          });
-        } catch (conversionError) {
-          logger.warn('Failed to convert animated LINE sticker to GIF, falling back to static frame', {
-            stickerId,
-            stickerResourceType,
-            error: conversionError.message
-          });
-          processedBuffer = await sharp(stickerAsset.buffer, { animated: true }).png().toBuffer();
-        }
-      } else {
-        const fileTypeInfo = await this.detectFileType(stickerAsset.buffer);
-
-        if (fileTypeInfo) {
-          logger.debug('Detected file type', {
-            stickerId: stickerId,
-            mimeType: fileTypeInfo.mime,
-            extension: fileTypeInfo.ext
-          });
-
-          if (fileTypeInfo.mime === 'image/webp') {
-            logger.info('Converting WebP to PNG', {
-              stickerId: stickerId
-            });
-            processedBuffer = await sharp(stickerAsset.buffer).png().toBuffer();
-          } else if (!fileTypeInfo.mime.startsWith('image/png')) {
-            logger.info('Converting to PNG format', {
-              stickerId: stickerId,
-              originalMime: fileTypeInfo.mime
-            });
-            processedBuffer = await sharp(stickerAsset.buffer).png().toBuffer();
-          }
-        }
-      }
-
-      const attachment = new AttachmentBuilder(processedBuffer, { name: fileName });
-      
-      logger.info('LINE sticker processed successfully', {
-        messageId: message.id,
-        stickerId: stickerId,
-        fileName: fileName,
-        stickerResourceType,
-        originalBufferSize: stickerAsset.buffer.length,
-        processedBufferSize: processedBuffer.length,
-        converted: stickerAsset.buffer.length !== processedBuffer.length,
-        sourceUrl: stickerAsset.url
-      });
-      
-      return {
-        content: '',
-        files: [attachment]
-      };
-    } catch (error) {
-      logger.error('Failed to process LINE sticker', {
-        messageId: message.id,
-        packageId: message.packageId,
-        stickerId: message.stickerId,
-        error: error.message,
-        stack: error.stack
-      });
-      
-      // フォールバックメッセージ
-      return { content: '😊 Sticker message' };
-    }
-  }
-
-  isAnimatedStickerResourceType(stickerResourceType = '') {
-    return ['ANIMATION', 'ANIMATION_SOUND', 'POPUP', 'POPUP_SOUND'].includes(stickerResourceType);
-  }
-
-  isAnimatedPngBuffer(buffer) {
-    return Buffer.isBuffer(buffer) && buffer.includes(Buffer.from('acTL'));
+    return this.lineMediaProcessors.sticker(message);
   }
 
   getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
-    const baseUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone`;
-    const urls = [];
-
-    if (this.isAnimatedStickerResourceType(stickerResourceType)) {
-      urls.push(`${baseUrl}/sticker_animation@2x.png`);
-    }
-
-    urls.push(`${baseUrl}/sticker@2x.png`);
-    return urls;
+    return getLineStickerAssetUrls(stickerId, stickerResourceType);
   }
 
   async downloadLineStickerAsset(stickerId, stickerResourceType = 'STATIC') {

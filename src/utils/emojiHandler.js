@@ -5,6 +5,7 @@
  * @version 3.0.0
  * @since 2024-12-19
  */
+const logger = require('./logger');
 
 /**
  * 絵文字を正規化する
@@ -26,7 +27,7 @@ function normalizeEmojis(text) {
     
     return normalized;
   } catch (error) {
-    console.warn('Emoji normalization failed:', error);
+    logger.warn('Emoji normalization failed', { error: error.message });
     return text;
   }
 }
@@ -45,7 +46,7 @@ function isValidEmoji(text) {
     
     return emojiRegex.test(text);
   } catch (error) {
-    console.warn('Emoji validation failed:', error);
+    logger.warn('Emoji validation failed', { error: error.message });
     return false;
   }
 }
@@ -73,7 +74,7 @@ function processEmojiText(text) {
 
     return processed;
   } catch (error) {
-    console.error('Emoji processing failed:', error);
+    logger.error('Emoji processing failed', { error: error.message });
     return text;
   }
 }
@@ -104,7 +105,7 @@ function processLineEmoji(text) {
     
     return processed;
   } catch (error) {
-    console.error('Line emoji processing failed:', error);
+    logger.error('Line emoji processing failed', { error: error.message });
     return text;
   }
 }
@@ -126,7 +127,7 @@ function processDiscordEmoji(text) {
     
     return processed;
   } catch (error) {
-    console.error('Discord emoji processing failed:', error);
+    logger.error('Discord emoji processing failed', { error: error.message });
     return text;
   }
 }

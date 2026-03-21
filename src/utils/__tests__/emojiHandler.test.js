@@ -17,6 +17,8 @@ const {
   processDiscordEmoji
 } = require('../emojiHandler');
 
+jest.mock('../logger');
+
 describe('emojiHandler', () => {
   describe('normalizeEmojis', () => {
     test('正常な絵文字を正規化する', () => {

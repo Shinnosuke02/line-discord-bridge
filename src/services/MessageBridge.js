@@ -1031,6 +1031,8 @@ class MessageBridge {
     try {
       // 全てのバッチを強制送信
       await this.messageBatcher.flushAllBatches();
+
+      this.lineUsageMonitor.stopMonitoring();
       
       if (this.webhookManager) {
         await this.webhookManager.stop();
