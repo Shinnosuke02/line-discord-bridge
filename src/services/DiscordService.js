@@ -3,7 +3,6 @@
  * Discord.jsを使用したDiscord API操作を管理
  */
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
-const config = require('../config');
 const logger = require('../utils/logger');
 
 /**

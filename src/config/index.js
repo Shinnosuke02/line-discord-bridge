@@ -125,6 +125,7 @@ const config = {
 
   // セキュリティ設定
   security: {
+    lineSignatureValidationEnabled: process.env.LINE_SIGNATURE_VALIDATION_ENABLED !== 'false',
     rateLimit: {
       enabled: process.env.RATE_LIMIT_ENABLED === 'true',
       windowMs: parseInteger(process.env.RATE_LIMIT_WINDOW, 15 * 60 * 1000), // 15分

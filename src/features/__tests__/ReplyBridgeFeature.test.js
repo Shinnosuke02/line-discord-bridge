@@ -45,6 +45,59 @@ describe('ReplyBridgeFeature', () => {
     });
   });
 
+  test('Discord reply target resolves to usable LINE reply token', async () => {
+    const feature = new ReplyBridgeFeature({
+      messageMappingManager: {
+        getLineOriginByDiscordMessageId: jest.fn().mockReturnValue({
+          lineMessageId: 'line-original-1',
+          replyToken: 'reply-token-1',
+          replyTokenExpiry: new Date(Date.now() + 30000).toISOString(),
+          quoteToken: 'quote-token-1'
+        })
+      }
+    });
+
+    const result = await feature.resolveLineSendContext({
+      id: 'discord-new-1',
+      reference: {
+        messageId: 'discord-original-1'
+      }
+    });
+
+    expect(result).toEqual({
+      replyToken: 'reply-token-1',
+      replyTokenLineMessageId: 'line-original-1',
+      replyTokenExpiry: expect.any(String),
+      quoteToken: 'quote-token-1',
+      quotedLineMessageId: 'line-original-1'
+    });
+  });
+
+  test('expired reply tokens are ignored for Discord reply targets', async () => {
+    const feature = new ReplyBridgeFeature({
+      messageMappingManager: {
+        getLineOriginByDiscordMessageId: jest.fn().mockReturnValue({
+          lineMessageId: 'line-original-1',
+          replyToken: 'reply-token-1',
+          replyTokenExpiry: new Date(Date.now() - 1000).toISOString(),
+          quoteToken: 'quote-token-1'
+        })
+      }
+    });
+
+    const result = await feature.resolveLineSendContext({
+      id: 'discord-new-1',
+      reference: {
+        messageId: 'discord-original-1'
+      }
+    });
+
+    expect(result).toEqual({
+      quoteToken: 'quote-token-1',
+      quotedLineMessageId: 'line-original-1'
+    });
+  });
+
   test('LINE send payload is decorated with quote token only when present', () => {
     const feature = new ReplyBridgeFeature({
       messageMappingManager: {}

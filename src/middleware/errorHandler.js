@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
  * @param {Object} res - レスポンスオブジェクト
  * @param {Function} next - 次のミドルウェア関数
  */
-function errorHandler(err, req, res, next) {
+function errorHandler(err, req, res, _next) {
   // エラーログの記録
   logger.error('Unhandled error', {
     error: err.message,

@@ -2,11 +2,11 @@
  * チャンネル管理サービス
  * LINEとDiscordのチャンネルマッピングを管理
  */
-const fs = require('fs').promises;
 const path = require('path');
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
+const { readJsonFile, writeJsonFileAtomic } = require('../utils/jsonFileStore');
 
 /**
  * チャンネル管理クラス
@@ -18,6 +18,7 @@ class ChannelManager {
     this.mappings = new Map();
     this.mappingFile = path.join(process.cwd(), 'data', 'channel-mappings.json');
     this.isInitialized = false;
+    this.saveQueue = Promise.resolve();
   }
 
   /**
@@ -43,8 +44,7 @@ class ChannelManager {
    */
   async loadMappings() {
     try {
-      const data = await fs.readFile(this.mappingFile, 'utf8');
-      const mappings = JSON.parse(data);
+      const mappings = await readJsonFile(this.mappingFile);
       
       this.mappings.clear();
       for (const [key, value] of Object.entries(mappings)) {
@@ -72,13 +72,19 @@ class ChannelManager {
    * マッピングを保存
    */
   async saveMappings() {
-    try {
+    const saveOperation = this.saveQueue.catch(() => {}).then(async () => {
       const mappings = Object.fromEntries(this.mappings);
-      await fs.writeFile(this.mappingFile, JSON.stringify(mappings, null, 2));
+      await writeJsonFileAtomic(this.mappingFile, mappings);
       
       logger.debug('Channel mappings saved', {
         count: this.mappings.size
       });
+    });
+
+    this.saveQueue = saveOperation;
+
+    try {
+      await saveOperation;
     } catch (error) {
       logger.error('Failed to save channel mappings', {
         error: error.message
@@ -416,6 +422,15 @@ class ChannelManager {
    */
   getAllMappings() {
     return Array.from(this.mappings.values());
+  }
+
+  /**
+   * チャンネルマッピングを取得
+   * @param {string} sourceId - LINEのソースID
+   * @returns {Object|null} チャンネルマッピング
+   */
+  getChannelMapping(sourceId) {
+    return this.mappings.get(sourceId) || null;
   }
 
   /**

@@ -112,7 +112,7 @@ class MessageQueue {
    * @param {string} userId - LINEユーザーID
    * @param {Object} message - メッセージ
    */
-  async sendMessage(userId, message) {
+  async sendMessage(_userId, _message) {
     // ここで実際のLINE API呼び出しを行う
     // MessageBridgeから注入される
     throw new Error('sendMessage method must be implemented');

@@ -5,9 +5,21 @@
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
+const { redactLogData } = require('./logRedaction');
 
 // ログディレクトリの作成
 const logDir = path.join(process.cwd(), 'logs');
+
+const redactFormat = winston.format((info) => {
+  const redacted = redactLogData(info);
+
+  Object.keys(info).forEach((key) => {
+    delete info[key];
+  });
+  Object.assign(info, redacted);
+
+  return info;
+});
 
 // カスタムフォーマット
 const logFormat = winston.format.combine(
@@ -15,6 +27,7 @@ const logFormat = winston.format.combine(
     format: 'YYYY-MM-DD HH:mm:ss.SSS'
   }),
   winston.format.errors({ stack: true }),
+  redactFormat(),
   winston.format.json(),
   winston.format.prettyPrint()
 );
@@ -25,6 +38,7 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({
     format: 'HH:mm:ss'
   }),
+  redactFormat(),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let log = `${timestamp} [${level}]: ${message}`;
     

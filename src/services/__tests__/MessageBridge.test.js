@@ -48,7 +48,8 @@ jest.mock('../MessageMappingManager', () => jest.fn(() => ({
   initialize: jest.fn(),
   mapLineToDiscord: jest.fn(),
   mapDiscordToLine: jest.fn(),
-  getLineToDiscordMapping: jest.fn()
+  getLineToDiscordMapping: jest.fn(),
+  markReplyTokenUsed: jest.fn()
 })));
 
 jest.mock('../ChannelManager', () => jest.fn(() => ({
@@ -83,6 +84,7 @@ jest.mock('../../middleware/lineLimitHandler', () => ({
 jest.mock('../../utils/logger');
 
 const MessageBridge = require('../MessageBridge');
+const lineLimitHandler = require('../../middleware/lineLimitHandler');
 
 describe('MessageBridge', () => {
   let messageBridge;
@@ -121,6 +123,93 @@ describe('MessageBridge', () => {
       content: 'hello'
     });
     expect(result).toEqual({ id: 'message-1' });
+  });
+
+  test('sendTrackedLineMessageは有効なreplyTokenを優先してreplyMessageで送信する', async () => {
+    messageBridge.messageMappingManager.markReplyTokenUsed.mockResolvedValue(true);
+    messageBridge.lineService.replyMessage.mockResolvedValue({
+      messageId: 'line-reply-1'
+    });
+
+    const result = await messageBridge.sendTrackedLineMessage(
+      'line-user-1',
+      { type: 'text', text: 'quick reply' },
+      {
+        replyToken: 'reply-token-1',
+        replyTokenLineMessageId: 'line-original-1',
+        quoteToken: 'quote-token-1'
+      }
+    );
+
+    expect(messageBridge.messageMappingManager.markReplyTokenUsed).toHaveBeenCalledWith('line-original-1');
+    expect(messageBridge.lineService.replyMessage).toHaveBeenCalledWith(
+      'reply-token-1',
+      { type: 'text', text: 'quick reply' }
+    );
+    expect(messageBridge.lineService.pushMessage).not.toHaveBeenCalled();
+    expect(lineLimitHandler.recordMessageSent).not.toHaveBeenCalled();
+    expect(result).toEqual({ messageId: 'line-reply-1' });
+  });
+
+  test('sendTrackedLineMessageはreplyTokenが使えない場合quoteToken付きpushMessageへフォールバックする', async () => {
+    messageBridge.messageMappingManager.markReplyTokenUsed.mockResolvedValue(false);
+    messageBridge.lineService.pushMessage.mockResolvedValue({
+      messageId: 'line-push-1'
+    });
+
+    const result = await messageBridge.sendTrackedLineMessage(
+      'line-user-1',
+      { type: 'text', text: 'late reply' },
+      {
+        replyToken: 'reply-token-1',
+        replyTokenLineMessageId: 'line-original-1',
+        quoteToken: 'quote-token-1'
+      }
+    );
+
+    expect(messageBridge.lineService.replyMessage).not.toHaveBeenCalled();
+    expect(messageBridge.lineService.pushMessage).toHaveBeenCalledWith(
+      'line-user-1',
+      { type: 'text', text: 'late reply', quoteToken: 'quote-token-1' }
+    );
+    expect(lineLimitHandler.recordMessageSent).toHaveBeenCalled();
+    expect(result).toEqual({ messageId: 'line-push-1' });
+  });
+
+  test('processDiscordToLineの位置情報送信はPush通数を二重記録しない', async () => {
+    messageBridge.featureManager.resolveLineSendContext = jest.fn().mockResolvedValue({});
+    messageBridge.lineService.pushMessage.mockResolvedValue({
+      messageId: 'line-location-1'
+    });
+
+    await messageBridge.processDiscordToLine(
+      {
+        id: 'discord-location-1',
+        channelId: 'channel-1',
+        content: '35.6895, 139.6917',
+        attachments: { size: 0 },
+        stickers: { size: 0 }
+      },
+      'line-user-1'
+    );
+
+    expect(messageBridge.lineService.pushMessage).toHaveBeenCalledWith(
+      'line-user-1',
+      {
+        type: 'location',
+        title: '位置情報',
+        address: null,
+        latitude: 35.6895,
+        longitude: 139.6917
+      }
+    );
+    expect(lineLimitHandler.recordMessageSent).toHaveBeenCalledTimes(1);
+    expect(messageBridge.messageMappingManager.mapDiscordToLine).toHaveBeenCalledWith(
+      'discord-location-1',
+      'line-location-1',
+      'line-user-1',
+      'channel-1'
+    );
   });
 
   test('getMetricsが正しい値を返す', () => {

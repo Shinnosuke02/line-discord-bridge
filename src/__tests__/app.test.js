@@ -12,6 +12,9 @@
  * @since 2024-12-19
  */
 const App = require('../app');
+const request = require('supertest');
+const config = require('../config');
+const { createLineSignature } = require('../middleware/lineSignature');
 
 // モックの設定
 jest.mock('../services/MessageBridge');
@@ -20,7 +23,8 @@ jest.mock('../utils/logger');
 const mockMessageBridge = {
   start: jest.fn(),
   stop: jest.fn(),
-  getMetrics: jest.fn()
+  getMetrics: jest.fn(),
+  handleLineEvent: jest.fn()
 };
 
 const MessageBridge = require('../services/MessageBridge');
@@ -127,6 +131,57 @@ describe('App', () => {
           version: expect.any(String)
         });
       }
+    });
+  });
+
+  describe('LINE Webhook署名検証', () => {
+    test('正しい署名のWebhookを処理する', async () => {
+      app.messageBridge = mockMessageBridge;
+      app.setupMiddleware();
+      app.setupRoutes();
+
+      const body = {
+        events: [
+          {
+            type: 'message',
+            message: {
+              id: 'line-message-1',
+              type: 'text',
+              text: 'hello'
+            },
+            source: {
+              userId: 'line-user-1'
+            }
+          }
+        ]
+      };
+      const rawBody = JSON.stringify(body);
+      const signature = createLineSignature(rawBody, config.line.channelSecret);
+
+      const response = await request(app.app)
+        .post(config.line.webhookPath)
+        .set('content-type', 'application/json')
+        .set('x-line-signature', signature)
+        .send(rawBody);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ success: true });
+      expect(mockMessageBridge.handleLineEvent).toHaveBeenCalledWith(body.events[0]);
+    });
+
+    test('不正な署名のWebhookを拒否する', async () => {
+      app.messageBridge = mockMessageBridge;
+      app.setupMiddleware();
+      app.setupRoutes();
+
+      const response = await request(app.app)
+        .post(config.line.webhookPath)
+        .set('content-type', 'application/json')
+        .set('x-line-signature', 'invalid-signature')
+        .send(JSON.stringify({ events: [] }));
+
+      expect(response.status).toBe(401);
+      expect(mockMessageBridge.handleLineEvent).not.toHaveBeenCalled();
     });
   });
 });

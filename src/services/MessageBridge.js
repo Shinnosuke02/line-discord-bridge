@@ -11,6 +11,7 @@ const MediaService = require('./MediaService');
 const ChannelManager = require('./ChannelManager');
 const WebhookManager = require('./WebhookManager');
 const MessageMappingManager = require('./MessageMappingManager');
+const LineSendSession = require('./LineSendSession');
 const BridgeFeatureManager = require('../features/BridgeFeatureManager');
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 const lineLimitHandler = require('../middleware/lineLimitHandler');
@@ -28,8 +29,8 @@ class MessageBridge {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.DirectMessageReactions,
-        GatewayIntentBits.MessageContent,
-      ],
+        GatewayIntentBits.MessageContent
+      ]
     });
     
     this.lineService = new LineService();
@@ -296,7 +297,8 @@ class MessageBridge {
     try {
       let lineMessageId = null;
       const lineSendContext = await this.featureManager.resolveLineSendContext(message);
-      const trackedLineService = this.createTrackedLineService(lineUserId, lineSendContext);
+      const lineSendSession = new LineSendSession(lineSendContext);
+      const trackedLineService = this.createTrackedLineService(lineUserId, lineSendSession);
 
       // 添付ファイルの処理
       if (message.attachments?.size > 0) {
@@ -325,19 +327,9 @@ class MessageBridge {
             longitude: locationResult.longitude
           };
           
-          // 月間制限チェック
-          const limitCheck = lineLimitHandler.shouldLimitMessage(lineMessage);
-          if (limitCheck.allowed) {
-            const result = await trackedLineService.pushMessage(lineUserId, lineMessage);
-            if (result?.messageId) {
-              lineMessageId = result.messageId;
-              lineLimitHandler.recordMessageSent();
-            }
-          } else {
-            logger.warn('LINE message blocked due to monthly limit', {
-              messageType: 'location',
-              reason: limitCheck.reason
-            });
+          const result = await this.sendTrackedLineMessage(lineUserId, lineMessage, lineSendSession);
+          if (result?.messageId) {
+            lineMessageId = result.messageId;
           }
         } else {
           const processedText = processDiscordEmoji(text);
@@ -353,7 +345,7 @@ class MessageBridge {
                 type: 'text',
                 text: remainingText
               };
-              const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
+              const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendSession);
               if (textResult?.messageId) {
                 lineMessageId = textResult.messageId;
               }
@@ -368,17 +360,9 @@ class MessageBridge {
               longitude: googleMapsResult.longitude
             };
             
-            const limitCheck = lineLimitHandler.shouldLimitMessage(locationMessage);
-            if (limitCheck.allowed) {
-              const locationResult = await trackedLineService.pushMessage(lineUserId, locationMessage);
-              if (locationResult?.messageId) {
-                lineMessageId = locationResult.messageId;
-                lineLimitHandler.recordMessageSent();
-              }
-            } else {
-              logger.warn('LINE location message blocked due to monthly limit', {
-                reason: limitCheck.reason
-              });
+            const locationResult = await this.sendTrackedLineMessage(lineUserId, locationMessage, lineSendSession);
+            if (locationResult?.messageId) {
+              lineMessageId = locationResult.messageId;
             }
           } else {
             // GoogleMapsリンクでない場合は通常のテキストとして送信
@@ -386,7 +370,7 @@ class MessageBridge {
               type: 'text',
               text: processedText
             };
-            const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendContext);
+            const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendSession);
             if (textResult?.messageId) {
               lineMessageId = textResult.messageId;
             }
@@ -534,30 +518,32 @@ class MessageBridge {
     const messageType = event.message.type;
     
     switch (messageType) {
-      case 'text':
-        const formattedText = this.lineService.formatMessage(event, displayName);
-        return {
-          content: processLineEmoji(formattedText)
-        };
+    case 'text': {
+      const formattedText = this.lineService.formatMessage(event, displayName);
+      return {
+        content: processLineEmoji(formattedText)
+      };
+    }
         
-      case 'image':
-      case 'video':
-      case 'audio':
-      case 'file':
-      case 'sticker':
-        const result = await this.mediaService.processLineMedia(event.message, messageType, this.lineService);
-        return {
-          content: result.content,
-          files: result.files || []
-        };
+    case 'image':
+    case 'video':
+    case 'audio':
+    case 'file':
+    case 'sticker': {
+      const result = await this.mediaService.processLineMedia(event.message, messageType, this.lineService);
+      return {
+        content: result.content,
+        files: result.files || []
+      };
+    }
         
-      case 'location':
-        return this.formatLocationMessage(event.message);
+    case 'location':
+      return this.formatLocationMessage(event.message);
         
-      default:
-        return {
-          content: `Unsupported message type: ${messageType}`
-        };
+    default:
+      return {
+        content: `Unsupported message type: ${messageType}`
+      };
     }
   }
 
@@ -845,8 +831,8 @@ class MessageBridge {
    */
   initializeMessageBatching() {
     try {
-      const batchTimeout = parseInt(process.env.MESSAGE_BATCH_TIMEOUT) || 120000; // デフォルト2分
-      const maxBatchSize = parseInt(process.env.MESSAGE_BATCH_MAX_SIZE) || 10; // デフォルト10メッセージ
+      const batchTimeout = parseInt(process.env.MESSAGE_BATCH_TIMEOUT, 10) || 120000; // デフォルト2分
+      const maxBatchSize = parseInt(process.env.MESSAGE_BATCH_MAX_SIZE, 10) || 10; // デフォルト10メッセージ
 
       this.messageBatcher.updateConfig({
         batchTimeout,
@@ -907,8 +893,14 @@ class MessageBridge {
     }
   }
 
-  async sendTrackedLineMessage(userId, message, lineSendContext = {}) {
-    const outboundMessage = this.featureManager.applyLineSendContext(message, lineSendContext);
+  async sendTrackedLineMessage(userId, message, lineSendContext = new LineSendSession()) {
+    const lineSendSession = this.toLineSendSession(lineSendContext);
+    const replyResult = await this.sendLineReplyMessageIfAvailable(userId, message, lineSendSession);
+    if (replyResult) {
+      return replyResult;
+    }
+
+    const outboundMessage = this.featureManager.applyLineSendContext(message, lineSendSession.getPushContext());
 
     if (!this.featureManager.requiresDirectLineTracking()) {
       await this.sendMessageWithBatching(userId, outboundMessage);
@@ -933,7 +925,46 @@ class MessageBridge {
     return result;
   }
 
-  createTrackedLineService(lineUserId, lineSendContext = {}) {
+  async sendLineReplyMessageIfAvailable(userId, message, lineSendContext = new LineSendSession()) {
+    const lineSendSession = this.toLineSendSession(lineSendContext);
+    const replyTokenClaim = lineSendSession.claimReplyToken();
+    if (!replyTokenClaim) {
+      return null;
+    }
+
+    const { replyToken, replyTokenLineMessageId } = replyTokenClaim;
+
+    const markedUsed = await this.messageMappingManager.markReplyTokenUsed(replyTokenLineMessageId);
+    if (!markedUsed) {
+      logger.debug('Reply token is no longer available, falling back to push message', {
+        userId,
+        replyTokenLineMessageId
+      });
+      return null;
+    }
+
+    try {
+      const result = await this.lineService.replyMessage(replyToken, message);
+      logger.info('LINE reply message sent using replyToken', {
+        userId,
+        replyTokenLineMessageId,
+        messageType: message.type,
+        messageId: result?.messageId
+      });
+      return result;
+    } catch (error) {
+      logger.warn('Failed to send LINE reply message, falling back to push message', {
+        userId,
+        replyTokenLineMessageId,
+        messageType: message.type,
+        error: error.message
+      });
+      return null;
+    }
+  }
+
+  createTrackedLineService(lineUserId, lineSendContext = new LineSendSession()) {
+    const lineSendSession = this.toLineSendSession(lineSendContext);
     return {
       ...this.lineService,
       pushMessage: async (targetUserId, message) => {
@@ -941,12 +972,17 @@ class MessageBridge {
           return this.lineService.pushMessage(targetUserId, message);
         }
 
-        return this.lineService.pushMessage(
-          targetUserId,
-          this.featureManager.applyLineSendContext(message, lineSendContext)
-        );
+        return this.sendTrackedLineMessage(targetUserId, message, lineSendSession);
       }
     };
+  }
+
+  toLineSendSession(lineSendContext = {}) {
+    if (lineSendContext instanceof LineSendSession) {
+      return lineSendContext;
+    }
+
+    return new LineSendSession(lineSendContext);
   }
 
   /**

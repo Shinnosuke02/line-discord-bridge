@@ -314,36 +314,37 @@ class LineService {
    * @param {string} displayName - 表示名
    * @returns {string} フォーマットされたメッセージ
    */
-  formatMessage(event, displayName) {
+  formatMessage(event, _displayName) {
     const message = event.message;
     
     switch (message.type) {
-      case 'text':
-        return message.text;
+    case 'text':
+      return message.text;
         
-      case 'sticker':
-        return '😊 Sticker';
+    case 'sticker':
+      return '😊 Sticker';
         
-      case 'image':
-        return '📷 Image message';
+    case 'image':
+      return '📷 Image message';
         
-      case 'video':
-        return '🎥 Video message';
+    case 'video':
+      return '🎥 Video message';
         
-      case 'audio':
-        return '🎵 Audio message';
+    case 'audio':
+      return '🎵 Audio message';
         
-      case 'file':
-        return `📎 File: ${message.fileName || 'Unknown file'}`;
+    case 'file':
+      return `📎 File: ${message.fileName || 'Unknown file'}`;
         
-      case 'location':
-        const { latitude, longitude, address } = message;
-        const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
-        const addressText = address ? `\n📍 住所: ${address}` : '';
-        return `📍 位置情報${addressText}\n🌐 Googleマップ: ${googleMapsUrl}\n📊 座標: ${latitude}, ${longitude}`;
+    case 'location': {
+      const { latitude, longitude, address } = message;
+      const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+      const addressText = address ? `\n📍 住所: ${address}` : '';
+      return `📍 位置情報${addressText}\n🌐 Googleマップ: ${googleMapsUrl}\n📊 座標: ${latitude}, ${longitude}`;
+    }
         
-      default:
-        return `Unsupported message type: ${message.type}`;
+    default:
+      return `Unsupported message type: ${message.type}`;
     }
   }
 

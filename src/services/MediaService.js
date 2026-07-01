@@ -2,7 +2,6 @@
  * メディア処理サービス
  * 画像、動画、音声、ファイルの処理を管理
  */
-const { AttachmentBuilder } = require('discord.js');
 const axios = require('axios');
 const sharp = require('sharp');
 const mimeTypes = require('mime-types');
@@ -12,10 +11,9 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const config = require('../config');
 const logger = require('../utils/logger');
-const fileUtils = require('../utils/fileUtils');
 const { createLineMediaProcessors } = require('./media/lineMediaProcessors');
 const {
-  getLineStickerAssetUrls,
+  getLineStickerAssetUrls
 } = require('../utils/lineSticker');
 
 const execFileAsync = promisify(execFile);
@@ -898,7 +896,7 @@ class MediaService {
     }
   }
 
-  async processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, mimeType, buffer = null) {
+  async processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, mimeType, _buffer = null) {
     try {
       // 可能な場合、直接Discord CDN URLでLINEに送信
       if (mimeType.startsWith('image/')) {
@@ -1348,6 +1346,7 @@ class MediaService {
     const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
     
     // 2バイト文字を検出
+    // eslint-disable-next-line no-control-regex
     const hasMultiByteChars = /[^\x00-\x7F]/.test(nameWithoutExt);
     
     if (hasMultiByteChars) {
@@ -1420,6 +1419,7 @@ class MediaService {
       // URLのファイル名とattachment.nameが異なる場合
       if (cleanUrlFileName && cleanUrlFileName !== attachmentName) {
         // URLのファイル名がより長く、2バイト文字を含んでいる可能性がある場合
+        // eslint-disable-next-line no-control-regex
         if (cleanUrlFileName.length > attachmentName.length && /[^\x00-\x7F]/.test(cleanUrlFileName)) {
           logger.info('Recovered filename from Discord URL', {
             original: attachmentName,
@@ -1453,7 +1453,7 @@ class MediaService {
       /^-_\./,           // -_.pdf のようなパターン
       /^[_-]{1,3}\./,    // -_.pdf, _-.pdf, --.pdf など
       /^\.{1,3}$/,       // 拡張子のみ
-      /^[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/, // 有効な文字で始まらない
+      /^[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/ // 有効な文字で始まらない
     ];
     
     return corruptedPatterns.some(pattern => pattern.test(filename));
@@ -1523,10 +1523,10 @@ class MediaService {
    */
   getStickerFormatName(format) {
     switch (format) {
-      case 1: return 'PNG';
-      case 2: return 'APNG';
-      case 3: return 'LOTTIE';
-      default: return 'UNKNOWN';
+    case 1: return 'PNG';
+    case 2: return 'APNG';
+    case 3: return 'LOTTIE';
+    default: return 'UNKNOWN';
     }
   }
 
@@ -1593,6 +1593,7 @@ class MediaService {
    * @returns {Buffer} PNGバッファ
    */
   async convertToStaticPng(buffer, sticker) {
+    const { fileTypeFromBuffer } = await import('file-type');
     const type = await fileTypeFromBuffer(buffer);
     
     if (type?.mime === 'image/apng') {
@@ -1924,18 +1925,18 @@ class MediaService {
     };
 
     switch (messageType) {
-      case 'audio':
-        return {
-          ...baseData,
-          duration: 60000 // 60秒
-        };
-      case 'file':
-        return {
-          ...baseData,
-          fileName: attachment.name
-        };
-      default:
-        return baseData;
+    case 'audio':
+      return {
+        ...baseData,
+        duration: 60000 // 60秒
+      };
+    case 'file':
+      return {
+        ...baseData,
+        fileName: attachment.name
+      };
+    default:
+      return baseData;
     }
   }
 

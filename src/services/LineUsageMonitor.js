@@ -109,9 +109,9 @@ class LineUsageMonitor {
 • 使用率: ${stats.usagePercentage}%
 • リセット日: ${stats.resetDate.toLocaleDateString('ja-JP')}
 
-${level === 'emergency' ? '🚨 すぐにLINEプランのアップグレードを検討してください！' : 
-  level === 'critical' ? '⚠️ 近日中にLINEプランのアップグレードを検討してください。' : 
-  '📝 使用量を監視し、必要に応じてプラン変更を検討してください。'}`
+${level === 'emergency' ? '🚨 すぐにLINEプランのアップグレードを検討してください！' :
+    level === 'critical' ? '⚠️ 近日中にLINEプランのアップグレードを検討してください。' :
+      '📝 使用量を監視し、必要に応じてプラン変更を検討してください。'}`
       };
 
       // アラートを送信

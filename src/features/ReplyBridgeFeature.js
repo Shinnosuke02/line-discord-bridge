@@ -40,18 +40,49 @@ class ReplyBridgeFeature {
     }
 
     const lineOriginMapping = this.messageMappingManager.getLineOriginByDiscordMessageId(referencedDiscordMessageId);
-    if (!lineOriginMapping?.quoteToken) {
-      logger.debug('No LINE quote token found for Discord reply target', {
+    if (!lineOriginMapping) {
+      logger.debug('No LINE origin mapping found for Discord reply target', {
         discordMessageId: referencedDiscordMessageId,
         currentDiscordMessageId: message.id
       });
       return {};
     }
 
-    return {
-      quoteToken: lineOriginMapping.quoteToken,
+    const context = {
       quotedLineMessageId: lineOriginMapping.lineMessageId
     };
+
+    if (lineOriginMapping.quoteToken) {
+      context.quoteToken = lineOriginMapping.quoteToken;
+    }
+
+    if (this.isReplyTokenUsable(lineOriginMapping)) {
+      context.replyToken = lineOriginMapping.replyToken;
+      context.replyTokenLineMessageId = lineOriginMapping.lineMessageId;
+      context.replyTokenExpiry = lineOriginMapping.replyTokenExpiry;
+    }
+
+    if (!context.quoteToken && !context.replyToken) {
+      logger.debug('No LINE reply or quote token found for Discord reply target', {
+        discordMessageId: referencedDiscordMessageId,
+        currentDiscordMessageId: message.id
+      });
+      return {};
+    }
+
+    return context;
+  }
+
+  isReplyTokenUsable(mapping) {
+    if (!mapping?.replyToken || mapping.replyTokenUsedAt) {
+      return false;
+    }
+
+    if (!mapping.replyTokenExpiry) {
+      return true;
+    }
+
+    return new Date(mapping.replyTokenExpiry).getTime() > Date.now();
   }
 
   applyLineSendContext(messagePayload, context = {}) {

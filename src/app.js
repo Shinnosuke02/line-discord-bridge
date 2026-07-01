@@ -10,6 +10,7 @@ const MessageBridge = require('./services/MessageBridge');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const { securityMiddleware } = require('./middleware/security');
+const { captureRawBody, lineSignatureMiddleware } = require('./middleware/lineSignature');
 
 /**
  * アプリケーションクラス
@@ -62,7 +63,7 @@ class App {
     this.app.use(requestLogger);
     
     // JSONパーサー
-    this.app.use(express.json({ limit: '10mb' }));
+    this.app.use(express.json({ limit: '10mb', verify: captureRawBody }));
     
     // URLエンコードパーサー
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -101,7 +102,7 @@ class App {
     });
 
     // LINE Webhook
-    this.app.post(config.line.webhookPath, async (req, res) => {
+    this.app.post(config.line.webhookPath, lineSignatureMiddleware, async (req, res) => {
       try {
         if (!this.messageBridge) {
           return res.status(503).json({ error: 'MessageBridge not initialized' });
@@ -121,7 +122,7 @@ class App {
       } catch (error) {
         logger.error('Webhook processing failed', {
           error: error.message,
-          body: req.body
+          eventCount: Array.isArray(req.body?.events) ? req.body.events.length : 0
         });
         res.status(500).json({ error: 'Internal server error' });
       }

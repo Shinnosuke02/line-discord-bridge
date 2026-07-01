@@ -2,9 +2,9 @@
  * メッセージマッピング管理サービス
  * LINEとDiscordのメッセージIDマッピングを管理
  */
-const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
+const { readJsonFile, writeJsonFileAtomic } = require('../utils/jsonFileStore');
 
 /**
  * メッセージマッピング管理クラス
@@ -45,8 +45,7 @@ class MessageMappingManager {
    */
   async loadMappings() {
     try {
-      const data = await fs.readFile(this.mappingFile, 'utf8');
-      const mappings = JSON.parse(data);
+      const mappings = await readJsonFile(this.mappingFile);
 
       if (!mappings || Array.isArray(mappings)) {
         this.resetMappings();
@@ -96,31 +95,32 @@ class MessageMappingManager {
    * マッピングを保存
    */
   async saveMappings() {
-    this.saveQueue = this.saveQueue.then(async () => {
-      try {
-        const mappings = {
-          lineToDiscord: Object.fromEntries(this.lineToDiscord),
-          discordToLine: Object.fromEntries(this.discordToLine),
-          lastUpdated: new Date().toISOString(),
-          version: '3.1.0'
-        };
-        
-        await fs.writeFile(this.tempMappingFile, JSON.stringify(mappings, null, 2));
-        await fs.rename(this.tempMappingFile, this.mappingFile);
-        
-        logger.debug('Message mappings saved', {
-          lineToDiscordCount: this.lineToDiscord.size,
-          discordToLineCount: this.discordToLine.size
-        });
-      } catch (error) {
-        logger.error('Failed to save message mappings', {
-          error: error.message
-        });
-        throw error;
-      }
+    const saveOperation = this.saveQueue.catch(() => {}).then(async () => {
+      const mappings = {
+        lineToDiscord: Object.fromEntries(this.lineToDiscord),
+        discordToLine: Object.fromEntries(this.discordToLine),
+        lastUpdated: new Date().toISOString(),
+        version: '3.1.0'
+      };
+
+      await writeJsonFileAtomic(this.mappingFile, mappings);
+
+      logger.debug('Message mappings saved', {
+        lineToDiscordCount: this.lineToDiscord.size,
+        discordToLineCount: this.discordToLine.size
+      });
     });
 
-    return this.saveQueue;
+    this.saveQueue = saveOperation;
+
+    try {
+      await saveOperation;
+    } catch (error) {
+      logger.error('Failed to save message mappings', {
+        error: error.message
+      });
+      throw error;
+    }
   }
 
   /**
@@ -143,8 +143,7 @@ class MessageMappingManager {
       };
       
       if (metadata.replyToken) {
-        // replyTokenの有効期限は30秒（LINE API仕様）
-        const replyTokenExpiry = new Date(Date.now() + 30000).toISOString();
+        const replyTokenExpiry = new Date(Date.now() + 60000).toISOString();
         mapping.replyToken = metadata.replyToken;
         mapping.replyTokenExpiry = replyTokenExpiry;
       }
@@ -216,8 +215,44 @@ class MessageMappingManager {
     return this.lineOriginByDiscordMessage.get(discordMessageId) || null;
   }
 
+  async markReplyTokenUsed(lineMessageId) {
+    try {
+      const mapping = this.lineToDiscord.get(lineMessageId);
+      if (!mapping?.replyToken || mapping.replyTokenUsedAt || this.isReplyTokenExpired(mapping)) {
+        return false;
+      }
+
+      mapping.replyTokenUsedAt = new Date().toISOString();
+      if (mapping.discordMessageId) {
+        this.lineOriginByDiscordMessage.set(mapping.discordMessageId, mapping);
+      }
+      await this.saveMappings();
+
+      logger.debug('Reply token marked as used', {
+        lineMessageId,
+        discordMessageId: mapping.discordMessageId
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('Failed to mark reply token as used', {
+        lineMessageId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
   getDiscordOriginByLineMessageId(lineMessageId) {
     return this.discordOriginByLineMessage.get(lineMessageId) || null;
+  }
+
+  isReplyTokenExpired(mapping) {
+    if (!mapping?.replyTokenExpiry) {
+      return false;
+    }
+
+    return new Date(mapping.replyTokenExpiry).getTime() <= Date.now();
   }
 
   /**
