@@ -1329,41 +1329,33 @@ class MediaService {
 
   /**
    * Discord用にファイル名をサニタイズ
-   * Discordは2バイト文字（日本語など）を自動削除するため、
-   * 元のファイル名を保持しつつ、Discord安全なファイル名を生成
+   * LINE webhookで受け取った元ファイル名は、日本語などのUnicode文字を含めて可能な限り維持する。
    * @param {string} fileName - 元のファイル名
    * @returns {string} Discord安全なファイル名
    */
   sanitizeFileNameForDiscord(fileName) {
-    if (!fileName) return 'file';
-    
-    // 元のファイル名をログに記録
-    logger.info('Sanitizing filename for Discord', { originalFileName: fileName });
-    
-    // 拡張子を分離
+    if (!fileName || typeof fileName !== 'string') return 'file';
+
     const lastDotIndex = fileName.lastIndexOf('.');
-    const nameWithoutExt = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
     const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
-    
-    // 2バイト文字を検出
-    // eslint-disable-next-line no-control-regex
-    const hasMultiByteChars = /[^\x00-\x7F]/.test(nameWithoutExt);
-    
-    if (hasMultiByteChars) {
-      // 2バイト文字が含まれている場合、タイムスタンプベースのファイル名を生成
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-      const sanitizedName = `file_${timestamp}`;
-      
-      logger.warn('Filename contains multi-byte characters, using fallback name', {
-        originalFileName: fileName,
-        fallbackName: `${sanitizedName}${extension}`
-      });
-      
-      return `${sanitizedName}${extension}`;
+    const maxLength = 200;
+
+    const sanitized = fileName
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\.+$/, '');
+
+    const safeName = sanitized || `file${extension}`;
+    if (safeName.length <= maxLength) {
+      return safeName;
     }
-    
-    // 2バイト文字が含まれていない場合はそのまま返す
-    return fileName;
+
+    const base = lastDotIndex > 0 ? safeName.substring(0, safeName.lastIndexOf('.')) : safeName;
+    const safeExtension = lastDotIndex > 0 ? safeName.substring(safeName.lastIndexOf('.')) : '';
+    return `${base.substring(0, maxLength - safeExtension.length)}${safeExtension}`;
   }
 
   /**
