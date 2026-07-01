@@ -1,8 +1,10 @@
 const logger = require('../utils/logger');
+const ReplyTokenPolicy = require('../services/ReplyTokenPolicy');
 
 class ReplyBridgeFeature {
-  constructor({ messageMappingManager } = {}) {
+  constructor({ messageMappingManager, replyTokenPolicy = new ReplyTokenPolicy() } = {}) {
     this.messageMappingManager = messageMappingManager;
+    this.replyTokenPolicy = replyTokenPolicy;
   }
 
   getName() {
@@ -56,7 +58,7 @@ class ReplyBridgeFeature {
       context.quoteToken = lineOriginMapping.quoteToken;
     }
 
-    if (this.isReplyTokenUsable(lineOriginMapping)) {
+    if (this.replyTokenPolicy.isUsable(lineOriginMapping)) {
       context.replyToken = lineOriginMapping.replyToken;
       context.replyTokenLineMessageId = lineOriginMapping.lineMessageId;
       context.replyTokenExpiry = lineOriginMapping.replyTokenExpiry;
@@ -71,18 +73,6 @@ class ReplyBridgeFeature {
     }
 
     return context;
-  }
-
-  isReplyTokenUsable(mapping) {
-    if (!mapping?.replyToken || mapping.replyTokenUsedAt) {
-      return false;
-    }
-
-    if (!mapping.replyTokenExpiry) {
-      return true;
-    }
-
-    return new Date(mapping.replyTokenExpiry).getTime() > Date.now();
   }
 
   applyLineSendContext(messagePayload, context = {}) {

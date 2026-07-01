@@ -5,20 +5,22 @@
 const path = require('path');
 const logger = require('../utils/logger');
 const { readJsonFile, writeJsonFileAtomic } = require('../utils/jsonFileStore');
+const ReplyTokenPolicy = require('./ReplyTokenPolicy');
 
 /**
  * メッセージマッピング管理クラス
  */
 class MessageMappingManager {
-  constructor() {
+  constructor(options = {}) {
     this.lineToDiscord = new Map();
     this.discordToLine = new Map();
     this.lineOriginByDiscordMessage = new Map();
     this.discordOriginByLineMessage = new Map();
-    this.mappingFile = path.join(process.cwd(), 'data', 'message-mappings.json');
+    this.mappingFile = options.mappingFile || path.join(process.cwd(), 'data', 'message-mappings.json');
     this.tempMappingFile = `${this.mappingFile}.tmp`;
     this.isInitialized = false;
     this.saveQueue = Promise.resolve();
+    this.replyTokenPolicy = options.replyTokenPolicy || new ReplyTokenPolicy();
   }
 
   /**
@@ -143,9 +145,8 @@ class MessageMappingManager {
       };
       
       if (metadata.replyToken) {
-        const replyTokenExpiry = new Date(Date.now() + 60000).toISOString();
         mapping.replyToken = metadata.replyToken;
-        mapping.replyTokenExpiry = replyTokenExpiry;
+        mapping.replyTokenExpiry = this.replyTokenPolicy.createExpiry();
       }
 
       if (metadata.quoteToken) {
@@ -218,7 +219,7 @@ class MessageMappingManager {
   async markReplyTokenUsed(lineMessageId) {
     try {
       const mapping = this.lineToDiscord.get(lineMessageId);
-      if (!mapping?.replyToken || mapping.replyTokenUsedAt || this.isReplyTokenExpired(mapping)) {
+      if (!this.replyTokenPolicy.isUsable(mapping)) {
         return false;
       }
 
@@ -248,11 +249,7 @@ class MessageMappingManager {
   }
 
   isReplyTokenExpired(mapping) {
-    if (!mapping?.replyTokenExpiry) {
-      return false;
-    }
-
-    return new Date(mapping.replyTokenExpiry).getTime() <= Date.now();
+    return this.replyTokenPolicy.isExpired(mapping);
   }
 
   /**
