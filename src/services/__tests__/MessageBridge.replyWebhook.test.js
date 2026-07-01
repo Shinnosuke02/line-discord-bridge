@@ -68,6 +68,7 @@ jest.mock('../../utils/messageBatcher', () => jest.fn(() => ({
 })));
 
 jest.mock('../../middleware/lineLimitHandler', () => ({
+  initialize: jest.fn(),
   shouldLimitMessage: jest.fn(() => ({ allowed: true })),
   recordMessageSent: jest.fn(),
   getLimitStatus: jest.fn(() => ({}))

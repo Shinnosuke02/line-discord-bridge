@@ -110,6 +110,7 @@ class MessageBridge {
     try {
       // MessageMappingManagerを初期化
       await this.messageMappingManager.initialize();
+      await lineLimitHandler.initialize();
       
       await this.featureManager.initialize();
       

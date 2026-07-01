@@ -67,5 +67,6 @@ userChannelMap.json
 mapping.json
 data/channel-mappings.json
 data/message-mappings.json
+data/line-usage.json
 temp/
 uploads/
