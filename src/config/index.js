@@ -48,6 +48,7 @@ const config = {
     },
     uploadPath: process.env.UPLOAD_PATH || './uploads',
     tempPath: process.env.TEMP_PATH || './temp',
+    tempStaticEnabled: process.env.TEMP_STATIC_ENABLED !== 'false',
     supportedImageMimeTypes: [
       'image/jpeg',
       'image/png',

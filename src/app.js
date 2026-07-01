@@ -71,8 +71,21 @@ class App {
     // 静的ファイルの提供
     this.app.use('/static', express.static(path.join(__dirname, '../public')));
     
-    // 一時ファイルの提供（スタンプ変換用）
-    this.app.use('/temp', express.static(path.join(__dirname, '../temp')));
+    // 一時ファイルの提供（LINE API向け自己ホストURL用）
+    if (config.file.tempStaticEnabled) {
+      this.app.use('/temp', express.static(path.resolve(config.file.tempPath), {
+        dotfiles: 'deny',
+        fallthrough: false,
+        index: false,
+        redirect: false,
+        setHeaders: (res) => {
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.setHeader('Cache-Control', 'public, max-age=300');
+        }
+      }));
+    } else {
+      logger.warn('Temporary file static serving is disabled');
+    }
     
     logger.info('Middleware configured');
   }

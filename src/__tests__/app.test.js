@@ -13,6 +13,9 @@
  */
 const App = require('../app');
 const request = require('supertest');
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
 const config = require('../config');
 const { createLineSignature } = require('../middleware/lineSignature');
 
@@ -33,9 +36,13 @@ MessageBridge.mockImplementation(() => mockMessageBridge);
 describe('App', () => {
   let app;
   let processOnSpy;
+  let originalTempPath;
+  let originalTempStaticEnabled;
 
   beforeEach(() => {
     processOnSpy = jest.spyOn(process, 'on').mockImplementation(() => process);
+    originalTempPath = config.file.tempPath;
+    originalTempStaticEnabled = config.file.tempStaticEnabled;
     app = new App();
     jest.clearAllMocks();
   });
@@ -44,6 +51,8 @@ describe('App', () => {
     if (app.server) {
       app.server.close();
     }
+    config.file.tempPath = originalTempPath;
+    config.file.tempStaticEnabled = originalTempStaticEnabled;
     processOnSpy.mockRestore();
   });
 
@@ -58,6 +67,40 @@ describe('App', () => {
   describe('ミドルウェア設定', () => {
     test('setupMiddlewareが正常に動作する', () => {
       expect(() => app.setupMiddleware()).not.toThrow();
+    });
+
+    test('temp static serving can be disabled by config', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-temp-static-'));
+      try {
+        await fs.writeFile(path.join(tempDir, 'sample.txt'), 'hello');
+        config.file.tempPath = tempDir;
+        config.file.tempStaticEnabled = false;
+
+        app.setupMiddleware();
+
+        const response = await request(app.app).get('/temp/sample.txt');
+        expect(response.status).toBe(404);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('temp static serving sets defensive headers when enabled', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-temp-static-'));
+      try {
+        await fs.writeFile(path.join(tempDir, 'sample.txt'), 'hello');
+        config.file.tempPath = tempDir;
+        config.file.tempStaticEnabled = true;
+
+        app.setupMiddleware();
+
+        const response = await request(app.app).get('/temp/sample.txt');
+        expect(response.status).toBe(200);
+        expect(response.headers['x-content-type-options']).toBe('nosniff');
+        expect(response.headers['cache-control']).toContain('max-age=300');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
