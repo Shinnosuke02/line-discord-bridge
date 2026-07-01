@@ -3,557 +3,260 @@
 [![Version](https://img.shields.io/badge/version-3.1.4-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
 
-> 最新化注意: このコードでは `PUBLIC_BASE_URL` を指定しないとデフォルト `http://localhost:${process.env.PORT || 3000}` でメディアURLを作成しますが、LINE APIでは公開の HTTPS URL が必要です。
+LINE と Discord を双方向に接続するブリッジアプリケーションです。テキスト、メディア、ファイル、スタンプ、位置情報、返信コンテキストを扱い、Discord 側では LINE ユーザー名/アイコンを Webhook 表示できます。
 
-**Version 3.1.4** - 本格運用対応のLINE-Discordブリッジアプリケーション。双方向メッセージング、堅牢なメディア処理（HEIC対応、自動変換）、Webhook表示、位置情報共有、ステッカー処理をサポートします。最新のLINE APIとDiscord Bot API仕様に対応。
+> 重要: LINE に画像/動画などの外部 URL を渡す場合、`PUBLIC_BASE_URL` は公開 HTTPS URL を指定してください。未指定時はローカル URL へフォールバックしますが、LINE API からは通常アクセスできません。
 
-## ✨ 特徴
+## 主な機能
 
-- 🔄 **双方向メッセージング**: LINEとDiscord間の完全な双方向通信
-- 📎 **メディア処理**: 画像、動画、音声、ファイル、ステッカーの自動処理（APNG/WebP対応）
-- 🎭 **Webhook対応**: Discord Webhookを使用した自然な表示（LINEユーザー名・アイコン）
-- 📍 **位置情報共有**: Googleマップリンク付きの位置情報共有
-- 📊 **メッセージマッピング**: 自動的なメッセージID管理
-- 🏷️ **チャンネル管理**: 自動チャンネル作成・名前生成（日本語対応）
-- 😊 **絵文字処理**: UTF-8エンコーディング問題の解決
-- 🛡️ **セキュリティ**: 堅牢なエラーハンドリングとセキュリティ機能
-- 📈 **監視**: 詳細なログとメトリクス
-- ⚡ **高性能**: 非同期処理とバッチ処理
-- 🧹 **自動クリンナップ**: 一時ファイルの自動削除機能
-- 🧪 **包括的テスト**: 主要機能のテストスイート完備
+- LINE ⇄ Discord の双方向メッセージ転送
+- Discord Webhook による LINE ユーザー名/アイコン表示
+- LINE `quotedMessageId` と Discord reply reference の返信連携
+- Discord → LINE 返信時の `replyToken` 優先送信と `quoteToken`/Push fallback
+- 画像、動画、音声、ファイル、スタンプ、位置情報の処理
+- HEIC/HEIF、APNG/WebP、画像圧縮/変換、プレビュー生成
+- LINE ファイルメッセージのオリジナルファイル名維持
+- LINE Webhook 署名検証
+- ログ秘匿情報 redaction
+- チャンネル/メッセージマッピングの JSON 永続化
+- LINE Push 通数カウントの再起動耐性
+- `/temp` 静的配信の運用ガード
+- Jest/ESLint による検証
 
-## 🚀 クイックスタート
+## 前提条件
 
-### 前提条件
-
-- Node.js 18.0.0以上
-- npm 8.0.0以上
-- LINE Bot API v7対応のチャンネル
+- Node.js 18.0.0 以上
+- npm 8.0.0 以上
+- LINE Messaging API チャンネル
 - Discord Bot Token
-- Discord Bot権限: `Send Messages`, `Manage Webhooks`, `Manage Channels`
+- Discord Bot 権限: `Send Messages`, `Manage Webhooks`, `Manage Channels`, `Read Message History`
 
-### インストール
+## セットアップ
 
 ```bash
-# リポジトリをクローン
 git clone https://github.com/Shinnosuke02/line-discord-bridge.git
 cd line-discord-bridge
-
-# 依存関係をインストール
 npm install
-
-# 環境変数を設定
 cp env.example .env
-# .envファイルを編集して必要な値を設定
 ```
 
-### 設定
-
-`.env`ファイルで以下の環境変数を設定してください：
+`.env` に LINE / Discord の認証情報と公開 URL を設定します。
 
 ```env
-# LINE Bot設定
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
 LINE_CHANNEL_SECRET=your_line_channel_secret
-
-# Discord Bot設定
 DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_GUILD_ID=your_discord_guild_id
 DISCORD_CLIENT_ID=your_discord_client_id
-
-# Webhook設定
-WEBHOOK_ENABLED=true
-WEBHOOK_NAME=LINE Bridge
-
-# 公開URL（LINEに送信する画像/動画などを外部から読み込ませる場合）
 PUBLIC_BASE_URL=https://your-domain.example
-
-# その他の設定
 NODE_ENV=production
 PORT=3000
-LOG_LEVEL=info
 ```
 
-### 起動
+LINE Developers Console の Webhook URL は次のように設定します。
+
+```text
+https://your-domain.example/webhook
+```
+
+`LINE_WEBHOOK_PATH` を変更した場合は、そのパスに合わせてください。
+
+## 起動
 
 ```bash
-# 開発モード
-npm run dev
-
-# 本番モード
-npm start
-
-# PM2で管理
+npm run dev      # 開発
+npm start        # 本番相当
 npm run pm2:start
 ```
 
-## 📁 プロジェクト構造
+## 環境変数
 
-```
+主要な設定は `env.example` を参照してください。特に運用上重要なものは以下です。
+
+| 変数 | 既定値 | 説明 |
+| --- | --- | --- |
+| `LINE_CHANNEL_ACCESS_TOKEN` | なし | LINEチャネルアクセストークン |
+| `LINE_CHANNEL_SECRET` | なし | LINE署名検証に使うチャネルシークレット |
+| `LINE_WEBHOOK_PATH` | `/webhook` | LINE Webhook受信パス |
+| `DISCORD_BOT_TOKEN` | なし | Discord Bot Token |
+| `DISCORD_GUILD_ID` | なし | チャンネル作成先Guild |
+| `DISCORD_CLIENT_ID` | なし | Discord Application Client ID |
+| `PUBLIC_BASE_URL` | 空 | LINEからアクセス可能な公開HTTPS URL |
+| `WEBHOOK_ENABLED` | `false`相当 | Discord Webhook表示を使う場合は `true` |
+| `BRIDGE_REPLY_ENABLED` | `true` | 返信ブリッジ有効/無効 |
+| `LINE_TO_DISCORD_REPLY_MODE` | `webhook` | `webhook` または `bot-reply` |
+| `BRIDGE_REACTION_ENABLED` | `false` | 反応ブリッジ。LINE側制約により既定無効 |
+| `LINE_SIGNATURE_VALIDATION_ENABLED` | `true` | LINE署名検証。緊急回避時のみ `false` |
+| `TEMP_STATIC_ENABLED` | `true` | `/temp` 静的配信。止める場合は `false` |
+| `TEMP_PATH` | `./temp` | 自己ホスト用一時ファイル保存先 |
+| `UPLOAD_PATH` | `./uploads` | アップロード保存先 |
+| `LINE_ADMIN_USER_IDS` | 空 | LINE使用量アラート送信先 |
+| `MESSAGE_BATCH_TIMEOUT` | `120000` | Discord→LINEバッチ送信待機時間 |
+| `MESSAGE_BATCH_MAX_SIZE` | `10` | バッチ最大件数 |
+
+## プロジェクト構造
+
+```text
 src/
-├── app.js                 # メインアプリケーション
-├── config/
-│   └── index.js          # メイン設定
-├── services/
-│   ├── MessageBridge.js  # メッセージブリッジ
-│   ├── LineService.js    # LINE APIサービス
-│   ├── DiscordService.js # Discord APIサービス
-│   ├── MediaService.js   # メディア処理サービス
-│   ├── ChannelManager.js # チャンネル管理
-│   ├── WebhookManager.js # Webhook管理
-│   ├── MessageMappingManager.js # メッセージマッピング
-│   ├── LineUsageMonitor.js # LINE使用量監視
-│   └── MessageQueue.js   # メッセージキュー
+├── app.js
+├── config/index.js
+├── features/
+│   ├── BridgeFeatureManager.js
+│   ├── ReplyBridgeFeature.js
+│   └── ReactionBridgeFeature.js
 ├── middleware/
-│   ├── errorHandler.js   # エラーハンドリング
-│   ├── requestLogger.js  # リクエストログ
-│   └── security.js       # セキュリティ
-├── utils/
-│   ├── logger.js         # ログ設定
-│   └── fileUtils.js      # ファイルユーティリティ
-└── routes/               # APIルート（将来の拡張用）
+│   ├── lineLimitHandler.js
+│   ├── lineSignature.js
+│   ├── requestLogger.js
+│   └── security.js
+├── services/
+│   ├── ChannelManager.js
+│   ├── DiscordService.js
+│   ├── LineSendSession.js
+│   ├── LineService.js
+│   ├── LineUsageMonitor.js
+│   ├── MediaService.js
+│   ├── MessageBridge.js
+│   ├── MessageMappingManager.js
+│   ├── ReplyTokenPolicy.js
+│   └── WebhookManager.js
+└── utils/
+    ├── jsonFileStore.js
+    ├── logger.js
+    ├── logRedaction.js
+    └── messageBatcher.js
 
-data/                     # データファイル
-├── channel-mappings.json # チャンネルマッピング
-└── message-mappings.json # メッセージ/返信マッピング
-
-logs/                     # ログファイル
-uploads/                  # アップロードファイル
-temp/                     # 一時ファイル
+data/
+├── channel-mappings.json
+├── message-mappings.json
+└── line-usage.json
 ```
 
-## 🔧 機能詳細
+`data/*.json`, `temp/`, `uploads/`, `logs/` は runtime data です。既存運用データを削除せず、バックアップ対象として扱ってください。
 
-### メッセージ転送
+## 返信ブリッジ
 
-- **LINE → Discord**: テキスト、画像、動画、音声、ファイル、ステッカー、位置情報
-- **Discord → LINE**: テキスト、画像、動画、音声、ファイル、ステッカー（画像として送信）、位置情報（Googleマップリンク検出）
+### LINE → Discord
 
-### Webhook表示機能
+LINE の返信イベントに `quotedMessageId` がある場合、保存済みマッピングから Discord メッセージIDを解決し、Discord 側の返信として送信します。
 
-- **LINEユーザー名表示**: DiscordでLINEユーザーの表示名を表示
-- **LINEアイコン表示**: DiscordでLINEプロフィール画像をアバターとして使用
-- **グループ対応**: グループチャットではグループ名・アイコンを表示
-- **自動フォールバック**: Webhook失敗時はBot送信に自動切り替え
+`LINE_TO_DISCORD_REPLY_MODE` で送信方式を選べます。
 
-### チャンネル管理
+- `webhook`: LINEユーザー名/アイコン表示を優先
+- `bot-reply`: Discord Bot のネイティブ reply 表示を優先
 
-- **自動チャンネル作成**: LINEユーザー・グループごとにDiscordチャンネルを自動作成
-- **日本語チャンネル名**: 日本語のユーザー名・グループ名に対応
-- **動的チャンネル名更新**: グループ名変更時の自動更新
+### Discord → LINE
 
-### 位置情報共有機能
+Discordで LINE由来メッセージに標準返信した場合、保存済み LINE コンテキストを使います。
 
-- **LINE → Discord**: 位置情報をGoogleマップリンク付きで表示
-- **Discord → LINE**: Googleマップリンクや座標をLINE位置情報として送信
-- **自動検出**: 座標パターン（35.6895, 139.6917）やGoogleマップURLを自動検出
-- **詳細表示**: 住所、座標、Googleマップリンクを包括的に表示
+優先順:
 
+1. `replyToken` が未使用かつ期限内なら `replyMessage`
+2. `replyToken` が使えない場合は `quoteToken` 付き `pushMessage`
+3. どちらもない場合は通常の `pushMessage`
 
-### メディア処理
+`replyToken` は LINE の制約で短時間かつ1回のみ有効です。失敗時も既存運用を止めないため Push fallback を維持しています。
 
-- **自動MIME判定**: ファイル内容から正確なMIMEタイプを判定
-- **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理
-- **HEIC/HEIF変換**: HEIC/HEIF画像をJPEGに自動変換（LINE⇄Discord両方向対応）
-- **画像送信の堅牢性**: PNG/JPEG画像を自己ホストURL経由で送信し、CDN URL失敗を回避
-- **プレビュー生成**: 画像送信時に軽量プレビューを自動生成
-- **サイズ超過時の再圧縮**: 10MB超過画像を自動的にJPEG圧縮して送信
-- **大容量ファイル対応**: Discord CDN URLを活用した大容量ファイル送信
-- **画像圧縮**: Sharpを使用した画像の自動圧縮
-- **ステッカー処理**: DiscordステッカーをLINE画像として送信
-- **外部URL**: LINE Bot API v7の外部URL機能を活用
-- **フォールバック機能**: 処理失敗時の自動的な代替処理
-- **形式変換**: WebP/GIF/BMP等の非対応形式をPNG/JPEGに自動変換
+## メディアとファイル名
 
-### ステッカー処理
+- LINE `file` メッセージは Webhook payload の `fileName` を Discord 添付名にも維持します。
+- 日本語などの Unicode ファイル名は保持します。
+- パス区切り、制御文字、Discord添付名として危険な文字のみ置換/除去します。
+- LINE の `image` / `video` / `audio` メッセージには元ファイル名が含まれないため、`image_<messageId>.ext` などの生成名になります。
+- HEIC/HEIF は JPEG へ変換します。
+- LINEへ画像/動画を送る際、必要に応じて `TEMP_PATH` に一時ファイルを置き、`PUBLIC_BASE_URL/temp/...` として参照させます。
 
-- **LINE → Discord**: ステッカー画像のみ表示（ID表示なし）
-- **Discord → LINE**: Discordステッカーを画像として送信
-- **LOTTIE対応**: LOTTIEスタンプはテキストとして送信
-- **APNG変換**: アニメーションスタンプは静止画に変換
-- **自動クリンナップ**: 変換した一時ファイルを自動削除
+## セキュリティ
 
-### 絵文字処理（v3.1.0新機能）
+- LINE Webhook署名検証を既定で有効化
+- Helmet によるセキュリティヘッダー
+- レート制限/CORS設定
+- ログ出力時のトークン・シークレット・raw body redaction
+- `/temp` 配信は `dotfiles: deny`, `index: false`, `redirect: false`, `nosniff`, 短時間キャッシュを設定
+- 緊急時は `LINE_SIGNATURE_VALIDATION_ENABLED=false` または `TEMP_STATIC_ENABLED=false` で個別に切り戻し可能
 
-- **UTF-8正規化**: Unicode正規化により文字エンコーディング問題を解決
-- **絵文字検出**: 有効な絵文字の検証機能
-- **自動修復**: 絵文字化け「(emoji)」を適切な絵文字に自動変換
-- **プラットフォーム対応**: LINEとDiscord間での絵文字互換性を確保
-- **ゼロ幅文字除去**: 絵文字表示を妨げる文字の自動除去
+## 永続化
 
-## 📊 監視とログ
+現在はファイルベースのJSON永続化です。
 
-### ヘルスチェック
+- `data/channel-mappings.json`: LINE source ID と Discord channel ID の対応
+- `data/message-mappings.json`: LINE/DiscordメッセージID、replyToken/quoteToken の対応
+- `data/line-usage.json`: LINE Push 通数カウント
+
+JSON保存は一時ファイルへの書き込み後に rename する atomic 保存を使います。
+
+## 監視
 
 ```bash
 curl http://localhost:3000/health
-```
-
-### メトリクス
-
-```bash
 curl http://localhost:3000/metrics
 ```
 
-### ログレベル
+ログ:
 
-環境変数`LOG_LEVEL`で設定可能：
-- `error`: エラーのみ
-- `warn`: 警告以上
-- `info`: 情報以上（デフォルト）
-- `debug`: デバッグ情報含む
+- `logs/application-YYYY-MM-DD.log`
+- `logs/error-YYYY-MM-DD.log`
+- `logs/warn-YYYY-MM-DD.log`
 
-### ログファイル
-
-- `logs/application-YYYY-MM-DD.log`: アプリケーションログ
-- `logs/error-YYYY-MM-DD.log`: エラーログ
-- `logs/warn-YYYY-MM-DD.log`: 警告ログ
-
-## 🛠️ 開発
-
-### スクリプト
+## 開発
 
 ```bash
-# 開発サーバー起動
-npm run dev
-
-# テスト実行
 npm test
 npm run test:watch
-
-# リント
 npm run lint
 npm run lint:fix
-
-# フォーマット
-npm run format
-
-# PM2管理
-npm run pm2:start
-npm run pm2:stop
-npm run pm2:restart
-npm run pm2:logs
-npm run pm2:status
 ```
 
-### テスト
+現在の主要テスト対象:
 
-```bash
-# 全テスト実行
-npm test
+- App / Webhook署名検証
+- MessageBridge / replyToken送信
+- ReplyBridgeFeature / ReplyTokenPolicy
+- MessageMappingManager / ChannelManager
+- MediaService / LINEファイル名維持 / スタンプ / 形式変換
+- LineLimitHandler / LINE通数永続化
+- logRedaction / jsonFileStore
 
-# ウォッチモード
-npm run test:watch
+## 運用メモ
 
-# カバレッジ付き
-npm test -- --coverage
-```
+- `PUBLIC_BASE_URL` は本番で必ず HTTPS の外部到達可能URLにしてください。
+- `LINE_SIGNATURE_VALIDATION_ENABLED=false` は緊急回避用です。恒久運用では有効化してください。
+- `TEMP_STATIC_ENABLED=false` にすると、自己ホストURL経由のLINEメディア送信が失敗する可能性があります。
+- LINE管理画面や別システムから送ったPush通数は、このアプリの `data/line-usage.json` には自動反映されません。
+- `npm audit --omit=dev` には breaking change が必要な残存警告があります。`npm audit fix --force` は Discord/LINE SDK 互換に影響し得るため、別検証単位で扱ってください。
 
-**テストカバレッジ**:
-- MessageBridge: 初期化、エラーハンドリング、メトリクス
-- LineService: API呼び出し、エラーハンドリング
-- DiscordService: メッセージ送信、チャンネル検索
-- App: ミドルウェア、ルート、ヘルスチェック
-- emojiHandler: 絵文字正規化、検出、変換
+## 既知の制限
 
-## � 今回のアップデート（2026年3月）
+- LINE `image` / `video` / `audio` の元ファイル名はLINE webhookに含まれないため復元できません。
+- Discord → LINE のネイティブ返信は `replyToken` の期限内のみ成立します。期限切れ時は `quoteToken` または通常Pushへフォールバックします。
+- リアクション相互通信は LINE Messaging API 側の制約が大きいため既定では無効です。
+- Discord/LINE API のレート制限や月間Push制限は外部要因として残ります。
 
-このリポジトリでは以下の改善を実施しました。
+## トラブルシューティング
 
-- ✅ Discord→LINEメディア送信の堅牢化
-  - Discord添付を実際のバイナリから MIME を判定
-  - LINE制限を超える場合は CDN/リンクフォールバック
-  - スタンプURL周りの LOTTIE/.json 変換安定化
+### Webhookが401になる
 
-- ✅ LINE→Discord 絵文字エンコード改善
-  - Unicode 正規化（NFC）、不正サロゲート除去
-  - `(emoji)` 等の絵文字化け回復
-  - Discordカスタム絵文字 `<:name:id>` を安全変換
+- `LINE_CHANNEL_SECRET` がLINE Developers Consoleの値と一致しているか確認
+- リバースプロキシでbodyが改変されていないか確認
+- 緊急回避は `LINE_SIGNATURE_VALIDATION_ENABLED=false`
 
-- ✅ 既存チャネル・メッセージマッピングは再起動後も永続化対応
-  - `data/channel-mappings.json` と `data/message-mappings.json` に保存
+### LINEへの画像/動画送信が失敗する
 
----
+- `PUBLIC_BASE_URL` が公開HTTPS URLか確認
+- `/temp/...` に外部からアクセスできるか確認
+- `TEMP_STATIC_ENABLED=true` か確認
 
-## �🚀 デプロイ
+### DiscordでLINEファイル名が維持されない
 
-### PM2を使用
+- LINEで「ファイル」として送られているか確認
+- 画像/動画/音声として送られた場合、LINE payloadに元ファイル名がないため生成名になります
 
-```bash
-# アプリケーション開始
-npm run pm2:start
+### LINE通数カウントが実際の管理画面とずれる
 
-# 設定保存
-pm2 save
+- このアプリ経由のPush送信のみを `data/line-usage.json` に記録します
+- LINE管理画面や別プロセスからの送信は別途確認してください
 
-# 自動起動設定
-pm2 startup
+## ライセンス
 
-# 再起動（環境変数更新）
-pm2 restart line-discord-bridge --update-env
-```
-
-### 環境変数
-
-本番環境では以下の環境変数を設定してください：
-
-```env
-NODE_ENV=production
-LOG_LEVEL=info
-WEBHOOK_ENABLED=true
-```
-
-## 🔒 セキュリティ
-
-- **API認証**: ファイルアップロード用のAPIキー認証
-- **レート制限**: 設定可能なレート制限
-- **セキュリティヘッダー**: XSS、CSRF対策（Helmet使用）
-- **入力検証**: ファイルタイプとサイズの検証
-- **エラーハンドリング**: 詳細なエラー情報の制御
-- **User-Agentフィルタ**: ボット攻撃の防止
-
-## 📈 パフォーマンス
-
-- **非同期処理**: 全処理が非同期で実行
-- **バッチ処理**: メッセージのバッチ処理
-- **メモリ管理**: 効率的なメモリ使用
-- **エラー回復**: 自動リトライ機能
-- **ファイル処理**: Sharpを使用した効率的な画像処理
-
-## ⚠️ 既知の問題と制限事項
-
-### 現在の不具合・制限
-
-1. **返信機能（LINE→Discord）**
-   - **状態**: 実験中・実現不可（v3.1.4）
-   - **問題**: LINE APIの仕様により、LINEからDiscordへの返信機能を実現できませんでした
-   - **詳細**: LINEのWebhookイベントには返信元メッセージIDを特定する情報が含まれておらず、返信元を特定することができません
-   - **回避策**: 通常のメッセージ送信を使用してください
-   - **注意**: 返信機能のコードは実装されていますが、動作しません
-
-2. **LOTTIEスタンプ**
-   - **状態**: 制限あり
-   - **問題**: DiscordのLOTTIEスタンプは画像として送信できない
-   - **回避策**: テキストメッセージとして送信（`🎭 スタンプ: [名前] (LOTTIE)`）
-
-3. **グループアイコン表示**
-   - **状態**: 未実装
-   - **問題**: Discord WebhookでLINEグループのアイコンが表示されない
-   - **回避策**: デフォルトアイコンまたはユーザーアイコンを使用
-
-4. **Discord API制限**
-   - **状態**: 外部制限
-   - **問題**: Discordのレート制限により大量メッセージ送信時に制限される場合がある
-   - **回避策**: メッセージ送信間隔の調整
-
-5. **LINE API制限**
-   - **状態**: 外部制限
-   - **問題**: LINE Bot APIの制限により大量メッセージ送信時に制限される場合がある
-   - **回避策**: メッセージ送信間隔の調整
-
-### 最新の改善点（v3.1.4）
-
-- ⚠️ **返信機能の実験**: LINE→Discord返信機能の実装を試みましたが、LINE APIの仕様により実現できませんでした
-- ✅ **コードの安全性**: 返信機能のコードは実装されていますが、動作しないため既存のメッセージ転送に影響はありません
-- ✅ **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
-
-### 以前の改善点（v3.1.3）
-
-- ✅ **最新API仕様対応**: LINE Bot SDK v7.5.2（最新版）、Discord.js v14.16.3に更新
-- ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
-- ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
-
-### 以前の改善点（v3.1.0）
-
-- ✅ **絵文字処理の改善**: UTF-8エンコーディング問題を完全解決
-- ✅ **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理を実装
-- ✅ **大容量ファイル対応**: Discord CDN URLを活用した大容量ファイル送信機能
-- ✅ **システムの簡素化**: 複雑すぎるリプライ機能を削除して安定性を向上
-- ✅ **コード品質向上**: 不要なコードの削除と保守性の改善
-
-### 以前の改善点（v3.0.0）
-
-- ✅ **テストスイートの追加**: 主要機能のテストケースを実装
-- ✅ **セキュリティ更新**: axiosを最新版（v1.7.7）に更新
-- ✅ **ログシステムの統一**: Winstonを使用した統一的なログ管理
-- ✅ **コード品質向上**: レガシーファイルの削除とグレースフルシャットダウンの修正
-
-### 技術的制限
-
-- **ファイルサイズ**: 10MB制限（設定可能）
-- **サポート形式**: 画像（JPEG, PNG, GIF, WebP）、動画（MP4）、音声（MP3, AAC）
-- **ステッカー**: Discordステッカーは画像として送信（アニメーションは静止画に変換）
-- **位置情報**: 住所情報はLINE側でのみ利用可能
-
-## 🔧 トラブルシューティング
-
-### よくある問題
-
-1. **Webhookが動作しない**
-   - `WEBHOOK_ENABLED=true`に設定されているか確認
-   - Discord Botに`Manage Webhooks`権限があるか確認
-
-2. **チャンネル名が日本語で表示されない**
-   - `LOG_LEVEL=debug`に設定してログを確認
-   - LINEユーザープロフィールが正しく取得できているか確認
-
-3. **画像送信が失敗する**
-   - ファイルサイズが制限内か確認（デフォルト: 10MB）
-   - サポートされている形式か確認
-
-
-4. **位置情報が表示されない**
-   - LINEで位置情報を正しく送信しているか確認
-   - DiscordでGoogleマップリンクの形式が正しいか確認
-
-### ログ確認
-
-```bash
-# リアルタイムログ
-pm2 logs line-discord-bridge
-
-# エラーログ確認
-tail -f logs/error-$(date +%Y-%m-%d).log
-
-# アプリケーションログ確認
-tail -f logs/application-$(date +%Y-%m-%d).log
-```
-
-## 🤝 貢献
-
-1. フォークしてください
-2. フィーチャーブランチを作成してください (`git checkout -b feature/amazing-feature`)
-3. 変更をコミットしてください (`git commit -m 'Add some amazing feature'`)
-4. ブランチにプッシュしてください (`git push origin feature/amazing-feature`)
-5. プルリクエストを作成してください
-
-## 📝 ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています。詳細は[LICENSE](LICENSE)ファイルを参照してください。
-
-## 🆘 サポート
-
-問題が発生した場合：
-
-1. [Issues](https://github.com/Shinnosuke02/line-discord-bridge/issues)で既存の問題を確認
-2. 新しいIssueを作成
-3. ログファイルを確認 (`logs/`ディレクトリ)
-
-## 📚 技術仕様
-
-### 使用技術
-
-- **Node.js**: v18.0.0以上
-- **Discord.js**: v14.16.3（v14/v15互換）
-- **LINE Bot SDK**: v7.5.2（最新）
-- **Express**: v4.18.2
-- **Sharp**: v0.33.0（画像処理）
-- **Winston**: v3.11.0（ログ管理）
-- **PM2**: プロセス管理
-
-### API対応
-
-- **LINE Bot API**: v7（最新仕様対応）
-- **Discord API**: v10（Discord.js v14/v15互換）
-- **Node.js**: v18+（最新LTS）
-
-### 最新仕様への対応（v3.1.4）
-
-- ⚠️ **返信機能の実験**: LINE→Discord返信機能の実装を試みましたが、LINE APIの仕様により実現できませんでした
-- ✅ **コードの安全性**: 返信機能のコードは実装されていますが、動作しないため既存のメッセージ転送に影響はありません
-- ✅ **エラーハンドリング**: 返信処理のエラーハンドリングを実装し、失敗時も通常メッセージとして送信されます
-
-### 以前の対応（v3.1.3）
-
-- ✅ **LINE API最新仕様対応**: LINE Bot SDK v7.5.2（最新版）に対応
-- ✅ **Discord.js最新版対応**: Discord.js v14.16.3に更新（v14/v15互換）
-- ✅ **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止
-- ✅ **イベントハンドリング改善**: Discord.js v14/v15の両方のイベントに対応
-
-## 🎯 Reply Bridge Status
-
-### 現在の実装方針
-
-- ✅ **LINE→Discord返信機能**: `quotedMessageId` と Discord の reply reference を利用して連携
-- ✅ **Discord→LINE返信機能**: LINE Messaging API の `quoteToken` を利用して連携
-- ⚠️ **Discord→LINEはメッセージ単位の追跡が必要**: 返信対象を維持するため、通常時より細かいマッピングを保存
-- ⚙️ **LINE→Discord返信表示モード**: `.env` の `LINE_TO_DISCORD_REPLY_MODE` で `webhook` / `bot-reply` を切替可能
-- ⚠️ **リアクション相互通信**: Discord 側イベントは取得可能ですが、LINE Messaging API 側の公開仕様不足のため既定では無効
-
-## 🎯 Version 3.1.3 - Latest API Specifications & Duplicate Message Prevention
-
-### 改善点（v3.1.3）
-
-- **最新API仕様対応**: LINE Bot SDK v7.5.2（最新版）、Discord.js v14.16.3に更新
-- **メッセージ重複防止**: サーバー復帰時のLINE Webhook再送信による二重送信を防止する重複チェック機能を追加
-- **イベントハンドリング改善**: Discord.js v14/v15の両方のイベント（`ready`/`clientReady`）に対応
-- **コード品質向上**: 最新仕様に準拠したコードベースの整理
-
-## 🎯 Version 3.1.2 - Enhanced Media Processing & Reliability
-
-### 改善点（v3.1.2）
-
-- **HEIC/HEIF画像対応**: LINE⇄Discord両方向でHEIC/HEIF画像をJPEGに自動変換
-- **画像送信の堅牢性向上**: PNG/JPEG画像を自己ホストURL経由で送信し、Discord CDN URL失敗を回避
-- **プレビュー画像生成**: 画像送信時に軽量プレビューを自動生成してLINE表示を最適化
-- **サイズ超過時の自動再圧縮**: 10MB超過画像を自動的にJPEG圧縮（品質85%）して送信
-- **非対応形式の自動変換**: WebP/GIF/BMP等をPNG/JPEGに自動変換
-- **動画・音声の形式チェック**: MP4/m4a以外の形式は適切にフォールバック
-- **LINE→Discord画像表示改善**: 画像のみ送信時の余計なテキストを削除
-
-### 以前の改善点（v3.1.1）
-
-- **ステッカー処理の完全復元**: LINE⇒Discordのステッカー送信が正常に動作
-- **画像変換処理の強化**: APNG、WebP、PNG等の形式に対応した適切な変換
-- **Discord API対応**: Discordの仕様に合わせた最適化された処理
-- **詳細ログ出力**: デバッグが容易な詳細なログ機能
-- **エラーハンドリング強化**: 安定した処理のための包括的なエラー処理
-- **設定の簡素化**: カテゴリ設定の整理と不要項目の削除
-
-### 以前の改善点（v3.1.0）
-
-- **絵文字処理の改善**: UTF-8エンコーディング問題を完全解決
-- **LINE側制限対応**: LINE側のファイルサイズ制限を考慮した処理を実装
-- **大容量ファイル対応**: Discord CDN URLを活用した大容量ファイル送信機能
-- **システムの簡素化**: 複雑すぎるリプライ機能を削除して安定性を向上
-- **コード品質向上**: 不要なコードの削除と保守性の改善
-- **安定性の向上**: シンプルで信頼性の高いシステム
-
-### 安定性
-
-- **本格運用対応**: 本番環境での使用に適した安定性
-- **エラーハンドリング**: 包括的なエラー処理と回復機能
-- **ログ管理**: 詳細なログとモニタリング機能
-- **セキュリティ**: 堅牢なセキュリティ機能
-- **安全性**: 新機能の失敗が既存機能に影響しない設計
-
-### 主要機能
-
-- ✅ **双方向メッセージング**: 完全に動作
-- ✅ **メディア処理**: 画像、動画、音声、ファイル、ステッカー（APNG/WebP/HEIC対応、自動変換機能付き）
-- ✅ **Webhook表示**: LINEユーザー名・アイコン表示
-- ✅ **位置情報共有**: Googleマップリンク付き
-- ✅ **チャンネル管理**: 自動作成・日本語対応
-- ✅ **自動クリンナップ**: 一時ファイル自動削除
-- ✅ **絵文字処理**: UTF-8エンコーディング問題解決
-- ✅ **包括的テスト**: 主要機能のテストスイート完備
-- ⚠️ **返信機能**: 実験中・実現不可（LINE APIの仕様により返信元メッセージIDを特定できません）
-
-### 推奨用途
-
-- **個人利用**: 個人のLINEとDiscordの連携
-- **小規模チーム**: 10人以下のチームでの利用
-- **コミュニティ**: 小規模コミュニティでの利用
-- **本格運用**: 本番環境での安定運用
-- **開発・テスト**: 開発環境でのテスト利用
-
-
----
-
-**注意**: このアプリケーションはLINE Bot API v7とDiscord.js v14（v15互換）を使用しています。古いバージョンとの互換性は保証されません。
-
-### 重複メッセージ防止機能
-
-サーバーがスリープ状態から復帰した際、LINE APIが以前送信したWebhookイベントを再送することがあります。本アプリケーションでは、メッセージIDの重複チェック機能により、既に処理済みのメッセージを自動的にスキップし、二重送信を防止します。
+MIT
