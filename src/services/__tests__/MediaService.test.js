@@ -12,6 +12,7 @@
  */
 const MediaService = require('../MediaService');
 const config = require('../../config');
+const path = require('path');
 
 // モックの設定
 jest.mock('../../utils/logger');
@@ -27,8 +28,10 @@ describe('MediaService', () => {
   let mediaService;
   let mockLineService;
   let mockDetectFileType;
+  let originalTempPath;
 
   beforeEach(() => {
+    originalTempPath = config.file.tempPath;
     // モックの初期化
     mockLineService = {
       pushMessage: jest.fn(),
@@ -40,7 +43,16 @@ describe('MediaService', () => {
   });
 
   afterEach(() => {
+    config.file.tempPath = originalTempPath;
     jest.clearAllMocks();
+  });
+
+  test('tempDir uses configured TEMP_PATH', () => {
+    config.file.tempPath = './custom-temp';
+
+    const service = new MediaService();
+
+    expect(service.tempDir).toBe(path.resolve('./custom-temp'));
   });
 
   describe('ファイルサイズ制限', () => {

@@ -39,7 +39,7 @@ class MediaService {
     // サンドボックスクリンナップ設定
     this.cleanupInterval = 30 * 60 * 1000; // 30分間隔でクリンナップ
     this.fileMaxAge = 2 * 60 * 60 * 1000; // 2時間でファイルを削除
-    this.tempDir = path.join(process.cwd(), 'temp');
+    this.tempDir = path.resolve(config.file.tempPath);
     
     // クリンナップタイマーを開始
     this.startCleanupTimer();
@@ -1015,7 +1015,7 @@ class MediaService {
    */
   async uploadToSelf(buffer, fileName) {
     try {
-      const tempPath = path.join(process.cwd(), 'temp', fileName);
+      const tempPath = path.join(this.tempDir, fileName);
       
       // tempディレクトリが存在しない場合は作成
       await fs.mkdir(path.dirname(tempPath), { recursive: true });
