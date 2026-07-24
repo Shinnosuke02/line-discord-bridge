@@ -24,7 +24,18 @@ const config = {
   discord: {
     botToken: process.env.DISCORD_BOT_TOKEN || '',
     guildId: process.env.DISCORD_GUILD_ID || '',
-    clientId: process.env.DISCORD_CLIENT_ID || ''
+    clientId: process.env.DISCORD_CLIENT_ID || '',
+    // カテゴリ設定
+    categories: {
+      // LINE個人用カテゴリ
+      friends: process.env.DISCORD_CATEGORY_FRIENDS || null,
+      // LINEグループ用カテゴリ
+      groups: process.env.DISCORD_CATEGORY_GROUPS || null,
+      // その他のカテゴリ
+      shop: process.env.DISCORD_CATEGORY_SHOP || null,
+      test: process.env.DISCORD_CATEGORY_TEST || null,
+      archive: process.env.DISCORD_CATEGORY_ARCHIVE || null
+    }
   },
 
   // サーバー設定

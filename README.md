@@ -22,6 +22,7 @@ LINE と Discord を双方向に接続するブリッジアプリケーション
 - チャンネル/メッセージマッピングの JSON 永続化
 - LINE Push 通数カウントの再起動耐性
 - `/temp` 静的配信の運用ガード
+- LINE個人/グループ別のDiscordカテゴリ自動割り当て
 - Jest/ESLint による検証
 
 ## 前提条件
@@ -49,6 +50,9 @@ LINE_CHANNEL_SECRET=your_line_channel_secret
 DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_GUILD_ID=your_discord_guild_id
 DISCORD_CLIENT_ID=your_discord_client_id
+# Discordカテゴリ設定（オプション）
+DISCORD_CATEGORY_FRIENDS=your_friends_category_id
+DISCORD_CATEGORY_GROUPS=your_groups_category_id
 PUBLIC_BASE_URL=https://your-domain.example
 NODE_ENV=production
 PORT=3000
@@ -82,6 +86,8 @@ npm run pm2:start
 | `DISCORD_BOT_TOKEN` | なし | Discord Bot Token |
 | `DISCORD_GUILD_ID` | なし | チャンネル作成先Guild |
 | `DISCORD_CLIENT_ID` | なし | Discord Application Client ID |
+| `DISCORD_CATEGORY_FRIENDS` | なし | LINE個人ユーザー用Discordカテゴリ |
+| `DISCORD_CATEGORY_GROUPS` | なし | LINEグループ用Discordカテゴリ |
 | `PUBLIC_BASE_URL` | 空 | LINEからアクセス可能な公開HTTPS URL |
 | `WEBHOOK_ENABLED` | `false`相当 | Discord Webhook表示を使う場合は `true` |
 | `BRIDGE_REPLY_ENABLED` | `true` | 返信ブリッジ有効/無効 |

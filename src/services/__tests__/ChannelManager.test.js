@@ -1,13 +1,23 @@
 jest.mock('../../utils/logger');
 
 const ChannelManager = require('../ChannelManager');
+const config = require('../../config');
 
 describe('ChannelManager', () => {
   let discordClient;
   let lineService;
   let channelManager;
+  let originalCategories;
 
   beforeEach(() => {
+    originalCategories = config.discord.categories;
+    config.discord.categories = {
+      friends: 'friends-category-id',
+      groups: 'groups-category-id',
+      shop: null,
+      test: null,
+      archive: null
+    };
     discordClient = {
       channels: {
         fetch: jest.fn()
@@ -25,7 +35,28 @@ describe('ChannelManager', () => {
   });
 
   afterEach(() => {
+    config.discord.categories = originalCategories;
     jest.clearAllMocks();
+  });
+
+  test('getCategoryForSource selects the Friends category for a LINE user', () => {
+    expect(channelManager.getCategoryForSource('U1234567890')).toBe('friends-category-id');
+  });
+
+  test('getCategoryForSource selects the Groups category for a LINE group', () => {
+    expect(channelManager.getCategoryForSource('C1234567890')).toBe('groups-category-id');
+  });
+
+  test('getCategoryForSource returns null for unknown source types', () => {
+    expect(channelManager.getCategoryForSource('X1234567890')).toBeNull();
+  });
+
+  test('getCategoryForSource returns null when category assignment is disabled', () => {
+    config.discord.categories.friends = null;
+    expect(channelManager.getCategoryForSource('U1234567890')).toBeNull();
+
+    config.discord.categories.groups = 'null';
+    expect(channelManager.getCategoryForSource('C1234567890')).toBeNull();
   });
 
   test('getChannelMapping returns an existing mapping by LINE source ID', () => {
