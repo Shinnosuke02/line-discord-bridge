@@ -220,6 +220,12 @@ class App {
           host: config.server.host,
           environment: config.server.environment
         });
+
+        // Let PM2 finish a wait_ready deployment as soon as HTTP is accepting
+        // connections instead of waiting for listen_timeout to expire.
+        if (typeof process.send === 'function') {
+          process.send('ready');
+        }
       });
 
       // グレースフルシャットダウンの設定

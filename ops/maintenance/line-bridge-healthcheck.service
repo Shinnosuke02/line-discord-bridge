@@ -1,0 +1,9 @@
+[Unit]
+Description=LINE Discord Bridge health check and guarded recovery
+After=network-online.target nginx.service pm2-ubuntu.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/line-bridge-healthcheck
+TimeoutStartSec=45s

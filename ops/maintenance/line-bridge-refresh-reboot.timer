@@ -1,0 +1,12 @@
+[Unit]
+Description=Monthly controlled refresh reboot on the first Sunday
+
+[Timer]
+OnCalendar=Sun *-*-01..07 04:45:00 Asia/Tokyo
+RandomizedDelaySec=5min
+AccuracySec=1min
+Persistent=true
+Unit=line-bridge-refresh-reboot.service
+
+[Install]
+WantedBy=timers.target

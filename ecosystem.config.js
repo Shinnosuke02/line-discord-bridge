@@ -6,7 +6,9 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
+      // Keep enough headroom for nginx, Oracle Cloud Agent and the OS on the
+      // current 1 GB VM. systemd provides a second, higher hard limit.
+      max_memory_restart: '400M',
       env: {
         NODE_ENV: 'production',
         PORT: 3000
@@ -21,12 +23,12 @@ module.exports = {
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_restarts: 10,
+      max_restarts: 20,
       min_uptime: '10s',
       restart_delay: 4000,
-      kill_timeout: 5000,
+      kill_timeout: 15000,
       wait_ready: true,
       listen_timeout: 8000
     }
   ]
-}; 
+};

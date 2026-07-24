@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly maintenance window for required reboots
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00 Asia/Tokyo
+RandomizedDelaySec=10min
+AccuracySec=1min
+Persistent=true
+Unit=line-bridge-security-reboot.service
+
+[Install]
+WantedBy=timers.target

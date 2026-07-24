@@ -1,0 +1,8 @@
+[Unit]
+Description=Monthly controlled refresh reboot
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/line-bridge-maintenance-reboot refresh
+TimeoutStartSec=2min

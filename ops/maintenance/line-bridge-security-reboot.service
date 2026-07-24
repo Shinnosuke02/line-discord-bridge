@@ -1,0 +1,9 @@
+[Unit]
+Description=Conditionally reboot after security or kernel updates
+After=apt-daily-upgrade.service network-online.target
+ConditionPathExists=/var/run/reboot-required
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/line-bridge-maintenance-reboot conditional
+TimeoutStartSec=2min
