@@ -42,4 +42,4 @@ jobs:
           node -e "const db=require('./src/infrastructure/sqlite'); db.getDatabase(); db.closeDatabase();"
           npm run db:status
           npm run db:backup
-          test -n "$(find \"$DB_BACKUP_PATH\" -name 'bridge-*.sqlite3' -print -quit)"
+          [ -n "$(find "$DB_BACKUP_PATH" -name 'bridge-*.sqlite3' -print -quit)" ]
