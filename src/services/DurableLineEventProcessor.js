@@ -1,11 +1,13 @@
 const logger = require('../utils/logger');
 const WebhookEventRepository = require('../repositories/WebhookEventRepository');
+const ConversationRepository = require('../repositories/ConversationRepository');
 const ConversationQueue = require('../utils/conversationQueue');
 
 class DurableLineEventProcessor {
   constructor(messageBridge, options = {}) {
     this.messageBridge = messageBridge;
     this.repository = options.repository || new WebhookEventRepository();
+    this.conversationRepository = options.conversationRepository || new ConversationRepository();
     this.queue = options.queue || new ConversationQueue();
     this.pollIntervalMs = options.pollIntervalMs || 1000;
     this.pollTimer = null;
@@ -97,6 +99,7 @@ class DurableLineEventProcessor {
         throw new Error('LINE event returned without a durable message mapping');
       }
 
+      this.syncConversation(row.event);
       this.repository.markCompleted(eventId);
       logger.debug('Durable LINE webhook event completed', { webhookEventId: eventId });
     } catch (error) {
@@ -107,6 +110,23 @@ class DurableLineEventProcessor {
       });
       throw error;
     }
+  }
+
+  syncConversation(event) {
+    const sourceId = event.source?.groupId || event.source?.roomId || event.source?.userId;
+    if (!sourceId) {
+      return;
+    }
+
+    const mapping = this.messageBridge.channelManager?.getChannelMapping(sourceId);
+    if (!mapping?.discordChannelId) {
+      return;
+    }
+
+    this.conversationRepository.upsert({
+      ...mapping,
+      sourceId
+    });
   }
 
   wasProcessed(event) {
