@@ -10,6 +10,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      LINE_CHANNEL_SECRET: test-line-secret
+      LINE_CHANNEL_ACCESS_TOKEN: test-line-token
+      DISCORD_BOT_TOKEN: test-discord-token
+      DISCORD_GUILD_ID: '123456789012345678'
+      DB_FILE: ${{ runner.temp }}/line-discord-bridge-test.sqlite3
+      DB_BACKUP_PATH: ${{ runner.temp }}/line-discord-bridge-backups
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,21 +28,18 @@ jobs:
           node-version: '20'
           cache: npm
 
-      # package-lock.json is intentionally refreshed after the embedded SQLite
-      # dependency lands. npm install keeps this workflow usable during the
-      # stacked reliability migration without requiring a system sqlite package.
       - name: Install dependencies
-        run: npm install --ignore-scripts=false
+        run: npm ci --ignore-scripts=false
 
       - name: Run tests
-        env:
-          NODE_ENV: test
-          LINE_CHANNEL_SECRET: test-line-secret
-          LINE_CHANNEL_ACCESS_TOKEN: test-line-token
-          DISCORD_BOT_TOKEN: test-discord-token
-          DISCORD_GUILD_ID: '123456789012345678'
-          DB_FILE: ${{ runner.temp }}/line-discord-bridge-test.sqlite3
         run: npm test -- --runInBand
 
       - name: Run lint
         run: npm run lint
+
+      - name: SQLite operations smoke test
+        run: |
+          node -e "const db=require('./src/infrastructure/sqlite'); db.getDatabase(); db.closeDatabase();"
+          npm run db:status
+          npm run db:backup
+          test -n "$(find \"$DB_BACKUP_PATH\" -name 'bridge-*.sqlite3' -print -quit)"
