@@ -10,7 +10,7 @@ function createRepository() {
       if (rows.has(event.webhookEventId)) return false;
       rows.set(event.webhookEventId, {
         webhook_event_id: event.webhookEventId,
-        source_id: event.source?.groupId || event.source?.userId || null,
+        source_id: event.source?.groupId || event.source?.roomId || event.source?.userId || null,
         event,
         status: 'pending'
       });
@@ -32,11 +32,20 @@ function createRepository() {
   };
 }
 
+function createConversationRepository() {
+  return { upsert: jest.fn() };
+}
+
 describe('DurableLineEventProcessor', () => {
   test('deduplicates the same webhookEventId before processing', () => {
     const repository = createRepository();
+    const conversationRepository = createConversationRepository();
     const bridge = { isInitialized: false };
-    const processor = new DurableLineEventProcessor(bridge, { repository, pollIntervalMs: 60000 });
+    const processor = new DurableLineEventProcessor(bridge, {
+      repository,
+      conversationRepository,
+      pollIntervalMs: 60000
+    });
 
     const event = {
       webhookEventId: 'evt-1',
@@ -52,14 +61,26 @@ describe('DurableLineEventProcessor', () => {
 
   test('marks a message event complete only after message mapping exists', async () => {
     const repository = createRepository();
+    const conversationRepository = createConversationRepository();
     const bridge = {
       isInitialized: true,
       messageMappingManager: {
         getLineToDiscordMapping: jest.fn(() => ({ discordMessageId: 'd1' }))
       },
+      channelManager: {
+        getChannelMapping: jest.fn(() => ({
+          sourceId: 'U1',
+          discordChannelId: 'D1',
+          channelName: 'Alice'
+        }))
+      },
       handleLineEvent: jest.fn(async () => undefined)
     };
-    const processor = new DurableLineEventProcessor(bridge, { repository, pollIntervalMs: 60000 });
+    const processor = new DurableLineEventProcessor(bridge, {
+      repository,
+      conversationRepository,
+      pollIntervalMs: 60000
+    });
 
     const event = {
       webhookEventId: 'evt-2',
@@ -73,12 +94,17 @@ describe('DurableLineEventProcessor', () => {
     await processor.queue.drain();
 
     expect(bridge.handleLineEvent).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: 'U1',
+      discordChannelId: 'D1'
+    }));
     expect(repository.markCompleted).toHaveBeenCalledWith('evt-2');
     expect(repository.rows.get('evt-2').status).toBe('completed');
   });
 
   test('returns failed processing to retry state', async () => {
     const repository = createRepository();
+    const conversationRepository = createConversationRepository();
     const bridge = {
       isInitialized: true,
       messageMappingManager: {
@@ -86,7 +112,11 @@ describe('DurableLineEventProcessor', () => {
       },
       handleLineEvent: jest.fn(async () => undefined)
     };
-    const processor = new DurableLineEventProcessor(bridge, { repository, pollIntervalMs: 60000 });
+    const processor = new DurableLineEventProcessor(bridge, {
+      repository,
+      conversationRepository,
+      pollIntervalMs: 60000
+    });
 
     const event = {
       webhookEventId: 'evt-3',
@@ -101,5 +131,20 @@ describe('DurableLineEventProcessor', () => {
 
     expect(repository.markRetry).toHaveBeenCalledWith('evt-3', expect.any(Error));
     expect(repository.rows.get('evt-3').status).toBe('retry');
+  });
+
+  test('recovers interrupted processing events on start', () => {
+    const repository = createRepository();
+    const conversationRepository = createConversationRepository();
+    repository.recoverInterrupted.mockReturnValue(2);
+    const processor = new DurableLineEventProcessor({ isInitialized: false }, {
+      repository,
+      conversationRepository,
+      pollIntervalMs: 60000
+    });
+
+    processor.start();
+    expect(repository.recoverInterrupted).toHaveBeenCalledTimes(1);
+    clearInterval(processor.pollTimer);
   });
 });
