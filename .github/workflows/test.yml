@@ -16,8 +16,8 @@ jobs:
       LINE_CHANNEL_ACCESS_TOKEN: test-line-token
       DISCORD_BOT_TOKEN: test-discord-token
       DISCORD_GUILD_ID: '123456789012345678'
-      DB_FILE: ${{ runner.temp }}/line-discord-bridge-test.sqlite3
-      DB_BACKUP_PATH: ${{ runner.temp }}/line-discord-bridge-backups
+      DB_FILE: /tmp/line-discord-bridge-test.sqlite3
+      DB_BACKUP_PATH: /tmp/line-discord-bridge-backups
     steps:
       - name: Checkout
         uses: actions/checkout@v4
