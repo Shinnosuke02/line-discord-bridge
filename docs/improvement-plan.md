@@ -23,7 +23,7 @@
 |  | 1 | 任意 |
 | 状態 | 未着手 | 未実装 |
 |  | 実装中 | コード変更中 |
-|  | 検証中 | テスト・実運用確認中 |
+|  | 検証中 | 自動テスト済み、実運用確認前を含む |
 |  | 完了 | 受入条件を満たした |
 |  | 保留 | 意図的に後回し |
 
@@ -31,152 +31,96 @@
 
 | ID | 改善項目 | 優先度 | 緊急度 | 重要度 | 状態 | 実装結果 / 備考 |
 |---|---|---:|---:|---:|---|---|
-| REL-001 | LINE WebhookをFast ACK化し、署名検証後すぐ200を返す | P0 | 5 | 5 | 未着手 | durable inbox導入と同時に実施する |
-| REL-002 | `webhookEventId` を用いた冪等性保証 | P0 | 5 | 5 | 未着手 | SQLiteのUNIQUE制約を最終防衛線にする |
-| REL-003 | LINE会話単位の逐次処理・順序保証 | P0 | 5 | 5 | 未着手 | conversation queueを導入予定 |
-| REL-004 | チャンネル作成の競合防止ロック | P0 | 5 | 5 | 未着手 | per-source mutex + DB一意制約 |
-| REL-005 | JSON永続化をSQLiteへ移行 | P0 | 4 | 5 | 未着手 | SQLite WALを採用予定 |
-| REL-006 | LINE source ID と Discord channel ID にDB一意制約を付与 | P0 | 4 | 5 | 未着手 | |
-| REL-007 | Discord message → LINE message の1:Nマッピング対応 | P1 | 3 | 4 | 未着手 | |
-| REL-008 | 再起動・再送・同時到着の競合テスト追加 | P0 | 5 | 5 | 未着手 | |
-| MSG-001 | MessageBatcherを原則廃止 | P0 | 4 | 4 | 未着手 | |
-| MSG-002 | MessageQueueとLineServiceのretry責務を整理 | P1 | 3 | 4 | 未着手 | |
-| DB-001 | `conversations` テーブル作成 | P0 | 4 | 5 | 未着手 | |
-| DB-002 | `webhook_events` テーブル作成 | P0 | 5 | 5 | 未着手 | |
-| DB-003 | `message_links` テーブル作成 | P0 | 4 | 5 | 未着手 | |
-| DB-004 | SQLite WALモード有効化 | P0 | 4 | 4 | 未着手 | |
-| DB-005 | JSON→SQLite移行スクリプト作成 | P0 | 3 | 4 | 未着手 | |
-| SEC-001 | 自動生成チャンネルの`@everyone`権限付与を廃止 | P0 | 5 | 5 | 未着手 | |
-| SEC-002 | Discord category権限の継承方式へ変更 | P0 | 4 | 5 | 未着手 | |
-| SEC-003 | チャンネルトピックへのLINE source ID直書きを廃止 | P1 | 3 | 4 | 未着手 | |
-| SEC-004 | LINE Webhookをアプリ全体rate limit対象から除外 | P0 | 5 | 5 | 検証中 | `config.line.webhookPath` を使ったskipを実装し回帰テスト追加 |
-| CFG-001 | `VIDEO_COMPRESSION_ENABLED` 判定ロジック修正 | P0 | 4 | 4 | 検証中 | `'true'` の時のみ有効になるよう修正しテスト追加 |
+| REL-001 | LINE WebhookをFast ACK化し、永続化後すぐ200を返す | P0 | 5 | 5 | 検証中 | 署名検証後、SQLiteへ同期保存してからACK。Discord/LINE外部API送信はHTTPリクエスト外へ移動 |
+| REL-002 | `webhookEventId` を用いた冪等性保証 | P0 | 5 | 5 | 検証中 | `webhook_events.webhook_event_id` をPRIMARY KEY化し `ON CONFLICT DO NOTHING` で重複排除 |
+| REL-003 | LINE会話単位の逐次処理・順序保証 | P0 | 5 | 5 | 検証中 | source ID単位のPromise queueを実装し、同一会話を直列処理 |
+| REL-004 | チャンネル作成の競合防止 | P0 | 5 | 5 | 検証中 | conversation queue + `PersistentChannelManager` のsource単位lock + DB一意制約。並行unit test合格 |
+| REL-005 | JSON永続化をSQLiteへ段階移行 | P0 | 4 | 5 | 検証中 | durable inboxをSQLite化。`DB_TYPE=sqlite` 時はSQLiteからchannel mappingを復元し、JSONへもrollback mirrorを継続 |
+| REL-006 | LINE source ID と Discord channel ID にDB一意制約を付与 | P0 | 4 | 5 | 検証中 | `conversations.line_source_id UNIQUE` / `discord_channel_id UNIQUE` を実装 |
+| REL-007 | Discord message → LINE message の1:Nマッピング対応 | P1 | 3 | 4 | 未着手 | Phase 2 |
+| REL-008 | 再起動・再送・同時到着の競合テスト追加 | P0 | 5 | 5 | 検証中 | webhook dedupe / retry / restart recovery / channel race / ACK経路の回帰テストを追加。VPS実機再起動のみ未確認 |
+| MSG-001 | MessageBatcherを原則廃止 | P0 | 4 | 4 | 未着手 | Phase 2 |
+| MSG-002 | MessageQueueとLineServiceのretry責務を整理 | P1 | 3 | 4 | 未着手 | Phase 2 |
+| DB-001 | `conversations` テーブル作成 | P0 | 4 | 5 | 検証中 | 作成済み。既存JSON migration、SQLite restore、JSON rollback mirrorを実装 |
+| DB-002 | `webhook_events` テーブル作成 | P0 | 5 | 5 | 検証中 | 作成済み。pending / processing / retry / completed を管理 |
+| DB-003 | `message_links` テーブル作成 | P0 | 4 | 5 | 実装中 | スキーマ作成済み。既存MessageMappingManagerからの切替はPhase 2 |
+| DB-004 | SQLite WALモード有効化 | P0 | 4 | 4 | 検証中 | `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000` を実装 |
+| DB-005 | JSON→SQLite移行スクリプト作成 | P0 | 3 | 4 | 検証中 | `npm run migrate:json` を追加。JSON元ファイルは削除しない |
+| OPS-001 | SQLite状態確認コマンド | P1 | 3 | 4 | 検証中 | `npm run db:status` でquick_check / WAL / row countを確認。CI smoke test合格 |
+| OPS-002 | WAL-safe SQLiteバックアップ | P1 | 4 | 5 | 検証中 | `npm run db:backup` を追加しSQLite backup APIを利用。CI smoke test合格 |
+| SEC-001 | 自動生成チャンネルの`@everyone`権限付与を廃止 | P0 | 5 | 5 | 検証中 | `PersistentChannelManager` では明示的permission overwriteを付けずcategory/server権限を継承 |
+| SEC-002 | Discord category権限の継承方式へ変更 | P0 | 4 | 5 | 検証中 | category parentのみ設定し、チャンネル権限は継承 |
+| SEC-003 | チャンネルトピックへのLINE source ID直書きを廃止 | P1 | 3 | 4 | 検証中 | topicを固定文字列 `LINE Bridge Channel` に変更 |
+| SEC-004 | LINE Webhookをアプリ全体rate limit対象から除外 | P0 | 5 | 5 | 検証中 | `config.line.webhookPath` を使ったskipと回帰テストを実装 |
+| CFG-001 | `VIDEO_COMPRESSION_ENABLED` 判定ロジック修正 | P0 | 4 | 4 | 検証中 | `'true'` の時のみ有効になるよう修正 |
 | CFG-002 | `DISCORD_GUILD_ID` を起動時必須検証へ追加 | P0 | 4 | 5 | 検証中 | 既存の環境変数名を変更せず起動時検証を追加 |
 | CFG-003 | `PUBLIC_BASE_URL` のHTTPS必須チェック追加 | P1 | 3 | 4 | 未着手 | 既存運用を壊さない条件設計後に実施 |
-| ARCH-003 | Repository層を導入しSQLiteアクセスを集約 | P0 | 4 | 5 | 未着手 | |
-| ARCH-005 | conversation単位のqueue実装 | P0 | 4 | 5 | 未着手 | |
-| TEST-001 | 同一Webhookイベント同時2回送信テスト | P0 | 5 | 5 | 未着手 | |
-| TEST-002 | 同一groupId初回メッセージ同時2件テスト | P0 | 5 | 5 | 未着手 | |
-| TEST-003 | Discordチャンネル削除後の再生成テスト | P0 | 4 | 5 | 未着手 | |
-| TEST-004 | 再起動後のmapping復元テスト | P0 | 4 | 5 | 未着手 | |
-| TEST-005 | LINE Webhook再送時の重複排除テスト | P0 | 5 | 5 | 未着手 | |
+| ARCH-003 | Repository層を導入しSQLiteアクセスを集約 | P0 | 4 | 5 | 検証中 | `WebhookEventRepository` / `ConversationRepository` を追加 |
+| ARCH-005 | conversation単位のqueue実装 | P0 | 4 | 5 | 検証中 | `ConversationQueue` をdurable processorから利用 |
+| TEST-001 | 同一Webhookイベント重複受信テスト | P0 | 5 | 5 | 検証中 | repository重複排除とHTTP ACK経路の回帰テスト合格 |
+| TEST-002 | 同一groupId初回メッセージ同時2件テスト | P0 | 5 | 5 | 検証中 | source単位lockの並行unit test合格。Discord実通信確認待ち |
+| TEST-003 | Discordチャンネル削除後の再生成テスト | P0 | 4 | 5 | 検証中 | stale mappingからreplacement channelへ更新するunit test合格 |
+| TEST-004 | 再起動後のmapping / event復元テスト | P0 | 4 | 5 | 検証中 | processing→retry recoveryとSQLite mapping restoreをunit test済み。VPS再起動試験待ち |
+| TEST-005 | LINE Webhook再送時の重複排除テスト | P0 | 5 | 5 | 検証中 | WebhookEventRepositoryおよびACK経路のテスト合格 |
 
-## 推奨実装フェーズ
+## Phase 1 — 配送信頼性
 
-### Phase 1 — 配送信頼性
-対象: REL-001〜006, REL-008, DB-001〜005, ARCH-003, ARCH-005, SEC-004, CFG-001〜002, TEST-001〜005
+対象: REL-001〜006, REL-008, DB-001〜005, ARCH-003, ARCH-005, SEC-001〜004, CFG-001〜002, TEST-001〜005
 
 完了条件:
 - 同じLINE Webhookを同時に2回受信してもDiscord投稿は1回だけ。
 - 同じLINE会話から同時に2通到着してもDiscordチャンネルは1つだけ。
 - アプリ再起動後もLINE source ↔ Discord channel対応が維持される。
-- LINE Webhookへの200応答が外部API処理時間に依存しない。
+- LINE Webhookへの200応答がDiscord/LINE外部API処理時間に依存しない。
 - DBの一意制約が重複処理の最終防衛線として機能する。
 
-### Phase 2 — メッセージング
-MessageBatcher整理、retry責務整理、1:N message mapping、LINE SDK移行、返信同期。
+### Phase 1 実装方針
 
-### Phase 3 — メディア
-画像・ファイル・スタンプ・動画・音声の信頼性改善、streaming化、MediaService分割。
+Oracle VPS常設運用を前提とし、SQLite DBはGit checkout外へ配置する。
 
-### Phase 4 — セキュリティ / 運用
-Discord権限、管理エンドポイント、ログredaction、バックアップ、health強化、自動cleanup方針を整理。
+推奨:
 
-### Phase 5 — UX / 構造改善
-MessageBridge・MediaServiceの責務分離、アダプタ層、表示名・アイコン・チャンネル名ルールを整理。
-
-## 推奨SQLiteスキーマ
-
-```sql
-CREATE TABLE conversations (
-  id INTEGER PRIMARY KEY,
-  line_source_id TEXT NOT NULL UNIQUE,
-  source_type TEXT NOT NULL,
-  discord_channel_id TEXT NOT NULL UNIQUE,
-  display_name TEXT,
-  created_at TEXT NOT NULL,
-  last_used_at TEXT NOT NULL
-);
-
-CREATE TABLE webhook_events (
-  webhook_event_id TEXT PRIMARY KEY,
-  line_message_id TEXT,
-  status TEXT NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  received_at TEXT NOT NULL,
-  processed_at TEXT,
-  last_error TEXT
-);
-
-CREATE TABLE message_links (
-  id INTEGER PRIMARY KEY,
-  conversation_id INTEGER NOT NULL,
-  direction TEXT NOT NULL,
-  line_message_id TEXT,
-  discord_message_id TEXT,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-);
-
-CREATE INDEX idx_message_links_line ON message_links(line_message_id);
-CREATE INDEX idx_message_links_discord ON message_links(discord_message_id);
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys=ON;
+```bash
+DB_TYPE=sqlite
+DB_FILE=/var/lib/line-discord-bridge/bridge.sqlite3
+DB_BACKUP_PATH=/var/lib/line-discord-bridge/backups
 ```
 
-## 実装記録テンプレート
+更新は `git pull` + `npm ci` を基本とし、SQLiteサーバー等の別サービスは導入しない。既存JSONは削除せず、migrationとrollback mirrorを維持する。詳細は `docs/oracle-vps-deployment.md` を参照。
 
-### `[ID] タスク名`
+## Phase 2 — メッセージング
+MessageBatcher整理、retry責務整理、1:N message mapping、LINE SDK移行、返信同期。
 
-**実装日:**  
-**対象バージョン:**  
-**Commit / PR:**  
-**状態:** 未着手 / 実装中 / 検証中 / 完了 / 保留
+## Phase 3 — メディア
+画像・ファイル・スタンプ・動画・音声の信頼性改善、streaming化、MediaService分割。
 
-**変更内容**
-- 
+## Phase 4 — セキュリティ / 運用
+管理エンドポイント、依存パッケージ更新、health強化、自動cleanup方針を整理。
 
-**変更ファイル**
-- 
-
-**依存ライブラリ変更**
-- なし / あり:
-
-**環境変数変更**
-- なし / あり:
-- 追加:
-- 削除:
-- 変更:
-
-**テスト**
-- [ ] Unit test
-- [ ] Integration test
-- [ ] LINE実通信
-- [ ] Discord実通信
-- [ ] 再送試験
-- [ ] 再起動試験
-
-**実装結果**
-- 
-
-**既知の問題**
-- 
-
-**ロールバック方法**
-- 
+## Phase 5 — UX / 構造改善
+MessageBridge・MediaServiceの責務分離、アダプタ層、表示名・アイコン・チャンネル名ルールを整理。
 
 ## リリース判定 — v3.2.0 Reliability
 
-- [ ] Webhook fast ACK
-- [ ] webhookEventId冪等化
-- [ ] SQLite導入
-- [ ] Channel creation mutex
-- [ ] conversation queue
-- [x] LINE Webhook rate-limit除外を実装
-- [x] `DISCORD_GUILD_ID` 起動時検証を実装
-- [x] `VIDEO_COMPRESSION_ENABLED` 判定修正を実装
-- [ ] 重複配送テスト合格
-- [ ] チャンネル増殖テスト合格
-- [ ] 再起動テスト合格
+- [x] Webhook durable Fast ACK 実装
+- [x] webhookEventId冪等化 実装
+- [x] SQLite基盤 / WAL 実装
+- [x] conversation queue 実装
+- [x] source単位channel creation lock 実装
+- [x] SQLite channel mapping restore + JSON rollback mirror 実装
+- [x] `@everyone`明示権限付与を廃止
+- [x] channel topicからLINE source IDを除去
+- [x] LINE Webhook rate-limit除外 実装
+- [x] `DISCORD_GUILD_ID` 起動時検証 実装
+- [x] `VIDEO_COMPRESSION_ENABLED` 判定修正 実装
+- [x] JSON→SQLite migrationコマンド 実装
+- [x] SQLite status / backupコマンド 実装
+- [x] Oracle VPS配置 / rollback手順 文書化
+- [x] GitHub Actions: `npm ci` / 24 suites / lint / SQLite smoke test 合格
+- [x] 同一source同時初回チャンネル生成の自動テスト合格
+- [x] チャンネル削除→再生成の自動テスト合格
+- [ ] Oracle VPS再起動試験合格
+- [ ] 既存JSON migration実データ確認
+- [ ] LINE / Discord実通信でFast ACK・再送・チャンネル再生成を確認
 
-`[x]` は実装済みを示す。ブランチ上でテスト結果が確認されるまではバックログ状態を「検証中」とする。
+`[x]` はコード実装または自動検証済みを示す。Oracle VPSおよびLINE/Discord実通信が完了するまでは関連項目の状態を「検証中」とする。

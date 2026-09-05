@@ -15,7 +15,10 @@ function makeBaseEnv(baseDir) {
     UPLOAD_PATH: path.join(baseDir, 'uploads'),
     TEMP_PATH: path.join(baseDir, 'temp'),
     LOG_DIR: path.join(baseDir, 'logs'),
-    DB_PATH: path.join(baseDir, 'data')
+    DB_PATH: path.join(baseDir, 'data'),
+    // Prevent the repository's .env.test from re-populating values that a
+    // validation test intentionally removes from process.env.
+    DOTENV_CONFIG_PATH: path.join(baseDir, 'empty.env')
   };
 }
 
@@ -25,6 +28,7 @@ describe('config validation', () => {
   beforeEach(() => {
     jest.resetModules();
     baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'line-discord-config-'));
+    fs.writeFileSync(path.join(baseDir, 'empty.env'), '', 'utf8');
     process.env = makeBaseEnv(baseDir);
   });
 

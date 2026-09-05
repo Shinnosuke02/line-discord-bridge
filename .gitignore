@@ -68,5 +68,12 @@ mapping.json
 data/channel-mappings.json
 data/message-mappings.json
 data/line-usage.json
+*.sqlite
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.db
+*.db-shm
+*.db-wal
 temp/
 uploads/

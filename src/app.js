@@ -7,6 +7,8 @@ const path = require('path');
 const config = require('./config');
 const logger = require('./utils/logger');
 const MessageBridge = require('./services/MessageBridge');
+const DurableLineEventProcessor = require('./services/DurableLineEventProcessor');
+const { closeDatabase } = require('./infrastructure/sqlite');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const { securityMiddleware } = require('./middleware/security');
@@ -19,6 +21,7 @@ class App {
   constructor() {
     this.app = express();
     this.messageBridge = null;
+    this.durableLineEventProcessor = null;
     this.server = null;
     this.isShuttingDown = false;
     this.shutdownHandlersRegistered = false;
@@ -115,9 +118,9 @@ class App {
     });
 
     // LINE Webhook
-    this.app.post(config.line.webhookPath, lineSignatureMiddleware, async (req, res) => {
+    this.app.post(config.line.webhookPath, lineSignatureMiddleware, (req, res) => {
       try {
-        if (!this.messageBridge) {
+        if (!this.messageBridge || !this.durableLineEventProcessor) {
           return res.status(503).json({ error: 'MessageBridge not initialized' });
         }
 
@@ -126,18 +129,21 @@ class App {
           return res.status(400).json({ error: 'Invalid webhook data' });
         }
 
-        // イベントを処理
-        for (const event of events) {
-          await this.messageBridge.handleLineEvent(event);
-        }
+        // 署名検証済みイベントをSQLiteへ同期的に永続化してから即時ACKする。
+        // Discord/LINE APIへの外部通信はこのHTTPリクエストでは待たない。
+        const result = this.durableLineEventProcessor.persist(events);
 
-        res.json({ success: true });
+        return res.json({
+          success: true,
+          accepted: result.accepted,
+          duplicates: result.duplicates
+        });
       } catch (error) {
-        logger.error('Webhook processing failed', {
+        logger.error('Webhook persistence failed', {
           error: error.message,
           eventCount: Array.isArray(req.body?.events) ? req.body.events.length : 0
         });
-        res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error' });
       }
     });
 
@@ -196,6 +202,8 @@ class App {
   async initializeMessageBridge() {
     try {
       this.messageBridge = new MessageBridge();
+      this.durableLineEventProcessor = new DurableLineEventProcessor(this.messageBridge);
+      this.durableLineEventProcessor.start();
       await this.messageBridge.start();
       
       logger.info('MessageBridge started successfully');
@@ -312,11 +320,18 @@ class App {
         });
         this.server = null;
       }
+
+      if (this.durableLineEventProcessor) {
+        await this.durableLineEventProcessor.stop();
+        this.durableLineEventProcessor = null;
+      }
       
       if (this.messageBridge) {
         await this.messageBridge.stop();
         this.messageBridge = null;
       }
+
+      closeDatabase();
       
       logger.info('Application stopped');
     } catch (error) {
