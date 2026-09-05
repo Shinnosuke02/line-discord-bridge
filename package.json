@@ -12,6 +12,8 @@
     "lint:fix": "eslint src/ --ext .js --fix",
     "format": "prettier --write src/",
     "migrate:json": "node scripts/migrate-json-to-sqlite.js",
+    "db:status": "node scripts/db-status.js",
+    "db:backup": "node scripts/backup-sqlite.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop line-discord-bridge",
     "pm2:restart": "pm2 restart line-discord-bridge",
