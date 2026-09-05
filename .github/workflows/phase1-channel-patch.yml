@@ -1,0 +1,149 @@
+name: phase1-channel-patch
+
+on:
+  push:
+    branches:
+      - feat/v3.2-durable-inbox
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v3.2-durable-inbox
+      - name: Apply Phase 1 channel persistence and race-safety patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/services/ChannelManager.js')
+          text = path.read_text()
+          marker = "this.sourceCreationLocks = new Map();"
+          if marker not in text:
+              text = text.replace(
+                  "const { ChannelType, PermissionFlagsBits } = require('discord.js');",
+                  "const { ChannelType } = require('discord.js');"
+              )
+              text = text.replace(
+                  "const { readJsonFile, writeJsonFileAtomic } = require('../utils/jsonFileStore');",
+                  "const { readJsonFile, writeJsonFileAtomic } = require('../utils/jsonFileStore');\nconst ConversationRepository = require('../repositories/ConversationRepository');"
+              )
+              text = text.replace(
+                  "    this.saveQueue = Promise.resolve();\n",
+                  "    this.saveQueue = Promise.resolve();\n    this.conversationRepository = config.database.type === 'sqlite' ? new ConversationRepository() : null;\n    this.sourceCreationLocks = new Map();\n"
+              )
+
+              old_load = """      const mappings = await readJsonFile(this.mappingFile);\n      \n      this.mappings.clear();\n      for (const [key, value] of Object.entries(mappings)) {\n        this.mappings.set(key, value);\n      }\n      \n      logger.debug('Channel mappings loaded', {\n        count: this.mappings.size\n      });"""
+              new_load = """      if (this.conversationRepository && this.conversationRepository.count() > 0) {\n        this.mappings.clear();\n        for (const row of this.conversationRepository.listAll()) {\n          this.mappings.set(row.line_source_id, {\n            sourceId: row.line_source_id,\n            discordChannelId: row.discord_channel_id,\n            channelName: row.display_name,\n            createdAt: row.created_at,\n            lastUsed: row.last_used_at\n          });\n        }\n        logger.info('Channel mappings loaded from SQLite', { count: this.mappings.size });\n        return;\n      }\n\n      const mappings = await readJsonFile(this.mappingFile);\n      \n      this.mappings.clear();\n      for (const [key, value] of Object.entries(mappings)) {\n        const mapping = { ...value, sourceId: value.sourceId || key };\n        this.mappings.set(key, mapping);\n        if (this.conversationRepository && mapping.discordChannelId) {\n          this.conversationRepository.upsert(mapping);\n        }\n      }\n      \n      logger.debug('Channel mappings loaded', {\n        count: this.mappings.size\n      });"""
+              if old_load not in text:
+                  raise SystemExit('loadMappings patch anchor not found')
+              text = text.replace(old_load, new_load)
+
+              old_save = """      const mappings = Object.fromEntries(this.mappings);\n      await writeJsonFileAtomic(this.mappingFile, mappings);\n      \n      logger.debug('Channel mappings saved', {\n        count: this.mappings.size\n      });"""
+              new_save = """      const mappings = Object.fromEntries(this.mappings);\n      await writeJsonFileAtomic(this.mappingFile, mappings);\n\n      if (this.conversationRepository) {\n        for (const mapping of this.mappings.values()) {\n          if (mapping.discordChannelId) {\n            this.conversationRepository.upsert(mapping);\n          }\n        }\n      }\n      \n      logger.debug('Channel mappings saved', {\n        count: this.mappings.size\n      });"""
+              if old_save not in text:
+                  raise SystemExit('saveMappings patch anchor not found')
+              text = text.replace(old_save, new_save)
+
+              old_method = """  async getOrCreateChannel(sourceId) {\n    try {"""
+              new_method = """  async getOrCreateChannel(sourceId) {\n    const existingLock = this.sourceCreationLocks.get(sourceId);\n    if (existingLock) {\n      return existingLock;\n    }\n\n    const operation = this.getOrCreateChannelUnlocked(sourceId);\n    this.sourceCreationLocks.set(sourceId, operation);\n\n    try {\n      return await operation;\n    } finally {\n      if (this.sourceCreationLocks.get(sourceId) === operation) {\n        this.sourceCreationLocks.delete(sourceId);\n      }\n    }\n  }\n\n  async getOrCreateChannelUnlocked(sourceId) {\n    try {"""
+              if old_method not in text:
+                  raise SystemExit('getOrCreateChannel patch anchor not found')
+              text = text.replace(old_method, new_method, 1)
+
+              text = text.replace(
+                  "          this.mappings.delete(sourceId);\n          logger.warn('Discord channel no longer exists, removing mapping', {",
+                  "          this.mappings.delete(sourceId);\n          this.conversationRepository?.deleteBySource(sourceId);\n          logger.warn('Discord channel no longer exists, removing mapping', {",
+                  1
+              )
+
+              old_options = """      const channelOptions = {\n        name: channelName,\n        type: ChannelType.GuildText,\n        topic: `LINE Bridge Channel for ${sourceId}`,\n        permissionOverwrites: [\n          {\n            id: guild.roles.everyone.id,\n            allow: [\n              PermissionFlagsBits.ViewChannel,\n              PermissionFlagsBits.SendMessages,\n              PermissionFlagsBits.ReadMessageHistory\n            ]\n          }\n        ]\n      };"""
+              new_options = """      const channelOptions = {\n        name: channelName,\n        type: ChannelType.GuildText,\n        topic: 'LINE Bridge Channel'\n      };"""
+              if old_options not in text:
+                  raise SystemExit('channel permission patch anchor not found')
+              text = text.replace(old_options, new_options)
+
+              text = text.replace(
+                  "      this.mappings.delete(sourceId);\n      await this.saveMappings();",
+                  "      this.mappings.delete(sourceId);\n      this.conversationRepository?.deleteBySource(sourceId);\n      await this.saveMappings();",
+                  1
+              )
+
+              path.write_text(text)
+
+          test_path = Path('src/services/__tests__/ChannelManager.test.js')
+          test_text = test_path.read_text()
+          test_marker = "serializes concurrent first-message channel creation for the same LINE source"
+          if test_marker not in test_text:
+              insert = r'''
+
+  test('serializes concurrent first-message channel creation for the same LINE source', async () => {
+    channelManager.validateChannel = jest.fn().mockResolvedValue(false);
+    channelManager.getDiscordChannelIdFromLineNote = jest.fn().mockResolvedValue(null);
+    channelManager.createNewChannel = jest.fn(async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      return {
+        sourceId: 'Cgroup-race',
+        discordChannelId: 'discord-created-once',
+        channelName: 'group-race',
+        createdAt: new Date().toISOString(),
+        lastUsed: new Date().toISOString()
+      };
+    });
+
+    const [first, second] = await Promise.all([
+      channelManager.getOrCreateChannel('Cgroup-race'),
+      channelManager.getOrCreateChannel('Cgroup-race')
+    ]);
+
+    expect(channelManager.createNewChannel).toHaveBeenCalledTimes(1);
+    expect(first.discordChannelId).toBe('discord-created-once');
+    expect(second.discordChannelId).toBe('discord-created-once');
+  });
+
+  test('recreates a deleted Discord channel once and replaces the stale mapping', async () => {
+    channelManager.mappings.set('Udeleted', {
+      sourceId: 'Udeleted',
+      discordChannelId: 'deleted-channel',
+      channelName: 'old-name',
+      createdAt: new Date().toISOString(),
+      lastUsed: new Date().toISOString()
+    });
+    channelManager.validateChannel = jest.fn().mockResolvedValue(false);
+    channelManager.getDiscordChannelIdFromLineNote = jest.fn().mockResolvedValue(null);
+    channelManager.createNewChannel = jest.fn().mockResolvedValue({
+      sourceId: 'Udeleted',
+      discordChannelId: 'replacement-channel',
+      channelName: 'new-name',
+      createdAt: new Date().toISOString(),
+      lastUsed: new Date().toISOString()
+    });
+
+    const mapping = await channelManager.getOrCreateChannel('Udeleted');
+
+    expect(channelManager.createNewChannel).toHaveBeenCalledTimes(1);
+    expect(mapping.discordChannelId).toBe('replacement-channel');
+    expect(channelManager.getChannelMapping('Udeleted').discordChannelId).toBe('replacement-channel');
+  });
+'''
+              pos = test_text.rfind('\n});')
+              if pos < 0:
+                  raise SystemExit('ChannelManager test insertion anchor not found')
+              test_text = test_text[:pos] + insert + test_text[pos:]
+              test_path.write_text(test_text)
+          PY
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo "Patch already applied"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/services/ChannelManager.js src/services/__tests__/ChannelManager.test.js
+          git commit -m "feat: persist channel mappings and prevent creation races"
+          git push origin HEAD:feat/v3.2-durable-inbox
