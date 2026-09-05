@@ -1,0 +1,45 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      LINE_CHANNEL_SECRET: test-line-secret
+      LINE_CHANNEL_ACCESS_TOKEN: test-line-token
+      DISCORD_BOT_TOKEN: test-discord-token
+      DISCORD_GUILD_ID: '123456789012345678'
+      DB_FILE: /tmp/line-discord-bridge-test.sqlite3
+      DB_BACKUP_PATH: /tmp/line-discord-bridge-backups
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts=false
+
+      - name: Run tests
+        run: npm test -- --runInBand
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: SQLite operations smoke test
+        run: |
+          node -e "const db=require('./src/infrastructure/sqlite'); db.getDatabase(); db.closeDatabase();"
+          npm run db:status
+          npm run db:backup
+          [ -n "$(find "$DB_BACKUP_PATH" -name 'bridge-*.sqlite3' -print -quit)" ]
