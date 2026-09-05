@@ -102,4 +102,30 @@ describe('ChannelManager', () => {
     });
     expect(channelManager.saveMappings).toHaveBeenCalledTimes(1);
   });
+
+  test('recreates a deleted Discord channel and replaces its stale mapping', async () => {
+    channelManager.mappings.set('Udeleted', {
+      sourceId: 'Udeleted',
+      discordChannelId: 'deleted-channel',
+      channelName: 'old-name',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      lastUsed: '2026-01-01T00:00:00.000Z'
+    });
+    channelManager.validateChannel = jest.fn().mockResolvedValue(false);
+    channelManager.getDiscordChannelIdFromLineNote = jest.fn().mockResolvedValue(null);
+    channelManager.createNewChannel = jest.fn().mockResolvedValue({
+      sourceId: 'Udeleted',
+      discordChannelId: 'replacement-channel',
+      channelName: 'new-name',
+      createdAt: '2026-01-02T00:00:00.000Z',
+      lastUsed: '2026-01-02T00:00:00.000Z'
+    });
+
+    const mapping = await channelManager.getOrCreateChannel('Udeleted');
+
+    expect(channelManager.createNewChannel).toHaveBeenCalledTimes(1);
+    expect(mapping.discordChannelId).toBe('replacement-channel');
+    expect(channelManager.getChannelMapping('Udeleted').discordChannelId).toBe('replacement-channel');
+    expect(channelManager.saveMappings).toHaveBeenCalledTimes(1);
+  });
 });
