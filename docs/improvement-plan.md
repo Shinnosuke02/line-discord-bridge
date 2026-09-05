@@ -38,7 +38,7 @@
 | REL-005 | JSON永続化をSQLiteへ段階移行 | P0 | 4 | 5 | 完了 | 実データ32件をJSONからSQLiteへ移行し、PM2再起動後も既存channel mappingで導通確認。JSON rollback mirrorを継続 |
 | REL-006 | LINE source ID と Discord channel ID にDB一意制約を付与 | P0 | 4 | 5 | 検証中 | `conversations.line_source_id UNIQUE` / `discord_channel_id UNIQUE` を実装 |
 | REL-007 | Discord message → LINE message の1:Nマッピング対応 | P1 | 3 | 4 | 未着手 | Phase 2 |
-| REL-008 | 再起動・再送・同時到着の競合テスト追加 | P0 | 5 | 5 | 検証中 | webhook dedupe / retry / restart recovery / channel race / ACK経路の回帰テストを追加。VPS再起動・通常導通は確認済み。実再送試験は継続 |
+| REL-008 | 再起動・再送・同時到着の競合テスト追加 | P0 | 5 | 5 | 検証中 | webhook dedupe / retry / restart recovery / channel race / ACK経路の回帰テストを追加。VPS再起動・通常導通・実チャンネル削除後の再生成を確認済み。実再送試験のみ継続 |
 | MSG-001 | MessageBatcherを原則廃止 | P0 | 4 | 4 | 未着手 | Phase 2 |
 | MSG-002 | MessageQueueとLineServiceのretry責務を整理 | P1 | 3 | 4 | 未着手 | Phase 2 |
 | DB-001 | `conversations` テーブル作成 | P0 | 4 | 5 | 完了 | 実データ32件のmigration、SQLite restore、JSON rollback mirrorをVPSで確認 |
@@ -59,7 +59,7 @@
 | ARCH-005 | conversation単位のqueue実装 | P0 | 4 | 5 | 検証中 | `ConversationQueue` をdurable processorから利用 |
 | TEST-001 | 同一Webhookイベント重複受信テスト | P0 | 5 | 5 | 検証中 | repository重複排除とHTTP ACK経路の回帰テスト合格 |
 | TEST-002 | 同一groupId初回メッセージ同時2件テスト | P0 | 5 | 5 | 検証中 | source単位lockの並行unit test合格。Discord実通信確認待ち |
-| TEST-003 | Discordチャンネル削除後の再生成テスト | P0 | 4 | 5 | 検証中 | stale mappingからreplacement channelへ更新するunit test合格。実チャンネル削除試験は継続 |
+| TEST-003 | Discordチャンネル削除後の再生成テスト | P0 | 4 | 5 | 完了 | stale mapping replacementのunit testに加え、VPS本番でDiscordチャンネル削除→LINE送信→同名チャンネル1件再生成・配送を確認 |
 | TEST-004 | 再起動後のmapping / event復元テスト | P0 | 4 | 5 | 完了 | processing→retry recoveryとSQLite mapping restoreをunit test済み。VPSでPM2再起動後も既存LINE/Discord導通を確認 |
 | TEST-005 | LINE Webhook再送時の重複排除テスト | P0 | 5 | 5 | 検証中 | WebhookEventRepositoryおよびACK経路のテスト合格。実再送試験は継続 |
 
@@ -123,6 +123,6 @@ MessageBridge・MediaServiceの責務分離、アダプタ層、表示名・ア�
 - [x] 既存JSON migration実データ32件確認
 - [x] LINE / Discord双方向実通信確認
 - [ ] LINE Webhook実再送時の重複排除確認
-- [ ] Discordチャンネル削除→再生成の実通信確認
+- [x] Discordチャンネル削除→再生成の実通信確認
 
-`[x]` はコード実装・自動検証・またはOracle VPS実機確認済みを示す。残るPhase 1の実運用確認は、LINE実再送の重複排除とDiscordチャンネル削除後の再生成である。
+`[x]` はコード実装・自動検証・またはOracle VPS実機確認済みを示す。残るPhase 1の実運用確認は、LINE Webhook実再送時の重複排除のみである。
