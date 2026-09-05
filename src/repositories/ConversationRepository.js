@@ -28,6 +28,18 @@ class ConversationRepository {
       SELECT * FROM conversations WHERE discord_channel_id = ?
     `);
 
+    this.listAllStatement = this.db.prepare(`
+      SELECT * FROM conversations ORDER BY id ASC
+    `);
+
+    this.deleteBySourceStatement = this.db.prepare(`
+      DELETE FROM conversations WHERE line_source_id = ?
+    `);
+
+    this.touchBySourceStatement = this.db.prepare(`
+      UPDATE conversations SET last_used_at = ? WHERE line_source_id = ?
+    `);
+
     this.countStatement = this.db.prepare('SELECT COUNT(*) AS count FROM conversations');
   }
 
@@ -68,6 +80,18 @@ class ConversationRepository {
 
   getByDiscordChannel(discordChannelId) {
     return this.getByDiscordChannelStatement.get(discordChannelId) || null;
+  }
+
+  listAll() {
+    return this.listAllStatement.all();
+  }
+
+  deleteBySource(sourceId) {
+    return this.deleteBySourceStatement.run(sourceId).changes === 1;
+  }
+
+  touch(sourceId, timestamp = new Date().toISOString()) {
+    return this.touchBySourceStatement.run(timestamp, sourceId).changes === 1;
   }
 
   count() {
