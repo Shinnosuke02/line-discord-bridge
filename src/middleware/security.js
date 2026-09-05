@@ -44,6 +44,10 @@ function rateLimiter() {
   return rateLimit({
     windowMs: config.security.rateLimit.windowMs,
     max: config.security.rateLimit.maxRequests,
+    skip: (req) => {
+      const requestPath = req.path || req.url || '';
+      return requestPath === config.line.webhookPath;
+    },
     message: {
       error: 'Too many requests from this IP, please try again later.',
       retryAfter: Math.ceil(config.security.rateLimit.windowMs / 1000)
@@ -69,16 +73,16 @@ function corsConfig() {
 
   return (req, res, next) => {
     const origin = req.headers.origin;
-    
-    if (config.security.cors.origins.includes('*') || 
+
+    if (config.security.cors.origins.includes('*') ||
         config.security.cors.origins.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin || '*');
     }
-    
+
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     res.header('Access-Control-Allow-Credentials', 'true');
-    
+
     if (req.method === 'OPTIONS') {
       res.sendStatus(200);
     } else {
@@ -94,7 +98,7 @@ function requestSizeLimit() {
   return (req, res, next) => {
     const contentLength = parseInt(req.get('content-length') || '0', 10);
     const maxSize = config.file.maxFileSize;
-    
+
     if (contentLength > maxSize) {
       return res.status(413).json({
         error: 'Request entity too large',
@@ -102,7 +106,7 @@ function requestSizeLimit() {
         receivedSize: contentLength
       });
     }
-    
+
     next();
   };
 }
@@ -117,7 +121,7 @@ function ipWhitelist(allowedIPs = []) {
 
   return (req, res, next) => {
     const clientIP = req.ip || req.connection.remoteAddress;
-    
+
     if (allowedIPs.includes(clientIP)) {
       next();
     } else {
@@ -132,23 +136,22 @@ function ipWhitelist(allowedIPs = []) {
 /**
  * ユーザーエージェントフィルタリング
  */
-function userAgentFilter(blockedPatterns = [], exemptPaths = ['/webhook']) {
+function userAgentFilter(blockedPatterns = [], exemptPaths = [config.line.webhookPath]) {
   if (blockedPatterns.length === 0) {
     return (req, res, next) => next();
   }
 
   return (req, res, next) => {
-    // 例外パスは判定をスキップ（LINE Webhook 等）
     const requestPath = req.path || req.url || '';
     if (exemptPaths.some((p) => requestPath.startsWith(p))) {
       return next();
     }
     const userAgent = req.get('User-Agent') || '';
-    
-    const isBlocked = blockedPatterns.some(pattern => 
+
+    const isBlocked = blockedPatterns.some(pattern =>
       userAgent.toLowerCase().includes(pattern.toLowerCase())
     );
-    
+
     if (isBlocked) {
       res.status(403).json({
         error: 'Access denied',
@@ -169,8 +172,7 @@ function securityMiddleware() {
     rateLimiter(),
     corsConfig(),
     requestSizeLimit(),
-    // 一般的なクローラのみブロック。Webhookは除外
-    userAgentFilter(['crawler', 'spider'], ['/webhook'])
+    userAgentFilter(['crawler', 'spider'], [config.line.webhookPath])
   ];
 }
 
