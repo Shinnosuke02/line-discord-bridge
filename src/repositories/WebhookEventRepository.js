@@ -37,6 +37,12 @@ class WebhookEventRepository {
       WHERE webhook_event_id = ?
     `);
 
+    this.recoverInterruptedStatement = this.db.prepare(`
+      UPDATE webhook_events
+      SET status = 'retry', last_error = COALESCE(last_error, 'Recovered after process restart')
+      WHERE status = 'processing'
+    `);
+
     this.getByIdStatement = this.db.prepare(`
       SELECT * FROM webhook_events WHERE webhook_event_id = ?
     `);
@@ -44,7 +50,7 @@ class WebhookEventRepository {
     this.getRecoverableStatement = this.db.prepare(`
       SELECT *
       FROM webhook_events
-      WHERE status IN ('pending', 'processing', 'retry')
+      WHERE status IN ('pending', 'retry')
       ORDER BY received_at ASC
     `);
   }
@@ -80,6 +86,10 @@ class WebhookEventRepository {
 
   markRetry(webhookEventId, error) {
     this.markRetryStatement.run(error?.message || String(error), webhookEventId);
+  }
+
+  recoverInterrupted() {
+    return this.recoverInterruptedStatement.run().changes;
   }
 
   getById(webhookEventId) {
