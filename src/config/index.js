@@ -25,13 +25,9 @@ const config = {
     botToken: process.env.DISCORD_BOT_TOKEN || '',
     guildId: process.env.DISCORD_GUILD_ID || '',
     clientId: process.env.DISCORD_CLIENT_ID || '',
-    // カテゴリ設定
     categories: {
-      // LINE個人用カテゴリ
       friends: process.env.DISCORD_CATEGORY_FRIENDS || null,
-      // LINEグループ用カテゴリ
       groups: process.env.DISCORD_CATEGORY_GROUPS || null,
-      // その他のカテゴリ
       shop: process.env.DISCORD_CATEGORY_SHOP || null,
       test: process.env.DISCORD_CATEGORY_TEST || null,
       archive: process.env.DISCORD_CATEGORY_ARCHIVE || null
@@ -48,14 +44,12 @@ const config = {
 
   // ファイル処理設定
   file: {
-    // LINE側の制限を考慮したファイルサイズ制限
-    maxFileSize: parseInteger(process.env.MAX_FILE_SIZE, 5 * 1024 * 1024), // 5MB（LINE側制限を考慮）
-    // LINE側の実際の制限値
+    maxFileSize: parseInteger(process.env.MAX_FILE_SIZE, 5 * 1024 * 1024),
     lineLimits: {
-      image: 10 * 1024 * 1024, // 10MB
-      video: 50 * 1024 * 1024, // 50MB
-      audio: 10 * 1024 * 1024, // 10MB
-      file: 10 * 1024 * 1024   // 10MB
+      image: 10 * 1024 * 1024,
+      video: 50 * 1024 * 1024,
+      audio: 10 * 1024 * 1024,
+      file: 10 * 1024 * 1024
     },
     uploadPath: process.env.UPLOAD_PATH || './uploads',
     tempPath: process.env.TEMP_PATH || './temp',
@@ -78,7 +72,6 @@ const config = {
       'audio/ogg',
       'audio/mp4'
     ],
-    // ドキュメントファイルのサポート（PDF、Office文書など）
     supportedDocumentMimeTypes: [
       'application/pdf',
       'text/plain',
@@ -108,8 +101,8 @@ const config = {
       quality: parseInteger(process.env.IMAGE_QUALITY, 80)
     },
     videoCompression: {
-      enabled: process.env.VIDEO_COMPRESSION_ENABLED === 'false',
-      maxSize: parseInteger(process.env.VIDEO_MAX_SIZE, 50 * 1024 * 1024) // 50MB
+      enabled: process.env.VIDEO_COMPRESSION_ENABLED === 'true',
+      maxSize: parseInteger(process.env.VIDEO_MAX_SIZE, 50 * 1024 * 1024)
     }
   },
 
@@ -140,7 +133,7 @@ const config = {
     lineSignatureValidationEnabled: process.env.LINE_SIGNATURE_VALIDATION_ENABLED !== 'false',
     rateLimit: {
       enabled: process.env.RATE_LIMIT_ENABLED === 'true',
-      windowMs: parseInteger(process.env.RATE_LIMIT_WINDOW, 15 * 60 * 1000), // 15分
+      windowMs: parseInteger(process.env.RATE_LIMIT_WINDOW, 15 * 60 * 1000),
       maxRequests: parseInteger(process.env.RATE_LIMIT_MAX, 100)
     },
     cors: {
@@ -155,7 +148,7 @@ const config = {
     path: process.env.DB_PATH || './data',
     backup: {
       enabled: process.env.DB_BACKUP_ENABLED === 'true',
-      interval: parseInteger(process.env.DB_BACKUP_INTERVAL, 24 * 60 * 60 * 1000) // 24時間
+      interval: parseInteger(process.env.DB_BACKUP_INTERVAL, 24 * 60 * 60 * 1000)
     }
   },
 
@@ -174,11 +167,9 @@ const config = {
   }
 };
 
-// 設定の検証
 function validateConfig() {
   const errors = [];
 
-  // 必須設定のチェック
   if (!config.line.channelSecret) {
     errors.push('LINE_CHANNEL_SECRET is required');
   }
@@ -188,8 +179,10 @@ function validateConfig() {
   if (!config.discord.botToken) {
     errors.push('DISCORD_BOT_TOKEN is required');
   }
+  if (!config.discord.guildId) {
+    errors.push('DISCORD_GUILD_ID is required');
+  }
 
-  // 設定値の範囲チェック
   if (config.server.port < 1 || config.server.port > 65535) {
     errors.push('PORT must be between 1 and 65535');
   }
@@ -202,11 +195,9 @@ function validateConfig() {
   }
 }
 
-// 設定の初期化
 function initializeConfig() {
   validateConfig();
 
-  // ディレクトリの作成
   const fs = require('fs');
 
   const dirs = [
