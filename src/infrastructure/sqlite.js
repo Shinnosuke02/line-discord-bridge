@@ -87,6 +87,9 @@ function initializeSchema(db) {
     WHERE updated_at IS NULL;
 
     CREATE INDEX IF NOT EXISTS idx_webhook_events_status
+      ON webhook_events(status, received_at);
+
+    CREATE INDEX IF NOT EXISTS idx_webhook_events_due
       ON webhook_events(status, next_attempt_at, received_at);
 
     CREATE INDEX IF NOT EXISTS idx_message_links_line
