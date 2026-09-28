@@ -68,6 +68,7 @@ message_linksへ全child messageを1:N記録
 - sticker
 - location
 - LINE表示名・アイコンをDiscord Webhookへ反映
+- LINE絵文字はWebhookの `message.emojis` metadataを使って、既知の意味を近いUnicode絵文字へ変換（未知の絵文字は代替テキストを保持）
 - reply
 - `messageEdited`（LINE公式アカウントを含むグループトークのみ）
 - `unsend`（1対1 / グループ / 複数人トーク）
@@ -272,6 +273,12 @@ LINE_MARK_AS_READ_ON_DISCORD_DELIVERY=true
 ```
 
 既定は `false` です。
+
+## LINE絵文字
+
+LINE独自絵文字はDiscordではネイティブ表示できません。受信Webhookの `message.emojis` に含まれるUTF-16位置情報と `productId` / `emojiId` を使い、既知の絵文字は意味が近いUnicode絵文字へ置換します。たとえばLINE側の代替テキスト `（ありがとう）` / `(thank you)` は `🙏` としてDiscordへ転送します。未知の絵文字は意味を失わないようLINEの代替テキストをそのまま残します。通常のUnicode絵文字についてはZWJ・variation selectorを保持して複合絵文字を壊さないようにしています。
+
+完全なLINE絵文字画像の再現は行いません。LINE独自画像をDiscordのカスタム絵文字として動的登録する方式は、追加権限・絵文字枠・画像配布URLへの依存が必要になるため採用していません。
 
 ## メディア
 
