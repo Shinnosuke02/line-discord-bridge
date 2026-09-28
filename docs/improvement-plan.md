@@ -91,7 +91,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 
 ## Phase 2.1 — LINE emoji fidelity
 
-状態: **実装・CI検証中**
+状態: **実装完了・Oracle VPS live test待ち**
 
 - [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
 - [x] `productId` / `emojiId` の既知mappingを優先
@@ -100,7 +100,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
 - [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
 - [x] 通常message / messageEditedの両方でemoji metadataを利用
-- [ ] GitHub Actions green
+- [x] GitHub Actions green
 - [ ] Oracle VPS live test（LINE独自絵文字 → Discord Unicode近似）
 
 設計判断: LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。まずmetadata-awareなUnicode近似を安全な既定動作とする。
