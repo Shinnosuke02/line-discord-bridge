@@ -1,161 +1,187 @@
 /**
- * LINE Bot API サービス
- * LINE Bot SDKを使用したLINE API操作を管理
+ * LINE Bot API service.
+ * Uses the current @line/bot-sdk LineBotClient API.
  */
-const { Client } = require('@line/bot-sdk');
+const { randomUUID } = require('node:crypto');
+const { LineBotClient } = require('@line/bot-sdk');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { sleep } = require('../utils/async');
 
-/**
- * LINEサービスクラス
- */
 class LineService {
-  constructor() {
-    this.client = new Client({
-      channelAccessToken: config.line.channelAccessToken,
-      channelSecret: config.line.channelSecret
+  constructor(options = {}) {
+    this.client = options.client || LineBotClient.fromChannelAccessToken({
+      channelAccessToken: config.line.channelAccessToken
     });
-    
-    // レート制限管理
+
     this.rateLimitInfo = {
       lastRequestTime: 0,
       requestCount: 0,
       windowStart: Date.now(),
-      maxRequestsPerSecond: 10, // 安全マージンを持って10リクエスト/秒に制限
-      maxRequestsPerMinute: 500 // 1分間に500リクエスト制限
+      maxRequestsPerSecond: 10,
+      maxRequestsPerMinute: 500
     };
   }
 
-  /**
-   * レート制限をチェックし、必要に応じて待機
-   */
   async checkRateLimit() {
     const now = Date.now();
-    
-    // ウィンドウをリセット（1分ごと）
+
     if (now - this.rateLimitInfo.windowStart > 60000) {
       this.rateLimitInfo.windowStart = now;
       this.rateLimitInfo.requestCount = 0;
     }
-    
-    // 1秒あたりの制限チェック
+
     const timeSinceLastRequest = now - this.rateLimitInfo.lastRequestTime;
-    if (timeSinceLastRequest < 100) { // 100ms待機（10リクエスト/秒）
+    if (timeSinceLastRequest < 100) {
       await sleep(100 - timeSinceLastRequest);
     }
-    
-    // 1分あたりの制限チェック
+
     if (this.rateLimitInfo.requestCount >= this.rateLimitInfo.maxRequestsPerMinute) {
       const waitTime = 60000 - (now - this.rateLimitInfo.windowStart);
       if (waitTime > 0) {
-        logger.warn('Rate limit reached, waiting', { waitTime });
+        logger.warn('LINE local rate limit reached, waiting', { waitTime });
         await sleep(waitTime);
         this.rateLimitInfo.windowStart = Date.now();
         this.rateLimitInfo.requestCount = 0;
       }
     }
-    
+
     this.rateLimitInfo.lastRequestTime = Date.now();
     this.rateLimitInfo.requestCount++;
   }
 
-  /**
-   * リトライ機能付きでAPI呼び出しを実行
-   * @param {Function} apiCall - API呼び出し関数
-   * @param {number} maxRetries - 最大リトライ回数
-   * @returns {Object} API結果
-   */
-  async executeWithRetry(apiCall, maxRetries = 3) {
+  getErrorStatus(error) {
+    return error?.status
+      || error?.statusCode
+      || error?.response?.status
+      || error?.response?.statusCode
+      || null;
+  }
+
+  getRetryAfterMs(error, attempt) {
+    const raw = error?.response?.headers?.['retry-after']
+      || error?.response?.headers?.get?.('retry-after')
+      || error?.headers?.['retry-after']
+      || error?.headers?.get?.('retry-after');
+
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.max(250, seconds * 1000);
+    }
+
+    return Math.min(30000, (2 ** attempt) * 500);
+  }
+
+  isNetworkError(error) {
+    return !this.getErrorStatus(error)
+      || ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']
+        .includes(error?.code);
+  }
+
+  async executeWithRetry(apiCall, options = {}) {
+    const maxRetries = options.maxRetries || 3;
+    const allowServerRetry = options.allowServerRetry !== false;
+    const allowNetworkRetry = options.allowNetworkRetry !== false;
     let lastError;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await this.checkRateLimit();
-        return await apiCall();
+        return await apiCall(attempt);
       } catch (error) {
         lastError = error;
-        
-        // 429エラー（レート制限）の場合
-        if (error.status === 429 || (error.response && error.response.status === 429)) {
-          const retryAfter = error.response?.headers?.['retry-after'] || Math.pow(2, attempt) * 1000;
-          logger.warn('Rate limit hit, retrying after delay', {
-            attempt,
-            retryAfter,
-            maxRetries
-          });
-          
-          if (attempt < maxRetries) {
-            await sleep(retryAfter);
-            continue;
-          }
+        const status = this.getErrorStatus(error);
+        const retryable = status === 429
+          || (allowServerRetry && status >= 500 && status < 600)
+          || (allowNetworkRetry && this.isNetworkError(error));
+
+        if (!retryable || attempt >= maxRetries) {
+          throw error;
         }
-        
-        // その他のエラーの場合、即座に失敗
-        throw error;
+
+        const retryAfter = this.getRetryAfterMs(error, attempt);
+        logger.warn('LINE API request will be retried', {
+          attempt,
+          maxRetries,
+          status,
+          retryAfter
+        });
+        await sleep(retryAfter);
       }
     }
-    
+
     throw lastError;
   }
 
-  /**
-   * メッセージを送信
-   * @param {string} userId - ユーザーID
-   * @param {Object|Array} messages - メッセージ
-   * @returns {Object} 送信結果
-   */
   async pushMessage(userId, messages) {
+    const messageArray = Array.isArray(messages) ? messages : [messages];
+    const retryKey = randomUUID();
+
     try {
-      const messageArray = Array.isArray(messages) ? messages : [messages];
-      
-      const rawResult = await this.executeWithRetry(async () => {
-        return await this.client.pushMessage(userId, messageArray);
-      });
+      const rawResult = await this.executeWithRetry(
+        async () => this.client.pushMessage({
+          to: userId,
+          messages: messageArray
+        }, retryKey),
+        {
+          maxRetries: 4,
+          allowServerRetry: true,
+          allowNetworkRetry: true
+        }
+      );
       const result = this.normalizeSendResult(rawResult);
-      
-      logger.debug('LINE message sent', {
+
+      logger.debug('LINE push message sent', {
         userId,
         messageCount: messageArray.length,
-        result
+        retryKey,
+        messageId: result?.messageId || null
       });
-      
+
       return result;
     } catch (error) {
-      logger.error('Failed to send LINE message', {
+      const status = this.getErrorStatus(error);
+      if (status === 409) {
+        logger.warn('LINE push retry key was already accepted', {
+          userId,
+          retryKey
+        });
+        return {
+          acceptedByRetryKey: true,
+          retryKey,
+          messageId: null
+        };
+      }
+
+      logger.error('Failed to send LINE push message', {
         userId,
         error: error.message,
-        status: this.getErrorStatus(error)
+        status
       });
       throw error;
     }
   }
 
-  /**
-   * リプライメッセージを送信
-   * @param {string} replyToken - リプライトークン
-   * @param {Object|Array} messages - メッセージ
-   * @returns {Object} 送信結果
-   */
   async replyMessage(replyToken, messages) {
+    const messageArray = Array.isArray(messages) ? messages : [messages];
+
     try {
-      const messageArray = Array.isArray(messages) ? messages : [messages];
-      
-      const rawResult = await this.executeWithRetry(async () => {
-        return await this.client.replyMessage(replyToken, messageArray);
-      });
-      const result = this.normalizeSendResult(rawResult);
-      
-      logger.debug('LINE reply sent', {
-        replyToken,
-        messageCount: messageArray.length,
-        result
-      });
-      
-      return result;
+      // Reply messages do not support X-Line-Retry-Key. Avoid ambiguous
+      // retries for network/5xx failures to prevent duplicate replies.
+      const rawResult = await this.executeWithRetry(
+        async () => this.client.replyMessage({
+          replyToken,
+          messages: messageArray
+        }),
+        {
+          maxRetries: 2,
+          allowServerRetry: false,
+          allowNetworkRetry: false
+        }
+      );
+      return this.normalizeSendResult(rawResult);
     } catch (error) {
-      logger.error('Failed to send LINE reply', {
-        replyToken,
+      logger.error('Failed to send LINE reply message', {
         error: error.message,
         status: this.getErrorStatus(error)
       });
@@ -163,115 +189,30 @@ class LineService {
     }
   }
 
-  /**
-   * ユーザープロフィールを取得
-   * @param {string} userId - ユーザーID
-   * @returns {Object} プロフィール
-   */
   async getUserProfile(userId) {
-    try {
-      const profile = await this.executeWithRetry(async () => {
-        return await this.client.getProfile(userId);
-      });
-      
-      logger.debug('LINE user profile retrieved', {
-        userId,
-        displayName: profile.displayName
-      });
-      
-      return profile;
-    } catch (error) {
-      logger.error('Failed to get LINE user profile', {
-        userId,
-        error: error.message,
-        status: this.getErrorStatus(error)
-      });
-      throw error;
-    }
+    return this.executeWithRetry(() => this.client.getProfile(userId));
   }
 
-  /**
-   * グループメンバープロフィールを取得
-   * @param {string} groupId - グループID
-   * @param {string} userId - ユーザーID
-   * @returns {Object} プロフィール
-   */
   async getGroupMemberProfile(groupId, userId) {
-    try {
-      const profile = await this.executeWithRetry(async () => {
-        return await this.client.getGroupMemberProfile(groupId, userId);
-      });
-      
-      logger.debug('LINE group member profile retrieved', {
-        groupId,
-        userId,
-        displayName: profile.displayName
-      });
-      
-      return profile;
-    } catch (error) {
-      logger.error('Failed to get LINE group member profile', {
-        groupId,
-        userId,
-        error: error.message,
-        status: this.getErrorStatus(error)
-      });
-      throw error;
-    }
+    return this.executeWithRetry(() => this.client.getGroupMemberProfile(groupId, userId));
   }
 
-  /**
-   * グループ情報を取得
-   * @param {string} groupId - グループID
-   * @returns {Object} グループ情報
-   */
+  async getRoomMemberProfile(roomId, userId) {
+    return this.executeWithRetry(() => this.client.getRoomMemberProfile(roomId, userId));
+  }
+
   async getGroupSummary(groupId) {
-    try {
-      const summary = await this.executeWithRetry(async () => {
-        return await this.client.getGroupSummary(groupId);
-      });
-      
-      logger.debug('LINE group summary retrieved', {
-        groupId,
-        groupName: summary.groupName
-      });
-      
-      return summary;
-    } catch (error) {
-      logger.error('Failed to get LINE group summary', {
-        groupId,
-        error: error.message,
-        status: this.getErrorStatus(error)
-      });
-      throw error;
-    }
+    return this.executeWithRetry(() => this.client.getGroupSummary(groupId));
   }
 
-  /**
-   * メッセージコンテンツを取得
-   * @param {string} messageId - メッセージID
-   * @returns {Buffer} メッセージコンテンツ
-   */
   async getMessageContent(messageId) {
     try {
-      const stream = await this.executeWithRetry(async () => {
-        return await this.client.getMessageContent(messageId);
-      });
-      
-      // StreamをBufferに変換
+      const stream = await this.executeWithRetry(() => this.client.getMessageContent(messageId));
       const chunks = [];
       for await (const chunk of stream) {
-        chunks.push(chunk);
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      
-      const buffer = Buffer.concat(chunks);
-      
-      logger.debug('LINE message content retrieved', {
-        messageId,
-        size: buffer.length
-      });
-      
-      return buffer;
+      return Buffer.concat(chunks);
     } catch (error) {
       logger.error('Failed to get LINE message content', {
         messageId,
@@ -282,126 +223,84 @@ class LineService {
     }
   }
 
-  /**
-   * 表示名を取得
-   * @param {Object} event - LINEイベント
-   * @returns {string} 表示名
-   */
   async getDisplayName(event) {
     try {
-      if (event.source.groupId) {
-        const profile = await this.getGroupMemberProfile(
-          event.source.groupId,
-          event.source.userId
-        );
+      if (event.source?.groupId && event.source?.userId) {
+        const profile = await this.getGroupMemberProfile(event.source.groupId, event.source.userId);
         return profile.displayName || 'Unknown User';
-      } else {
+      }
+
+      if (event.source?.roomId && event.source?.userId) {
+        const profile = await this.getRoomMemberProfile(event.source.roomId, event.source.userId);
+        return profile.displayName || 'Unknown User';
+      }
+
+      if (event.source?.userId) {
         const profile = await this.getUserProfile(event.source.userId);
         return profile.displayName || 'Unknown User';
       }
+
+      return 'Unknown User';
     } catch (error) {
-      logger.warn('Failed to get display name, using fallback', {
-        userId: event.source.userId,
+      logger.warn('Failed to get LINE display name, using fallback', {
+        userId: event.source?.userId || null,
         error: error.message
       });
       return 'Unknown User';
     }
   }
 
-  /**
-   * メッセージをフォーマット
-   * @param {Object} event - LINEイベント
-   * @param {string} displayName - 表示名
-   * @returns {string} フォーマットされたメッセージ
-   */
   formatMessage(event, _displayName) {
     const message = event.message;
-    
+
     switch (message.type) {
     case 'text':
       return message.text;
-        
     case 'sticker':
       return '😊 Sticker';
-        
     case 'image':
       return '📷 Image message';
-        
     case 'video':
       return '🎥 Video message';
-        
     case 'audio':
       return '🎵 Audio message';
-        
     case 'file':
       return `📎 File: ${message.fileName || 'Unknown file'}`;
-        
     case 'location': {
       const { latitude, longitude, address } = message;
       const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
       const addressText = address ? `\n📍 住所: ${address}` : '';
       return `📍 位置情報${addressText}\n🌐 Googleマップ: ${googleMapsUrl}\n📊 座標: ${latitude}, ${longitude}`;
     }
-        
     default:
       return `Unsupported message type: ${message.type}`;
     }
   }
 
-  /**
-   * リッチメニューを設定
-   * @param {string} userId - ユーザーID
-   * @param {string} richMenuId - リッチメニューID
-   * @returns {Object} 設定結果
-   */
   async linkRichMenuToUser(userId, richMenuId) {
-    try {
-      const result = await this.executeWithRetry(async () => {
-        return await this.client.linkRichMenuToUser(userId, richMenuId);
-      });
-      
-      logger.debug('LINE rich menu linked to user', {
-        userId,
-        richMenuId,
-        result
-      });
-      
-      return result;
-    } catch (error) {
-      logger.error('Failed to link LINE rich menu to user', {
-        userId,
-        richMenuId,
-        error: error.message,
-        status: this.getErrorStatus(error)
-      });
-      throw error;
-    }
+    return this.executeWithRetry(() => this.client.linkRichMenuIdToUser(userId, richMenuId));
   }
 
-  /**
-   * リッチメニューを解除
-   * @param {string} userId - ユーザーID
-   * @returns {Object} 解除結果
-   */
   async unlinkRichMenuFromUser(userId) {
+    return this.executeWithRetry(() => this.client.unlinkRichMenuIdFromUser(userId));
+  }
+
+  async markMessagesAsRead(markAsReadToken) {
+    if (!markAsReadToken) {
+      return false;
+    }
+
     try {
-      const result = await this.executeWithRetry(async () => {
-        return await this.client.unlinkRichMenuFromUser(userId);
-      });
-      
-      logger.debug('LINE rich menu unlinked from user', {
-        userId,
-        result
-      });
-      
-      return result;
+      await this.executeWithRetry(() => this.client.markMessagesAsReadByToken({
+        markAsReadToken
+      }));
+      return true;
     } catch (error) {
-      logger.error('Failed to unlink LINE rich menu from user', {
-        userId,
+      logger.warn('Failed to mark LINE messages as read', {
         error: error.message,
         status: this.getErrorStatus(error)
       });
-      throw error;
+      return false;
     }
   }
 
@@ -418,10 +317,6 @@ class LineService {
       quoteToken: result?.quoteToken || firstSentMessage.quoteToken || null,
       sentMessage: firstSentMessage
     };
-  }
-
-  getErrorStatus(error) {
-    return error.status || error.response?.status || null;
   }
 }
 
