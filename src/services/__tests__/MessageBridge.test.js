@@ -166,7 +166,6 @@ describe('MessageBridge Phase 2', () => {
 
   test('Discord content and attachments are mapped as 1:N LINE children', async () => {
     bridge.featureManager.resolveLineSendContext = jest.fn().mockResolvedValue({});
-    bridge.lineService.pushMessage.mockResolvedValueOnce({ messageId: 'line-text-1' });
     bridge.mediaService.processDiscordAttachments.mockImplementation(
       async (_attachments, userId, trackedLineService) => {
         await trackedLineService.pushMessage(userId, {
