@@ -156,19 +156,32 @@ class MessageMappingManager {
       messageType: normalized.messageType || existing.messageType || null,
       transport: normalized.transport || existing.transport || null,
       webhookId: normalized.webhookId || existing.webhookId || null,
-      replyToken: normalized.replyToken || existing.replyToken || null,
-      replyTokenExpiry: normalized.replyTokenExpiry || existing.replyTokenExpiry || null,
-      replyTokenUsedAt: existing.replyTokenUsedAt || null,
-      quoteToken: normalized.quoteToken || existing.quoteToken || null,
-      metadata: {
-        ...(existing.metadata || {}),
-        ...(normalized.metadata || {})
-      },
       timestamp: existing.timestamp || new Date().toISOString()
     };
 
-    if (mapping.replyToken && !mapping.replyTokenExpiry) {
-      mapping.replyTokenExpiry = this.replyTokenPolicy.createExpiry();
+    const replyToken = normalized.replyToken || existing.replyToken;
+    if (replyToken) {
+      mapping.replyToken = replyToken;
+      mapping.replyTokenExpiry = normalized.replyTokenExpiry
+        || existing.replyTokenExpiry
+        || this.replyTokenPolicy.createExpiry();
+    }
+
+    if (existing.replyTokenUsedAt) {
+      mapping.replyTokenUsedAt = existing.replyTokenUsedAt;
+    }
+
+    const quoteToken = normalized.quoteToken || existing.quoteToken;
+    if (quoteToken) {
+      mapping.quoteToken = quoteToken;
+    }
+
+    const mergedMetadata = {
+      ...(existing.metadata || {}),
+      ...(normalized.metadata || {})
+    };
+    if (Object.keys(mergedMetadata).length > 0) {
+      mapping.metadata = mergedMetadata;
     }
 
     this.repository.upsert(mapping);
