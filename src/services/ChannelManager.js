@@ -262,8 +262,8 @@ class ChannelManager {
    */
   getCategoryForSource(sourceId) {
     try {
-      // LINEグループの場合（IDがCで始まる）
-      if (sourceId.startsWith('C')) {
+      // LINEグループ/ルームの場合（C/Rで始まる）
+      if (sourceId.startsWith('C') || sourceId.startsWith('R')) {
         const groupsCategoryId = config.discord.categories.groups;
         if (groupsCategoryId && groupsCategoryId !== 'null') {
           logger.debug('Selected Groups category for LINE group', {
@@ -324,6 +324,12 @@ class ChannelManager {
             error: error.message
           });
         }
+      }
+
+      // LINE room has no group summary/name API. Keep the channel name
+      // stable and conversation-scoped instead of using a participant name.
+      if (sourceId.startsWith('R')) {
+        return `room-${sourceId.substring(0, 8)}`;
       }
 
       // ユーザーの場合はユーザー名を取得
