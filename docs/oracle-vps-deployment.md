@@ -1,49 +1,75 @@
-# Oracle VPS deployment notes
+# Oracle VPS deployment
 
-This project is intended to run as a long-lived Node.js process on an Oracle VPS.
+本番はOracle VPS上のNode.js + PM2 + embedded SQLiteで稼働します。Render前提ではありません。
 
-## SQLite deployment model
+## Requirements
 
-SQLite is embedded through the Node.js dependency `better-sqlite3`. A separate SQLite server or daemon is not required.
-
-Recommended production settings:
-
-```bash
-DB_TYPE=sqlite
-DB_FILE=/var/lib/line-discord-bridge/bridge.sqlite3
-DB_BACKUP_PATH=/var/lib/line-discord-bridge/backups
-```
-
-Keep the database outside the Git checkout so normal source updates do not replace or delete persistent data.
-
-Example layout:
+v3.2:
 
 ```text
-/opt/line-discord-bridge/               # Git checkout
-/var/lib/line-discord-bridge/           # Persistent runtime data
+Node.js >= 24.17.0
+npm >= 10
+PM2
+```
+
+更新前に必ず確認してください。
+
+```bash
+node --version
+npm --version
+pm2 status
+```
+
+Node 20系のままv3.2を起動しないでください。Node 24 LTSへ更新してから `npm ci` を実行します。
+
+## Layout
+
+実運用checkout:
+
+```text
+/home/ubuntu/line-discord-bridge
+```
+
+永続データ:
+
+```text
+/var/lib/line-discord-bridge/
   bridge.sqlite3
   bridge.sqlite3-wal
   bridge.sqlite3-shm
   backups/
 ```
 
-## One-time directory preparation
+SQLiteは `better-sqlite3` によるembedded DBで、別daemonは不要です。
 
-The user running Node.js / PM2 must be able to create and modify files under the persistent directory.
+## Environment
+
+```env
+NODE_ENV=production
+DB_TYPE=sqlite
+DB_FILE=/var/lib/line-discord-bridge/bridge.sqlite3
+DB_BACKUP_PATH=/var/lib/line-discord-bridge/backups
+```
+
+必要に応じて:
+
+```env
+LINE_MARK_AS_READ_ON_DISCORD_DELIVERY=false
+```
+
+## Persistent directory
 
 ```bash
 sudo mkdir -p /var/lib/line-discord-bridge/backups
-sudo chown -R <app-user>:<app-group> /var/lib/line-discord-bridge
+sudo chown -R ubuntu:ubuntu /var/lib/line-discord-bridge
 ```
 
-Replace `<app-user>` and `<app-group>` with the account that runs PM2.
+PM2を別ユーザーで動かす場合は所有者を合わせてください。
 
-## First deployment with SQLite
-
-Before changing `DB_TYPE`, retain a copy of the existing `data/*.json` files. Then set the production environment variables shown above and run from the repository directory:
+## First SQLite migration
 
 ```bash
-git pull
+cd /home/ubuntu/line-discord-bridge
 npm ci
 npm run migrate:json
 npm run db:status
@@ -52,53 +78,75 @@ npm run db:backup
 pm2 restart line-discord-bridge --update-env
 ```
 
-`npm ci` installs `better-sqlite3` from `package-lock.json`; no separate SQLite service is required.
+channel mappingの元JSONは削除しません。
 
-`npm run migrate:json` imports existing `data/channel-mappings.json` records into the SQLite `conversations` table. It is idempotent because the repository upserts by LINE source ID. It does not delete or rewrite the source JSON file.
+Phase 2では `message_links` schemaが起動時に安全に拡張され、SQLite側にmessage linkがまだ無ければ既存 `data/message-mappings.json` が自動移行されます。
 
-When `DB_TYPE=sqlite`, `PersistentChannelManager` loads channel mappings from SQLite on restart and continues writing the JSON mapping file as a rollback mirror during the migration period.
+## v3.2 upgrade
 
-## Normal updates after migration
+本番反映前:
 
 ```bash
+cd /home/ubuntu/line-discord-bridge
 npm run db:backup
-git pull
+git pull origin main
+node --version
 npm ci
 npm test -- --runInBand
+npm run lint
 npm run db:status
 pm2 restart line-discord-bridge --update-env
 ```
 
-The SQLite file remains outside the Git checkout and survives `git pull`, `npm ci`, and PM2 restarts.
+`node --version` が24.17.0未満なら、先にNode 24 LTSへ更新してください。
 
-## Health and logs after restart
-
-Check PM2 and the application health endpoint after every deployment:
+## Verify
 
 ```bash
 pm2 status
-pm2 logs line-discord-bridge --lines 100
 curl -fsS http://127.0.0.1:3000/health
+curl -fsS http://127.0.0.1:3000/ready
+npm run db:status
 ```
 
-Adjust the local port if `PORT` is not 3000.
+本番詳細ログ:
+
+```bash
+tail -n 100 logs/application-$(date +%F).log
+tail -n 100 logs/error-$(date +%F).log
+```
 
 ## Backup
 
-`npm run db:backup` uses SQLite's backup API through `better-sqlite3`, so it is safe while WAL mode is active. It creates a timestamped `.sqlite3` file under `DB_BACKUP_PATH` (or a `backups` directory beside the database when that variable is omitted).
+```bash
+npm run db:backup
+```
 
-`npm run db:status` performs `PRAGMA quick_check`, reports WAL mode, and prints row counts for the core SQLite tables. Both commands fail rather than silently creating a new database when `DB_FILE` is missing.
+SQLite backup APIを使用するためWAL稼働中でも整合したbackupを作成できます。ライブ状態で `bridge.sqlite3` だけを直接コピーしないでください。
 
-Do not make a live backup by copying only `bridge.sqlite3` while WAL mode is active.
+## Rollback
 
-## Rollback during migration
+ソースを以前のcommitへ戻す前にもDB backupを取得します。
 
-The migration deliberately keeps the old JSON channel mapping file available. To return temporarily to the legacy mapping backend:
+channel mappingをlegacy JSONへ切り戻す場合のみ:
+
+```env
+DB_TYPE=file
+```
+
+その後:
 
 ```bash
-# set in the PM2/environment configuration
-DB_TYPE=file
 pm2 restart line-discord-bridge --update-env
 ```
 
-The durable webhook inbox continues to use the embedded SQLite file, while the channel mapping backend can use the retained JSON file. Do not delete the JSON files until the SQLite deployment has been observed in production and a backup/recovery test has succeeded.
+注意: Phase 2でSQLite schemaは追加列を持ちます。追加列は旧コードから無視されるため、DBファイルを削除・ダウングレードする必要はありません。
+
+## PM2
+
+1 instanceを維持してください。SQLite / Discord Gatewayの現在設計は複数PM2 instance前提ではありません。
+
+```bash
+pm2 status
+pm2 save
+```
