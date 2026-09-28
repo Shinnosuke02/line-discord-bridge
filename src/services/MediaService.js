@@ -325,66 +325,68 @@ class MediaService {
    */
   async processDiscordAttachment(attachment, lineUserId, lineService) {
     try {
-      // ファイルタイプを判定
-      const defaultMime = attachment.contentType || mimeTypes.lookup(attachment.name) || 'application/octet-stream';
+      const declaredMime = attachment.contentType
+        || mimeTypes.lookup(attachment.name)
+        || 'application/octet-stream';
 
-      const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(response.data);
-      const fileTypeInfo = await this.detectFileType(buffer);
-      const detectedMime = fileTypeInfo?.mime || defaultMime;
-      const detectedExt = fileTypeInfo?.ext || (attachment.name?.split('.').pop() || 'bin');
-
-      // LINE側の制限を考慮したファイルサイズチェック
-      const lineLimit = this.getLineLimitForMimeType(detectedMime);
-      if (buffer.length > lineLimit) {
-        logger.warn('File exceeds LINE limit, attempting CDN fallback', {
-          fileSize: buffer.length,
-          lineLimit,
-          mimeType: detectedMime,
-          attachmentUrl: attachment.url
-        });
-
-        return await this.processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, detectedMime);
+      if (
+        this.supportedDocumentTypes.includes(declaredMime)
+        || (!declaredMime.startsWith('image/')
+          && !declaredMime.startsWith('video/')
+          && !declaredMime.startsWith('audio/'))
+      ) {
+        return this.processDiscordFileLink(attachment, lineUserId, lineService, '📎');
       }
 
-      // 通常のファイルサイズチェック
+      const response = await axios.get(attachment.url, {
+        responseType: 'arraybuffer',
+        maxContentLength: this.getLineLimitForMimeType(declaredMime) + 1
+      });
+      const buffer = Buffer.from(response.data);
+      const fileTypeInfo = await this.detectFileType(buffer);
+      const detectedMime = fileTypeInfo?.mime || declaredMime;
+      const detectedExt = fileTypeInfo?.ext || (attachment.name?.split('.').pop() || 'bin');
+
+      const lineLimit = this.getLineLimitForMimeType(detectedMime);
+      if (buffer.length > lineLimit) {
+        return this.processDiscordAttachmentWithCdn(
+          attachment,
+          lineUserId,
+          lineService,
+          detectedMime,
+          buffer
+        );
+      }
+
       if (buffer.length > this.maxFileSize) {
         throw new Error(`File too large: ${buffer.length} bytes`);
       }
 
-      // 画像ファイルの処理
+      const normalized = {
+        ...attachment,
+        contentType: detectedMime,
+        name: attachment.name || `attachment.${detectedExt}`
+      };
+
       if (this.supportedImageTypes.includes(detectedMime)) {
-        return await this.processDiscordImage({ ...attachment, contentType: detectedMime, name: attachment.name || `image.${detectedExt}` }, lineUserId, lineService);
+        return this.processDiscordImage(normalized, lineUserId, lineService);
       }
-
-      // 動画ファイルの処理
       if (this.supportedVideoTypes.includes(detectedMime)) {
-        return await this.processDiscordVideo({ ...attachment, contentType: detectedMime, name: attachment.name || `video.${detectedExt}` }, lineUserId, lineService);
+        return this.processDiscordVideo(normalized, lineUserId, lineService);
       }
-
-      // 音声ファイルの処理
       if (this.supportedAudioTypes.includes(detectedMime)) {
-        return await this.processDiscordAudio({ ...attachment, contentType: detectedMime, name: attachment.name || `audio.${detectedExt}` }, lineUserId, lineService);
+        return this.processDiscordAudio(normalized, lineUserId, lineService);
       }
 
-      // ドキュメントファイルの処理
-      if (this.supportedDocumentTypes.includes(detectedMime)) {
-        return await this.processDiscordDocument({ ...attachment, contentType: detectedMime, name: attachment.name || `file.${detectedExt}` }, lineUserId, lineService);
-      }
-
-      // その他のファイル
-      return await this.processDiscordFile({ ...attachment, contentType: detectedMime, name: attachment.name || `file.${detectedExt}` }, lineUserId, lineService);
-
+      return this.processDiscordFileLink(normalized, lineUserId, lineService, '📎');
     } catch (error) {
       logger.error('Failed to process Discord attachment', {
         attachmentUrl: attachment.url,
-        error: error.message,
-        stack: error.stack
+        error: error.message
       });
       throw error;
     }
   }
-
   /**
    * Discord画像を処理
    * @param {Object} attachment - Discord添付ファイル
@@ -551,90 +553,42 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processDiscordVideo(attachment, lineUserId, lineService) {
-    try {
-      logger.info('Processing Discord video', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        contentType: attachment.contentType,
-        url: attachment.url
-      });
+    const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+    const previewImageUrl = attachment.previewImageUrl || attachment.thumbnailUrl || null;
 
-      // LINEが想定するのは MP4(H.264/AAC)。それ以外はファイル/テキストにフォールバック
-      const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
-      if (!mime.includes('video/mp4')) {
-        const fallback = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎥 動画ファイル（MP4以外）\n🔗 ${attachment.url}\n📱 LINEの仕様により直接再生できない形式のためリンクを送信しました`
-        });
-        return { success: true, lineMessageId: fallback.messageId, type: 'text', fallback: true };
-      }
-
-      const result = await lineService.pushMessage(lineUserId, {
-        type: 'video',
-        originalContentUrl: attachment.url,
-        previewImageUrl: attachment.url
-      });
-
-      logger.info('Video sent successfully to LINE', {
-        fileName: attachment.name,
-        lineMessageId: result.messageId
-      });
-
-      return {
-        success: true,
-        lineMessageId: result.messageId,
-        type: 'video'
-      };
-    } catch (error) {
-      logger.error('Failed to process Discord video', {
-        fileName: attachment.name,
-        attachmentUrl: attachment.url,
-        error: error.message,
-        status: error.status,
-        statusCode: error.statusCode
-      });
-      
-      // フォールバック: テキストメッセージとして送信
+    if (
+      mime.includes('video/mp4')
+      && previewImageUrl
+      && /^https:\/\//i.test(previewImageUrl)
+    ) {
       try {
-        // ファイルタイプベースの表示名を生成（ファイル名は使用しない）
-        const fileTypeDisplay = this.getFileTypeDisplayName(
-          attachment.contentType, 
-          attachment.contentType, 
-          attachment.name || ''
-        );
-        
-        logger.info('Using file type display for fallback', {
-          originalName: attachment.name,
-          contentType: attachment.contentType,
-          displayName: fileTypeDisplay
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'video',
+          originalContentUrl: attachment.url,
+          previewImageUrl
         });
-        
-        const fallbackResult = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎥 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、動画を直接表示できません`
-        });
-
-        logger.info('Video sent as text fallback', {
-          fileName: attachment.name,
-          lineMessageId: fallbackResult.messageId
-        });
-
         return {
           success: true,
-          lineMessageId: fallbackResult.messageId,
-          type: 'text',
-          fallback: true,
-          warning: '動画送信失敗、テキストメッセージとして送信'
+          lineMessageId: result.messageId,
+          type: 'video'
         };
-      } catch (fallbackError) {
-        logger.error('Fallback text message also failed', {
+      } catch (error) {
+        logger.warn('Native LINE video delivery failed; sending link instead', {
           fileName: attachment.name,
-          error: fallbackError.message
+          error: error.message
         });
-        throw error;
       }
     }
+
+    return this.processDiscordFileLink(
+      attachment,
+      lineUserId,
+      lineService,
+      '🎥',
+      'LINE動画送信にはHTTPSのJPEG/PNGプレビュー画像が必要なためリンクで送信しました'
+    );
   }
+
 
   /**
    * Discord音声を処理
@@ -644,90 +598,46 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processDiscordAudio(attachment, lineUserId, lineService) {
-    try {
-      logger.info('Processing Discord audio', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        contentType: attachment.contentType,
-        url: attachment.url
-      });
+    const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
+    const duration = Number(
+      attachment.durationMs
+      || (Number.isFinite(attachment.durationSecs) ? attachment.durationSecs * 1000 : 0)
+      || 0
+    );
 
-      // LINE推奨は m4a(AAC)。それ以外はテキストフォールバック
-      const mime = attachment.contentType || mimeTypes.lookup(attachment.name) || '';
-      if (!(mime.includes('audio/mp4') || mime.includes('audio/aac') || attachment.name?.toLowerCase().endsWith('.m4a'))) {
-        const fallback = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎵 音声ファイル（m4a以外）\n🔗 ${attachment.url}\n📱 LINEの仕様により直接再生できない形式のためリンクを送信しました`
-        });
-        return { success: true, lineMessageId: fallback.messageId, type: 'text', fallback: true };
-      }
-
-      const result = await lineService.pushMessage(lineUserId, {
-        type: 'audio',
-        originalContentUrl: attachment.url,
-        duration: 60000 // デフォルト60秒
-      });
-
-      logger.info('Audio sent successfully to LINE', {
-        fileName: attachment.name,
-        lineMessageId: result.messageId
-      });
-
-      return {
-        success: true,
-        lineMessageId: result.messageId,
-        type: 'audio'
-      };
-    } catch (error) {
-      logger.error('Failed to process Discord audio', {
-        fileName: attachment.name,
-        attachmentUrl: attachment.url,
-        error: error.message,
-        status: error.status,
-        statusCode: error.statusCode
-      });
-      
-      // フォールバック: テキストメッセージとして送信
+    if (
+      (mime.includes('audio/mp4') || mime.includes('audio/aac') || attachment.name?.toLowerCase().endsWith('.m4a'))
+      && Number.isFinite(duration)
+      && duration > 0
+    ) {
       try {
-        // ファイルタイプベースの表示名を生成（ファイル名は使用しない）
-        const fileTypeDisplay = this.getFileTypeDisplayName(
-          attachment.contentType, 
-          attachment.contentType, 
-          attachment.name || ''
-        );
-        
-        logger.info('Using file type display for fallback', {
-          originalName: attachment.name,
-          contentType: attachment.contentType,
-          displayName: fileTypeDisplay
+        const result = await lineService.pushMessage(lineUserId, {
+          type: 'audio',
+          originalContentUrl: attachment.url,
+          duration: Math.round(duration)
         });
-        
-        const fallbackResult = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎵 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、音声を直接再生できません`
-        });
-
-        logger.info('Audio sent as text fallback', {
-          fileName: attachment.name,
-          lineMessageId: fallbackResult.messageId
-        });
-
         return {
           success: true,
-          lineMessageId: fallbackResult.messageId,
-          type: 'text',
-          fallback: true,
-          warning: '音声送信失敗、テキストメッセージとして送信'
+          lineMessageId: result.messageId,
+          type: 'audio'
         };
-      } catch (fallbackError) {
-        logger.error('Fallback text message also failed', {
+      } catch (error) {
+        logger.warn('Native LINE audio delivery failed; sending link instead', {
           fileName: attachment.name,
-          error: fallbackError.message
+          error: error.message
         });
-        throw error;
       }
     }
+
+    return this.processDiscordFileLink(
+      attachment,
+      lineUserId,
+      lineService,
+      '🎵',
+      '正確な音声durationを取得できないためリンクで送信しました'
+    );
   }
+
 
   /**
    * Discordドキュメントを処理
@@ -737,81 +647,9 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processDiscordDocument(attachment, lineUserId, lineService) {
-    try {
-      logger.info('Processing Discord document', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        contentType: attachment.contentType,
-        url: attachment.url
-      });
-
-      // ドキュメントファイルをLINEに送信
-      const result = await lineService.pushMessage(lineUserId, {
-        type: 'file',
-        fileName: attachment.name,
-        originalContentUrl: attachment.url
-      });
-
-      logger.info('Document sent successfully to LINE', {
-        fileName: attachment.name,
-        lineMessageId: result.messageId
-      });
-
-      return {
-        success: true,
-        lineMessageId: result.messageId,
-        type: 'document'
-      };
-    } catch (error) {
-      logger.error('Failed to process Discord document', {
-        fileName: attachment.name,
-        attachmentUrl: attachment.url,
-        error: error.message,
-        status: error.status,
-        statusCode: error.statusCode
-      });
-      
-      // フォールバック: テキストメッセージとして送信
-      try {
-        // ファイルタイプベースの表示名を生成（ファイル名は使用しない）
-        const fileTypeDisplay = this.getFileTypeDisplayName(
-          attachment.contentType, 
-          attachment.contentType, 
-          attachment.name || ''
-        );
-        
-        logger.info('Using file type display for fallback', {
-          originalName: attachment.name,
-          contentType: attachment.contentType,
-          displayName: fileTypeDisplay
-        });
-        
-        const fallbackResult = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `📄 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ドキュメントを直接表示できません`
-        });
-
-        logger.info('Document sent as text fallback', {
-          fileName: attachment.name,
-          lineMessageId: fallbackResult.messageId
-        });
-
-        return {
-          success: true,
-          lineMessageId: fallbackResult.messageId,
-          type: 'text',
-          fallback: true,
-          warning: 'ドキュメント送信失敗、テキストメッセージとして送信'
-        };
-      } catch (fallbackError) {
-        logger.error('Fallback text message also failed', {
-          fileName: attachment.name,
-          error: fallbackError.message
-        });
-        throw error;
-      }
-    }
+    return this.processDiscordFileLink(attachment, lineUserId, lineService, '📄');
   }
+
 
   /**
    * Discordファイルを処理
@@ -821,162 +659,62 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processDiscordFile(attachment, lineUserId, lineService) {
-    try {
-      logger.info('Processing Discord file', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        contentType: attachment.contentType,
-        url: attachment.url
-      });
+    return this.processDiscordFileLink(attachment, lineUserId, lineService, '📎');
+  }
 
-      // ファイルをLINEに送信
+  async processDiscordFileLink(attachment, lineUserId, lineService, icon = '📎', note = null) {
+    const safeName = attachment.name || 'attachment';
+    const text = [
+      `${icon} ${safeName}`,
+      attachment.url,
+      note
+    ].filter(Boolean).join('\n');
+
+    const result = await lineService.pushMessage(lineUserId, {
+      type: 'text',
+      text: text.slice(0, 5000)
+    });
+
+    return {
+      success: true,
+      lineMessageId: result.messageId,
+      type: 'text',
+      fallback: true,
+      originalType: attachment.contentType || null
+    };
+  }
+
+
+  async processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, mimeType, _buffer = null) {
+    if (mimeType.startsWith('image/')) {
       const result = await lineService.pushMessage(lineUserId, {
-        type: 'file',
-        fileName: attachment.name,
-        originalContentUrl: attachment.url
+        type: 'image',
+        originalContentUrl: attachment.url,
+        previewImageUrl: attachment.url
       });
-
-      logger.info('File sent successfully to LINE', {
-        fileName: attachment.name,
-        lineMessageId: result.messageId
-      });
-
       return {
         success: true,
         lineMessageId: result.messageId,
-        type: 'file'
+        type: 'image',
+        fallback: true,
+        note: 'sent via Discord CDN URL'
       };
-    } catch (error) {
-      logger.error('Failed to process Discord file', {
-        fileName: attachment.name,
-        attachmentUrl: attachment.url,
-        error: error.message,
-        status: error.status,
-        statusCode: error.statusCode
-      });
-      
-      // フォールバック: テキストメッセージとして送信
-      try {
-        const fileTypeDisplay = this.getFileTypeDisplayName(
-          attachment.contentType, 
-          attachment.contentType, 
-          attachment.name || ''
-        );
-        
-        logger.info('Using file type display for fallback', {
-          originalName: attachment.name,
-          contentType: attachment.contentType,
-          displayName: fileTypeDisplay
-        });
-        
-        const fallbackResult = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません`
-        });
-
-        logger.info('File sent as text fallback', {
-          fileName: attachment.name,
-          lineMessageId: fallbackResult.messageId
-        });
-
-        return {
-          success: true,
-          lineMessageId: fallbackResult.messageId,
-          type: 'text',
-          fallback: true,
-          warning: 'ファイル送信失敗、テキストメッセージとして送信'
-        };
-      } catch (fallbackError) {
-        logger.error('Fallback text message also failed', {
-          fileName: attachment.name,
-          error: fallbackError.message
-        });
-        throw error;
-      }
     }
+
+    const icon = mimeType.startsWith('video/')
+      ? '🎥'
+      : mimeType.startsWith('audio/')
+        ? '🎵'
+        : '📎';
+    return this.processDiscordFileLink(
+      attachment,
+      lineUserId,
+      lineService,
+      icon,
+      '大容量メディアのためリンクで送信しました'
+    );
   }
 
-  async processDiscordAttachmentWithCdn(attachment, lineUserId, lineService, mimeType, _buffer = null) {
-    try {
-      // 可能な場合、直接Discord CDN URLでLINEに送信
-      if (mimeType.startsWith('image/')) {
-        const url = attachment.url;
-        const result = await lineService.pushMessage(lineUserId, {
-          type: 'image',
-          originalContentUrl: url,
-          previewImageUrl: url
-        });
-        return {
-          success: true,
-          lineMessageId: result.messageId,
-          type: 'image',
-          fallback: true,
-          note: 'sent via CDN URL'
-        };
-      }
-
-      if (mimeType.startsWith('video/')) {
-        const url = attachment.url;
-        const fallback = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎥 動画が大きすぎます。リンクで参照してください:\n${url}`
-        });
-        return {
-          success: true,
-          lineMessageId: fallback.messageId,
-          type: 'text',
-          fallback: true
-        };
-      }
-
-      if (mimeType.startsWith('audio/')) {
-        const url = attachment.url;
-        const fallback = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `🎵 音声が大きすぎます。リンクで参照してください:\n${url}`
-        });
-        return {
-          success: true,
-          lineMessageId: fallback.messageId,
-          type: 'text',
-          fallback: true
-        };
-      }
-
-      // 画像以外はファイルメッセージとして送信し、失敗したらリンク
-      try {
-        const result = await lineService.pushMessage(lineUserId, {
-          type: 'file',
-          fileName: attachment.name || 'attachment',
-          originalContentUrl: attachment.url
-        });
-        return {
-          success: true,
-          lineMessageId: result.messageId,
-          type: 'file',
-          fallback: true
-        };
-      } catch (fallbackError) {
-        const textFallback = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `📎 ファイルを送信できませんでした。リンクを参照してください:\n${attachment.url}`
-        });
-        return {
-          success: true,
-          lineMessageId: textFallback.messageId,
-          type: 'text',
-          fallback: true
-        };
-      }
-    } catch (error) {
-      logger.error('Failed to process Discord attachment with CDN fallback', {
-        attachmentUrl: attachment.url,
-        error: error.message,
-        stack: error.stack
-      });
-      throw error;
-    }
-  }
 
   /**
    * Discordスタンプを処理
@@ -1820,89 +1558,13 @@ class MediaService {
    * @returns {Object} 処理結果
    */
   async processDiscordAttachmentWithCDN(attachment, lineUserId, lineService, mimeType) {
-    try {
-      logger.info('Processing large file with Discord CDN URL', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        mimeType: mimeType,
-        cdnUrl: attachment.url
-      });
-
-      // ファイルタイプに応じてLINEメッセージタイプを決定
-      let messageType;
-      if (this.supportedImageTypes.includes(mimeType)) {
-        messageType = 'image';
-      } else if (this.supportedVideoTypes.includes(mimeType)) {
-        messageType = 'video';
-      } else if (this.supportedAudioTypes.includes(mimeType)) {
-        messageType = 'audio';
-      } else {
-        messageType = 'file';
-      }
-
-      // Discord CDN URLを直接使用してLINEに送信
-      const messageData = this.createLineMessageData(messageType, attachment);
-      const result = await lineService.pushMessage(lineUserId, messageData);
-
-      logger.info('Large file sent successfully via Discord CDN', {
-        fileName: attachment.name,
-        messageType: messageType,
-        lineMessageId: result.messageId,
-        cdnUrl: attachment.url
-      });
-
-      return {
-        success: true,
-        lineMessageId: result.messageId,
-        type: messageType,
-        cdnUsed: true,
-        warning: 'Discord CDN URL使用（24時間有効期限あり）'
-      };
-
-    } catch (error) {
-      logger.error('Failed to process large file with Discord CDN', {
-        fileName: attachment.name,
-        fileSize: attachment.size,
-        error: error.message
-      });
-
-      // フォールバック: テキストメッセージとして送信
-      try {
-        // ファイルタイプベースの表示名を生成（ファイル名は使用しない）
-        const fileTypeDisplay = this.getFileTypeDisplayName(
-          attachment.contentType || mimeType, 
-          attachment.contentType || mimeType, 
-          attachment.name || ''
-        );
-        
-        logger.info('Using file type display for fallback', {
-          originalName: attachment.name,
-          contentType: attachment.contentType || mimeType,
-          displayName: fileTypeDisplay
-        });
-        
-        const fallbackResult = await lineService.pushMessage(lineUserId, {
-          type: 'text',
-          text: `📎 ${fileTypeDisplay}\n🔗 リンク先で参照できます\n${attachment.url}\n📱 LINEの制限により、ファイルを直接表示できません\n⏰ 注意: このリンクは24時間で無効になります`
-        });
-
-        return {
-          success: true,
-          lineMessageId: fallbackResult.messageId,
-          type: 'text',
-          fallback: true,
-          warning: 'フォールバック: テキストメッセージとして送信'
-        };
-      } catch (fallbackError) {
-        logger.error('Fallback text message also failed', {
-          fileName: attachment.name,
-          error: fallbackError.message
-        });
-        throw error;
-      }
-    }
+    return this.processDiscordAttachmentWithCdn(
+      attachment,
+      lineUserId,
+      lineService,
+      mimeType
+    );
   }
-
   /**
    * LINEメッセージデータを作成
    * @param {string} messageType - メッセージタイプ
@@ -1910,28 +1572,19 @@ class MediaService {
    * @returns {Object} LINEメッセージデータ
    */
   createLineMessageData(messageType, attachment) {
-    const baseData = {
-      type: messageType,
-      originalContentUrl: attachment.url,
-      previewImageUrl: attachment.url
-    };
-
-    switch (messageType) {
-    case 'audio':
+    if (messageType === 'image') {
       return {
-        ...baseData,
-        duration: 60000 // 60秒
+        type: 'image',
+        originalContentUrl: attachment.url,
+        previewImageUrl: attachment.url
       };
-    case 'file':
-      return {
-        ...baseData,
-        fileName: attachment.name
-      };
-    default:
-      return baseData;
     }
-  }
 
+    return {
+      type: 'text',
+      text: `📎 ${attachment.name || 'attachment'}\n${attachment.url}`
+    };
+  }
   /**
    * ファイルサイズを検証
    * @param {number} size - ファイルサイズ
