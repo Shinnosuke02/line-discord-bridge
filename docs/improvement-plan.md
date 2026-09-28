@@ -58,7 +58,7 @@
 - [x] JSON message mapping → SQLite migration
 - [x] SQLiteをmessage mapping authoritative store化
 - [x] 1 Discord → N LINE mapping
-- [x] LINE `messageEdited` → Discord edit（timestampでout-of-order editを抑止）
+- [x] LINEグループトークの `messageEdited` → Discord edit（timestampでout-of-order editを抑止）
 - [x] LINE `unsend` → Discord delete
 - [x] Webhook message edit/delete
 - [x] Discord mention suppression
@@ -85,8 +85,8 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] SQLite migration後 `db:status` green（WAL / quick_check=ok）
 - [ ] LINE→Discord通常message live test
 - [ ] Discord→LINE text/image/file-link live test
-- [ ] LINE edit live test
-- [ ] LINE unsend live test
+- [ ] LINE edit live test（グループトークで実施。1対1 / 複数人トークではLINE API仕様上 `messageEdited` が送信されない）
+- [x] LINE unsend live test（Discord側メッセージ削除を確認）
 - [ ] PM2再起動後mapping復元
 
 ## Phase 3 — Media
