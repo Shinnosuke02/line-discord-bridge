@@ -652,6 +652,12 @@ class MessageBridge {
           });
         }
         return null;
+      } else if (event.source.roomId && event.source.userId) {
+        const roomMemberProfile = await this.lineService.getRoomMemberProfile(
+          event.source.roomId,
+          event.source.userId
+        );
+        return roomMemberProfile.pictureUrl || null;
       } else {
         const userProfile = await this.lineService.getUserProfile(event.source.userId);
         return userProfile.pictureUrl || null;
