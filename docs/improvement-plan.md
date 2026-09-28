@@ -28,7 +28,7 @@
 
 ## Phase 2 — Messaging / Platform modernization
 
-状態: **実装完了・Oracle VPS実機検証待ち**
+状態: **Oracle VPS稼働確認済み・実通信acceptance確認中**
 
 ### Platform
 
@@ -76,10 +76,13 @@
 
 ### Phase 2 acceptance
 
+Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` ready、SQLite `quick_check=ok` を確認済み。起動時点で durable queue は空。既存 `dead_letter` 24件は内容確認後に個別判断し、一括retryは行わない。
+
+
 - [x] GitHub Actions test / lint / SQLite smoke / production high-severity audit green
-- [ ] Oracle VPS Node 24更新
-- [ ] Oracle VPS `npm ci`
-- [ ] SQLite migration後 `db:status` green
+- [x] Oracle VPS Node 24.21.0更新
+- [x] Oracle VPS `npm ci`（Node 24 native modules再構築）
+- [x] SQLite migration後 `db:status` green（WAL / quick_check=ok）
 - [ ] LINE→Discord通常message live test
 - [ ] Discord→LINE text/image/file-link live test
 - [ ] LINE edit live test
