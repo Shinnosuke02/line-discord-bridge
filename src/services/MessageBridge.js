@@ -329,7 +329,10 @@ class MessageBridge {
       return true;
     }
 
-    const content = processLineEmoji(this.lineService.formatMessage(event, ''));
+    const content = processLineEmoji(
+      this.lineService.formatMessage(event, ''),
+      event.message?.emojis || []
+    );
     if (mapping.transport === 'webhook' && this.webhookManager) {
       await this.webhookManager.editMessage(mapping.discordChannelId, mapping.discordMessageId, {
         content
@@ -589,7 +592,7 @@ class MessageBridge {
     case 'text': {
       const formattedText = this.lineService.formatMessage(event, displayName);
       return {
-        content: processLineEmoji(formattedText)
+        content: processLineEmoji(formattedText, event.message.emojis || [])
       };
     }
         
