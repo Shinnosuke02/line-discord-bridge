@@ -103,6 +103,25 @@ describe('MessageBridge Phase 2', () => {
     expect(bridge.discord.once).toHaveBeenCalledWith('clientReady', expect.any(Function));
   });
 
+  test('LINE text emoji metadata renders as a Unicode approximation', async () => {
+    const text = '了解です（ありがとう）！';
+    const result = await bridge.createDiscordMessage({
+      message: {
+        id: 'line-emoji-1',
+        type: 'text',
+        text,
+        emojis: [{
+          index: text.indexOf('（ありがとう）'),
+          length: '（ありがとう）'.length,
+          productId: 'custom-product',
+          emojiId: '001'
+        }]
+      }
+    }, 'LINE User');
+
+    expect(result).toEqual({ content: '了解です🙏！' });
+  });
+
   test('sendToDiscord suppresses Discord mentions for bot delivery', async () => {
     const channel = {
       send: jest.fn().mockResolvedValue({ id: 'd1' })
@@ -218,13 +237,23 @@ describe('MessageBridge Phase 2', () => {
     await bridge.processLineEditToDiscord({
       type: 'messageEdited',
       source: { userId: 'U1' },
-      message: { id: 'line-1', type: 'text', text: 'edited' }
+      message: {
+        id: 'line-1',
+        type: 'text',
+        text: 'edited (thank you)',
+        emojis: [{
+          index: 7,
+          length: 11,
+          productId: 'custom-product',
+          emojiId: '001'
+        }]
+      }
     });
 
     expect(bridge.webhookManager.editMessage).toHaveBeenCalledWith(
       'C1',
       'discord-1',
-      { content: 'edited' }
+      { content: 'edited 🙏' }
     );
   });
 
