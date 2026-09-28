@@ -1,5 +1,8 @@
 # ソフトウェア全体リファクタリングレビュー
 
+> **Historical review / 2026-07-01 snapshot**  
+> この文書は当時の問題点と改善順序を残す履歴資料です。v3.2.0 / Phase 2以降では、署名検証、ログredaction、SQLite durable inbox、1:N message mapping、Node 24 / LINE SDK 11、dependency audit、lint/CI gateなど多数の指摘が解消・再設計されています。**現在の仕様・未完了項目は `README.md` と `docs/improvement-plan.md` を優先してください。** この文書中の行番号、脆弱性件数、test数、package version、未実装判定は2026-07-01時点の記録であり、現状を表しません。
+
 作成日: 2026-07-01
 
 ## 概要
