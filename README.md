@@ -15,7 +15,7 @@ v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のL
 - LINE push送信の `X-Line-Retry-Key` 対応
 - SQLite `message_links` をメッセージ対応のauthoritative storeへ移行
 - 1 Discord message → N LINE messages のmapping
-- LINE `messageEdited` → Discordメッセージ編集
+- LINEグループトークの `messageEdited` → Discordメッセージ編集
 - LINE `unsend` → Discordメッセージ削除
 - group / room / user のLINE source ID統一
 - Webhook/Bot投稿のDiscord mention抑止
@@ -69,8 +69,8 @@ message_linksへ全child messageを1:N記録
 - location
 - LINE表示名・アイコンをDiscord Webhookへ反映
 - reply
-- `messageEdited`
-- `unsend`
+- `messageEdited`（LINE公式アカウントを含むグループトークのみ）
+- `unsend`（1対1 / グループ / 複数人トーク）
 - 削除済みDiscordチャンネルの自動再生成
 
 ### Discord → LINE
@@ -261,7 +261,7 @@ Discord → LINE:
 2. quoteTokenがあればquote付きpush
 3. 通常push
 
-LINEのtext message editは対応するDiscord messageを編集します。LINE unsendは対応するDiscord messageを削除します。
+LINEのtext message editは、LINE公式アカウントを含むグループトークでのみWebhookが届くため、その範囲で対応するDiscord messageを編集します。1対1トークと複数人トークでは `messageEdited` イベント自体が送られません。LINE unsendは1対1 / グループ / 複数人トークで対応するDiscord messageを削除します。
 
 ## Mark as read
 
