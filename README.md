@@ -1,268 +1,351 @@
 # LINE-Discord Bridge
 
-[![Version](https://img.shields.io/badge/version-3.1.4-stable-green.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
-[![Node.js](https://img.shields.io/badge/node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
+[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/Shinnosuke02/line-discord-bridge)
+[![Node.js](https://img.shields.io/badge/node.js-%3E%3D24.17.0-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-LINE と Discord を双方向に接続するブリッジアプリケーションです。テキスト、メディア、ファイル、スタンプ、位置情報、返信コンテキストを扱い、Discord 側では LINE ユーザー名/アイコンを Webhook 表示できます。
+LINE Messaging API と Discord を双方向に接続する常駐ブリッジです。Oracle VPS + PM2 + SQLite を本番構成とし、LINEの1:1トーク・グループ・ルームをDiscordチャンネルへ永続的に対応付けます。
 
-> 重要: LINE に画像/動画などの外部 URL を渡す場合、`PUBLIC_BASE_URL` は公開 HTTPS URL を指定してください。未指定時はローカル URL へフォールバックしますが、LINE API からは通常アクセスできません。
+## v3.2 Phase 2
 
-## 主な機能
+v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のLINE / Discord APIへ追従しています。
 
-- LINE ⇄ Discord の双方向メッセージ転送
-- Discord Webhook による LINE ユーザー名/アイコン表示
-- LINE `quotedMessageId` と Discord reply reference の返信連携
-- Discord → LINE 返信時の `replyToken` 優先送信と `quoteToken`/Push fallback
-- 画像、動画、音声、ファイル、スタンプ、位置情報の処理
-- HEIC/HEIF、APNG/WebP、画像圧縮/変換、プレビュー生成
-- LINE ファイルメッセージのオリジナルファイル名維持
-- LINE Webhook 署名検証
-- ログ秘匿情報 redaction
-- チャンネル/メッセージマッピングの JSON 永続化
-- LINE Push 通数カウントの再起動耐性
-- `/temp` 静的配信の運用ガード
-- LINE個人/グループ別のDiscordカテゴリ自動割り当て
-- Jest/ESLint による検証
+- Node.js 24.17+ / discord.js 14.27
+- `@line/bot-sdk` 11.2 `LineBotClient`
+- LINE push送信の `X-Line-Retry-Key` 対応
+- SQLite `message_links` をメッセージ対応のauthoritative storeへ移行
+- 1 Discord message → N LINE messages のmapping
+- LINE `messageEdited` → Discordメッセージ編集
+- LINE `unsend` → Discordメッセージ削除
+- group / room / user のLINE source ID統一
+- Webhook/Bot投稿のDiscord mention抑止
+- Webhook retryのbackoff / dead-letter
+- `/health` と `/ready` の分離
+- オプションのLINE mark-as-read
+- Discord→LINEの一般ファイルを、無効な `file` messageではなくURLテキストとして送信
+- MessageBatcherを配送経路から廃止
+
+## 動作モデル
+
+LINE → Discord:
+
+```text
+LINE Webhook
+  ↓
+署名検証
+  ↓
+SQLite webhook_eventsへ永続化
+  ↓
+HTTP 200 Fast ACK
+  ↓
+conversation queue
+  ↓
+MessageBridge
+  ↓
+Discord Webhook / Bot
+```
+
+同じ `webhookEventId` はSQLite PRIMARY KEYで重複排除します。一時失敗はbackoffして再試行し、上限到達後は `dead_letter` になります。
+
+Discord → LINE:
+
+```text
+Discord message
+  ↓
+text / attachment / stickerを個別処理
+  ↓
+LINE reply または push
+  ↓
+message_linksへ全child messageを1:N記録
+```
+
+## 対応内容
+
+### LINE → Discord
+
+- text
+- image / video / audio / file
+- sticker
+- location
+- LINE表示名・アイコンをDiscord Webhookへ反映
+- reply
+- `messageEdited`
+- `unsend`
+- 削除済みDiscordチャンネルの自動再生成
+
+### Discord → LINE
+
+- text
+- image
+- 条件を満たすvideo / audio
+- location
+- sticker
+- 一般ファイルはダウンロードURLとして送信
+- replyToken → quoteToken push →通常push のfallback
+
+LINE Messaging APIはBotから任意の一般ファイルを `type: file` として送信できないため、PDF / Word / ZIP等はURLメッセージに変換します。
 
 ## 前提条件
 
-- Node.js 18.0.0 以上
-- npm 8.0.0 以上
-- LINE Messaging API チャンネル
-- Discord Bot Token
-- Discord Bot 権限: `Send Messages`, `Manage Webhooks`, `Manage Channels`, `Read Message History`
+- Node.js 24.17.0以上
+- npm 10以上
+- LINE Messaging API channel
+- Discord Bot
+- Discord Guild ID
+- Discord Developer PortalでMESSAGE CONTENT INTENTを有効化
+
+Discord Botには少なくとも以下の権限が必要です。
+
+- View Channels
+- Send Messages
+- Manage Channels
+- Read Message History
+- Manage Webhooks
+- Attach Files
+- Embed Links
 
 ## セットアップ
 
 ```bash
 git clone https://github.com/Shinnosuke02/line-discord-bridge.git
 cd line-discord-bridge
-npm install
-cp env.example .env
+npm ci
+cp .env.example .env
 ```
 
-`.env` に LINE / Discord の認証情報と公開 URL を設定します。
+最低限:
 
 ```env
-LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
-LINE_CHANNEL_SECRET=your_line_channel_secret
-DISCORD_BOT_TOKEN=your_discord_bot_token
-DISCORD_GUILD_ID=your_discord_guild_id
-DISCORD_CLIENT_ID=your_discord_client_id
-# Discordカテゴリ設定（オプション）
-DISCORD_CATEGORY_FRIENDS=your_friends_category_id
-DISCORD_CATEGORY_GROUPS=your_groups_category_id
-PUBLIC_BASE_URL=https://your-domain.example
-NODE_ENV=production
-PORT=3000
+LINE_CHANNEL_SECRET=...
+LINE_CHANNEL_ACCESS_TOKEN=...
+DISCORD_BOT_TOKEN=...
+DISCORD_GUILD_ID=...
+WEBHOOK_ENABLED=true
 ```
 
-LINE Developers Console の Webhook URL は次のように設定します。
+LINE Developers ConsoleのWebhook URL:
 
 ```text
 https://your-domain.example/webhook
 ```
 
-`LINE_WEBHOOK_PATH` を変更した場合は、そのパスに合わせてください。
+## Oracle VPS本番設定
 
-## 起動
+SQLiteファイルはGit checkout外へ置きます。
+
+```env
+NODE_ENV=production
+DB_TYPE=sqlite
+DB_FILE=/var/lib/line-discord-bridge/bridge.sqlite3
+DB_BACKUP_PATH=/var/lib/line-discord-bridge/backups
+```
+
+現在の実運用checkout例:
+
+```text
+/home/ubuntu/line-discord-bridge
+```
+
+永続DB:
+
+```text
+/var/lib/line-discord-bridge/bridge.sqlite3
+```
+
+詳細は [docs/oracle-vps-deployment.md](docs/oracle-vps-deployment.md) を参照してください。
+
+## JSON → SQLite
+
+初回移行:
 
 ```bash
-npm run dev      # 開発
-npm start        # 本番相当
+npm run migrate:json
+npm run db:status
+npm run db:backup
+```
+
+既存JSONは削除しません。channel mappingはrollback mirrorを継続します。Phase 2では既存 `data/message-mappings.json` も、SQLiteの `message_links` が空の場合に自動移行されます。
+
+## 起動 / 再起動
+
+開発:
+
+```bash
+npm run dev
+```
+
+本番:
+
+```bash
 npm run pm2:start
 ```
 
-## 環境変数
+環境変数変更後:
 
-主要な設定は `env.example` を参照してください。特に運用上重要なものは以下です。
-
-| 変数 | 既定値 | 説明 |
-| --- | --- | --- |
-| `LINE_CHANNEL_ACCESS_TOKEN` | なし | LINEチャネルアクセストークン |
-| `LINE_CHANNEL_SECRET` | なし | LINE署名検証に使うチャネルシークレット |
-| `LINE_WEBHOOK_PATH` | `/webhook` | LINE Webhook受信パス |
-| `DISCORD_BOT_TOKEN` | なし | Discord Bot Token |
-| `DISCORD_GUILD_ID` | なし | チャンネル作成先Guild |
-| `DISCORD_CLIENT_ID` | なし | Discord Application Client ID |
-| `DISCORD_CATEGORY_FRIENDS` | なし | LINE個人ユーザー用Discordカテゴリ |
-| `DISCORD_CATEGORY_GROUPS` | なし | LINEグループ用Discordカテゴリ |
-| `PUBLIC_BASE_URL` | 空 | LINEからアクセス可能な公開HTTPS URL |
-| `WEBHOOK_ENABLED` | `false`相当 | Discord Webhook表示を使う場合は `true` |
-| `BRIDGE_REPLY_ENABLED` | `true` | 返信ブリッジ有効/無効 |
-| `LINE_TO_DISCORD_REPLY_MODE` | `webhook` | `webhook` または `bot-reply` |
-| `BRIDGE_REACTION_ENABLED` | `false` | 反応ブリッジ。LINE側制約により既定無効 |
-| `LINE_SIGNATURE_VALIDATION_ENABLED` | `true` | LINE署名検証。緊急回避時のみ `false` |
-| `TEMP_STATIC_ENABLED` | `true` | `/temp` 静的配信。止める場合は `false` |
-| `TEMP_PATH` | `./temp` | 自己ホスト用一時ファイル保存先 |
-| `UPLOAD_PATH` | `./uploads` | アップロード保存先 |
-| `LINE_ADMIN_USER_IDS` | 空 | LINE使用量アラート送信先 |
-| `MESSAGE_BATCH_TIMEOUT` | `120000` | Discord→LINEバッチ送信待機時間 |
-| `MESSAGE_BATCH_MAX_SIZE` | `10` | バッチ最大件数 |
-
-## プロジェクト構造
-
-```text
-src/
-├── app.js
-├── config/index.js
-├── features/
-│   ├── BridgeFeatureManager.js
-│   ├── ReplyBridgeFeature.js
-│   └── ReactionBridgeFeature.js
-├── middleware/
-│   ├── lineLimitHandler.js
-│   ├── lineSignature.js
-│   ├── requestLogger.js
-│   └── security.js
-├── services/
-│   ├── ChannelManager.js
-│   ├── DiscordService.js
-│   ├── LineSendSession.js
-│   ├── LineService.js
-│   ├── LineUsageMonitor.js
-│   ├── MediaService.js
-│   ├── MessageBridge.js
-│   ├── MessageMappingManager.js
-│   ├── ReplyTokenPolicy.js
-│   └── WebhookManager.js
-└── utils/
-    ├── jsonFileStore.js
-    ├── logger.js
-    ├── logRedaction.js
-    └── messageBatcher.js
-
-data/
-├── channel-mappings.json
-├── message-mappings.json
-└── line-usage.json
+```bash
+pm2 restart line-discord-bridge --update-env
 ```
 
-`data/*.json`, `temp/`, `uploads/`, `logs/` は runtime data です。既存運用データを削除せず、バックアップ対象として扱ってください。
+本番PM2プロセスがある環境では `npm restart` を使用しません。
 
-## 返信ブリッジ
+## 更新手順
 
-### LINE → Discord
+```bash
+npm run db:backup
+git pull origin main
+npm ci
+npm test -- --runInBand
+npm run lint
+npm run db:status
+pm2 restart line-discord-bridge --update-env
+```
 
-LINE の返信イベントに `quotedMessageId` がある場合、保存済みマッピングから Discord メッセージIDを解決し、Discord 側の返信として送信します。
+その後:
 
-`LINE_TO_DISCORD_REPLY_MODE` で送信方式を選べます。
+```bash
+pm2 status
+curl -fsS http://127.0.0.1:3000/health
+curl -fsS http://127.0.0.1:3000/ready
+```
 
-- `webhook`: LINEユーザー名/アイコン表示を優先
-- `bot-reply`: Discord Bot のネイティブ reply 表示を優先
+## Health / Readiness
 
-### Discord → LINE
+`/health` はNodeプロセスの生存確認です。
 
-Discordで LINE由来メッセージに標準返信した場合、保存済み LINE コンテキストを使います。
+```bash
+curl -fsS http://127.0.0.1:3000/health
+```
 
-優先順:
+`/ready` は以下を確認します。
 
-1. `replyToken` が未使用かつ期限内なら `replyMessage`
-2. `replyToken` が使えない場合は `quoteToken` 付き `pushMessage`
-3. どちらもない場合は通常の `pushMessage`
+- SQLite `PRAGMA quick_check`
+- Discord / MessageBridge初期化
+- durable queue status
 
-`replyToken` は LINE の制約で短時間かつ1回のみ有効です。失敗時も既存運用を止めないため Push fallback を維持しています。
+```bash
+curl -fsS http://127.0.0.1:3000/ready
+```
 
-## メディアとファイル名
+## SQLite
 
-- LINE `file` メッセージは Webhook payload の `fileName` を Discord 添付名にも維持します。
-- 日本語などの Unicode ファイル名は保持します。
-- パス区切り、制御文字、Discord添付名として危険な文字のみ置換/除去します。
-- LINE の `image` / `video` / `audio` メッセージには元ファイル名が含まれないため、`image_<messageId>.ext` などの生成名になります。
-- HEIC/HEIF は JPEG へ変換します。
-- LINEへ画像/動画を送る際、必要に応じて `TEMP_PATH` に一時ファイルを置き、`PUBLIC_BASE_URL/temp/...` として参照させます。
+主要テーブル:
+
+- `conversations`: LINE source ↔ Discord channel
+- `webhook_events`: durable LINE webhook inbox
+- `message_links`: LINE ↔ Discord message lifecycle / 1:N mapping
+
+```bash
+npm run db:status
+npm run db:backup
+```
+
+WALモードで稼働します。ライブDBを `cp bridge.sqlite3` だけでバックアップしないでください。
+
+## Retry / Dead letter
+
+Webhook処理失敗時は概ね以下のbackoffを使用します。
+
+```text
+1s → 5s → 30s → 2m → 10m → dead_letter
+```
+
+LINE pushは最初の送信から同じretry keyを使用し、timeout / 5xx再送時の二重送信を抑制します。reply messageはretry key対象ではないため、曖昧なネットワーク失敗を自動再送しません。
+
+## Reply / Edit / Unsend
+
+LINE → Discord返信は保存済みmappingから返信先Discord messageを解決します。
+
+Discord → LINE:
+
+1. 有効なreplyTokenがあればreply
+2. quoteTokenがあればquote付きpush
+3. 通常push
+
+LINEのtext message editは対応するDiscord messageを編集します。LINE unsendは対応するDiscord messageを削除します。
+
+## Mark as read
+
+Discordへの配送成功後にLINEを既読化する場合のみ有効化します。
+
+```env
+LINE_MARK_AS_READ_ON_DISCORD_DELIVERY=true
+```
+
+既定は `false` です。
+
+## メディア
+
+- JPEG / PNGはLINE imageとして送信可能
+- videoは有効なHTTPS preview imageがある場合のみnative video送信
+- audioは正確なdurationを取得できる場合のみnative audio送信
+- PDF / Word / ZIP等はURLテキスト
+- LINEから受けたfile messageはDiscord添付として扱い、元ファイル名がある場合は維持
+- HEIC/HEIF等は既存変換処理を利用
 
 ## セキュリティ
 
-- LINE Webhook署名検証を既定で有効化
-- Helmet によるセキュリティヘッダー
-- レート制限/CORS設定
-- ログ出力時のトークン・シークレット・raw body redaction
-- `/temp` 配信は `dotfiles: deny`, `index: false`, `redirect: false`, `nosniff`, 短時間キャッシュを設定
-- 緊急時は `LINE_SIGNATURE_VALIDATION_ENABLED=false` または `TEMP_STATIC_ENABLED=false` で個別に切り戻し可能
+- LINE署名検証
+- Helmet
+- token / secret / raw bodyのlog redaction
+- LINE Webhookを汎用rate limiterから除外
+- Discord Webhook/Bot投稿で `allowedMentions.parse=[]`
+- 自動生成チャンネルはcategory/server権限を継承
+- channel topicにLINE source IDを保存しない
+- `/upload` endpointはPhase 2で削除
 
-## 永続化
+## CI
 
-現在はファイルベースのJSON永続化です。
+GitHub ActionsではNode 24.17で以下を実行します。
 
-- `data/channel-mappings.json`: LINE source ID と Discord channel ID の対応
-- `data/message-mappings.json`: LINE/DiscordメッセージID、replyToken/quoteToken の対応
-- `data/line-usage.json`: LINE Push 通数カウント
-
-JSON保存は一時ファイルへの書き込み後に rename する atomic 保存を使います。
-
-## 監視
+- `npm ci`
+- Jest
+- ESLint
+- SQLite status / backup smoke test
 
 ```bash
-curl http://localhost:3000/health
-curl http://localhost:3000/metrics
+npm test -- --runInBand
+npm run lint
 ```
 
-ログ:
+## ログ
+
+本番ではWinstonのファイルログを確認します。
 
 - `logs/application-YYYY-MM-DD.log`
 - `logs/error-YYYY-MM-DD.log`
 - `logs/warn-YYYY-MM-DD.log`
 
-## 開発
-
 ```bash
-npm test
-npm run test:watch
-npm run lint
-npm run lint:fix
+tail -n 100 logs/application-$(date +%F).log
 ```
 
-現在の主要テスト対象:
+## Rollback
 
-- App / Webhook署名検証
-- MessageBridge / replyToken送信
-- ReplyBridgeFeature / ReplyTokenPolicy
-- MessageMappingManager / ChannelManager
-- MediaService / LINEファイル名維持 / スタンプ / 形式変換
-- LineLimitHandler / LINE通数永続化
-- logRedaction / jsonFileStore
+channel mappingだけlegacy JSONへ戻す場合:
 
-## 運用メモ
+```env
+DB_TYPE=file
+```
 
-- `PUBLIC_BASE_URL` は本番で必ず HTTPS の外部到達可能URLにしてください。
-- `LINE_SIGNATURE_VALIDATION_ENABLED=false` は緊急回避用です。恒久運用では有効化してください。
-- `TEMP_STATIC_ENABLED=false` にすると、自己ホストURL経由のLINEメディア送信が失敗する可能性があります。
-- LINE管理画面や別システムから送ったPush通数は、このアプリの `data/line-usage.json` には自動反映されません。
-- `npm audit --omit=dev` には breaking change が必要な残存警告があります。`npm audit fix --force` は Discord/LINE SDK 互換に影響し得るため、別検証単位で扱ってください。
+```bash
+pm2 restart line-discord-bridge --update-env
+```
 
-## 既知の制限
+durable webhook inboxはSQLiteを使用し続けます。DBやJSONを削除しないでください。
 
-- LINE `image` / `video` / `audio` の元ファイル名はLINE webhookに含まれないため復元できません。
-- Discord → LINE のネイティブ返信は `replyToken` の期限内のみ成立します。期限切れ時は `quoteToken` または通常Pushへフォールバックします。
-- リアクション相互通信は LINE Messaging API 側の制約が大きいため既定では無効です。
-- Discord/LINE API のレート制限や月間Push制限は外部要因として残ります。
+## 今後
 
-## トラブルシューティング
+Phase 3以降:
 
-### Webhookが401になる
+- MediaServiceのstreaming化 / 分割
+- 大容量メディア処理のメモリ削減
+- 管理用Discord slash commands
+- dead-letterの管理UI/CLI強化
+- LINE usage APIとの照合
+- より詳細なobservability
 
-- `LINE_CHANNEL_SECRET` がLINE Developers Consoleの値と一致しているか確認
-- リバースプロキシでbodyが改変されていないか確認
-- 緊急回避は `LINE_SIGNATURE_VALIDATION_ENABLED=false`
+改善計画は [docs/improvement-plan.md](docs/improvement-plan.md) を参照してください。
 
-### LINEへの画像/動画送信が失敗する
-
-- `PUBLIC_BASE_URL` が公開HTTPS URLか確認
-- `/temp/...` に外部からアクセスできるか確認
-- `TEMP_STATIC_ENABLED=true` か確認
-
-### DiscordでLINEファイル名が維持されない
-
-- LINEで「ファイル」として送られているか確認
-- 画像/動画/音声として送られた場合、LINE payloadに元ファイル名がないため生成名になります
-
-### LINE通数カウントが実際の管理画面とずれる
-
-- このアプリ経由のPush送信のみを `data/line-usage.json` に記録します
-- LINE管理画面や別プロセスからの送信は別途確認してください
-
-## ライセンス
+## License
 
 MIT
