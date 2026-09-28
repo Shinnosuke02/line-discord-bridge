@@ -194,7 +194,7 @@ function processEmojiText(text) {
 function normalizeLineEmojiLabel(fallbackText) {
   return String(fallbackText || '')
     .trim()
-    .replace(/^[\(（\[]+|[\)）\]]+$/g, '')
+    .replace(/^(?:\(|（|\[)+|(?:\)|）|\])+$/g, '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
