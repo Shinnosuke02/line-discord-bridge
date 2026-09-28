@@ -89,6 +89,22 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] LINE unsend live test（Discord側メッセージ削除を確認）
 - [ ] PM2再起動後mapping復元
 
+## Phase 2.1 — LINE emoji fidelity
+
+状態: **実装・CI検証中**
+
+- [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
+- [x] `productId` / `emojiId` の既知mappingを優先
+- [x] 「ありがとう」「love」等の既知fallback labelを近似Unicode絵文字へ変換
+- [x] 未知のLINE絵文字は代替テキストを保持し、意味を捨てない
+- [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
+- [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
+- [x] 通常message / messageEditedの両方でemoji metadataを利用
+- [ ] GitHub Actions green
+- [ ] Oracle VPS live test（LINE独自絵文字 → Discord Unicode近似）
+
+設計判断: LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。まずmetadata-awareなUnicode近似を安全な既定動作とする。
+
 ## Phase 3 — Media
 
 - MediaService streaming化
