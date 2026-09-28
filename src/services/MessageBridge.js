@@ -318,6 +318,17 @@ class MessageBridge {
       return true;
     }
 
+    const lastEditTimestamp = Number(mapping.metadata?.lastEditTimestamp || 0);
+    const editTimestamp = Number(event.timestamp || 0);
+    if (lastEditTimestamp > 0 && editTimestamp > 0 && editTimestamp <= lastEditTimestamp) {
+      logger.debug('Ignoring stale LINE messageEdited event', {
+        lineMessageId,
+        editTimestamp,
+        lastEditTimestamp
+      });
+      return true;
+    }
+
     const content = processLineEmoji(this.lineService.formatMessage(event, ''));
     if (mapping.transport === 'webhook' && this.webhookManager) {
       await this.webhookManager.editMessage(mapping.discordChannelId, mapping.discordMessageId, {
@@ -342,7 +353,11 @@ class MessageBridge {
         quoteToken: event.message?.quoteToken || mapping.quoteToken || null,
         messageType: event.message.type,
         transport: mapping.transport,
-        webhookId: mapping.webhookId
+        webhookId: mapping.webhookId,
+        metadata: {
+          ...(mapping.metadata || {}),
+          lastEditTimestamp: editTimestamp || Date.now()
+        }
       }
     );
 
