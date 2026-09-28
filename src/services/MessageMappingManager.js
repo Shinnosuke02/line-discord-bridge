@@ -144,25 +144,31 @@ class MessageMappingManager {
 
   async mapLineToDiscord(lineMessageId, discordMessageId, lineUserId, discordChannelId, metadata = null) {
     const normalized = this.normalizeLegacyMetadata(metadata);
+    const existing = this.lineToDiscord.get(lineMessageId) || {};
     const mapping = {
+      ...existing,
       direction: 'line_to_discord',
       lineMessageId,
       discordMessageId,
-      lineUserId,
+      lineUserId: lineUserId || existing.lineUserId || null,
       discordChannelId,
       ordinal: 0,
-      messageType: normalized.messageType || null,
-      transport: normalized.transport || null,
-      webhookId: normalized.webhookId || null,
-      timestamp: new Date().toISOString()
+      messageType: normalized.messageType || existing.messageType || null,
+      transport: normalized.transport || existing.transport || null,
+      webhookId: normalized.webhookId || existing.webhookId || null,
+      replyToken: normalized.replyToken || existing.replyToken || null,
+      replyTokenExpiry: normalized.replyTokenExpiry || existing.replyTokenExpiry || null,
+      replyTokenUsedAt: existing.replyTokenUsedAt || null,
+      quoteToken: normalized.quoteToken || existing.quoteToken || null,
+      metadata: {
+        ...(existing.metadata || {}),
+        ...(normalized.metadata || {})
+      },
+      timestamp: existing.timestamp || new Date().toISOString()
     };
 
-    if (normalized.replyToken) {
-      mapping.replyToken = normalized.replyToken;
-      mapping.replyTokenExpiry = normalized.replyTokenExpiry || this.replyTokenPolicy.createExpiry();
-    }
-    if (normalized.quoteToken) {
-      mapping.quoteToken = normalized.quoteToken;
+    if (mapping.replyToken && !mapping.replyTokenExpiry) {
+      mapping.replyTokenExpiry = this.replyTokenPolicy.createExpiry();
     }
 
     this.repository.upsert(mapping);
