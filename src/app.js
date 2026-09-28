@@ -8,7 +8,8 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const MessageBridge = require('./services/MessageBridge');
 const DurableLineEventProcessor = require('./services/DurableLineEventProcessor');
-const { closeDatabase } = require('./infrastructure/sqlite');
+const { getDatabase, closeDatabase } = require('./infrastructure/sqlite');
+const { version } = require('../package.json');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const { securityMiddleware } = require('./middleware/security');
@@ -103,8 +104,31 @@ class App {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        version: process.env.npm_package_version || '1.0.0'
+        version: version
       });
+    });
+
+    // Readiness: verifies the process can actually bridge messages.
+    this.app.get('/ready', (req, res) => {
+      try {
+        const quickCheck = getDatabase().pragma('quick_check', { simple: true });
+        const bridgeReady = Boolean(this.messageBridge?.isInitialized);
+        const ready = quickCheck === 'ok' && bridgeReady;
+
+        return res.status(ready ? 200 : 503).json({
+          status: ready ? 'ready' : 'not_ready',
+          sqlite: quickCheck,
+          discord: bridgeReady ? 'ready' : 'not_ready',
+          durable: this.durableLineEventProcessor?.getStatus?.() || null,
+          version
+        });
+      } catch (error) {
+        return res.status(503).json({
+          status: 'not_ready',
+          error: error.message,
+          version
+        });
+      }
     });
 
     // メトリクス
@@ -114,7 +138,10 @@ class App {
       }
       
       const metrics = this.messageBridge.getMetrics();
-      res.json(metrics);
+      res.json({
+        ...metrics,
+        durable: this.durableLineEventProcessor?.getStatus?.() || null
+      });
     });
 
     // LINE Webhook
@@ -147,34 +174,17 @@ class App {
       }
     });
 
-    // ファイルアップロード
-    this.app.post('/upload', async (req, res) => {
-      try {
-        if (!this.messageBridge) {
-          return res.status(503).json({ error: 'MessageBridge not initialized' });
-        }
-
-        const result = await this.messageBridge.handleFileUpload(req);
-        res.json(result);
-      } catch (error) {
-        logger.error('File upload failed', {
-          error: error.message
-        });
-        res.status(500).json({ error: 'File upload failed' });
-      }
-    });
-
     // API情報
     this.app.get('/api/info', (req, res) => {
       res.json({
         name: 'LINE-Discord Bridge',
-        version: process.env.npm_package_version || '1.0.0',
+        version: version,
         description: 'Bidirectional messaging bridge between LINE and Discord',
         endpoints: {
           health: '/health',
+          ready: '/ready',
           metrics: '/metrics',
           webhook: config.line.webhookPath,
-          upload: '/upload',
           info: '/api/info'
         }
       });

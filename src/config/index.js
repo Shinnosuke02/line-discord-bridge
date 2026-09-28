@@ -116,7 +116,8 @@ const config = {
   features: {
     replyBridgeEnabled: process.env.BRIDGE_REPLY_ENABLED !== 'false',
     reactionBridgeEnabled: process.env.BRIDGE_REACTION_ENABLED === 'true',
-    lineToDiscordReplyMode: process.env.LINE_TO_DISCORD_REPLY_MODE || 'webhook'
+    lineToDiscordReplyMode: process.env.LINE_TO_DISCORD_REPLY_MODE || 'webhook',
+    markLineReadOnDiscordDelivery: process.env.LINE_MARK_AS_READ_ON_DISCORD_DELIVERY === 'true'
   },
 
   // ログ設定

@@ -81,7 +81,6 @@ class WebhookManager {
       logger.debug('Webhook obtained for channel', {
         channelId,
         webhookId: webhook.id,
-        webhookUrl: webhook.url,
         name: desiredName
       });
 
@@ -131,7 +130,9 @@ class WebhookManager {
         content: message.content,
         username: username,
         avatarURL: avatarUrl,
-        files: message.files || []
+        files: message.files || [],
+        embeds: message.embeds || [],
+        allowedMentions: { parse: [] }
       };
 
       logger.debug('Sending webhook message', {
@@ -184,7 +185,9 @@ class WebhookManager {
       content: webhookMessage.content,
       username: webhookMessage.username,
       avatarURL: webhookMessage.avatarURL,
-      files: webhookMessage.files
+      files: webhookMessage.files,
+      embeds: webhookMessage.embeds,
+      allowedMentions: webhookMessage.allowedMentions
     }).resolveBody();
 
     const { body, files } = await messagePayload.resolveFiles();
@@ -222,7 +225,8 @@ class WebhookManager {
       const webhookMessage = {
         embeds: [embed],
         username: username,
-        avatarURL: avatarUrl
+        avatarURL: avatarUrl,
+        allowedMentions: { parse: [] }
       };
 
       const sentMessage = await webhook.send(webhookMessage);
@@ -239,6 +243,41 @@ class WebhookManager {
       logger.error('Failed to send embed via webhook', {
         channelId,
         username,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  async editMessage(channelId, messageId, message) {
+    try {
+      const webhook = await this.getOrCreateWebhook(channelId);
+      const payload = typeof message === 'string'
+        ? { content: message }
+        : {
+          ...message,
+          allowedMentions: { parse: [] }
+        };
+      return await webhook.editMessage(messageId, payload);
+    } catch (error) {
+      logger.error('Failed to edit webhook message', {
+        channelId,
+        messageId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  async deleteMessage(channelId, messageId) {
+    try {
+      const webhook = await this.getOrCreateWebhook(channelId);
+      await webhook.deleteMessage(messageId);
+      return true;
+    } catch (error) {
+      logger.error('Failed to delete webhook message', {
+        channelId,
+        messageId,
         error: error.message
       });
       throw error;

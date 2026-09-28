@@ -1,34 +1,19 @@
 const LineService = require('../LineService');
 
-jest.mock('@line/bot-sdk', () => ({
-  Client: jest.fn().mockImplementation(() => ({
-    pushMessage: jest.fn(),
-    replyMessage: jest.fn()
-  }))
-}));
-
 jest.mock('../../utils/logger');
 
 describe('LineService send result normalization', () => {
-  let lineService;
-
-  beforeEach(() => {
-    lineService = new LineService();
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
   test('pushMessage exposes first sent message metadata', async () => {
-    lineService.client.pushMessage.mockResolvedValue({
-      sentMessages: [
-        {
+    const client = {
+      pushMessage: jest.fn().mockResolvedValue({
+        sentMessages: [{
           id: 'line-message-1',
           quoteToken: 'quote-token-1'
-        }
-      ]
-    });
+        }]
+      })
+    };
+    const lineService = new LineService({ client });
+    lineService.checkRateLimit = jest.fn();
 
     const result = await lineService.pushMessage('user-1', {
       type: 'text',

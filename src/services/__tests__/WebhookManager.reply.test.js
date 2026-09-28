@@ -67,7 +67,9 @@ describe('WebhookManager reply payload', () => {
         content: 'reply body',
         username: 'LINE User',
         avatarURL: 'https://example.com/avatar.png',
-        files: []
+        files: [],
+        embeds: [],
+        allowedMentions: { parse: [] }
       }
     );
     expect(Routes.webhook).toHaveBeenCalledWith('webhook-1', 'token-1');

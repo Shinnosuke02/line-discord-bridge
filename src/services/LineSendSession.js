@@ -5,6 +5,7 @@ class LineSendSession {
   constructor(context = {}) {
     this.context = { ...context };
     this.replyTokenConsumed = false;
+    this.sentMessages = [];
   }
 
   claimReplyToken() {
@@ -32,6 +33,30 @@ class LineSendSession {
     delete pushContext.replyTokenExpiry;
 
     return pushContext;
+  }
+
+  recordResult(result, messageType = null, transport = null) {
+    if (!result?.messageId) {
+      return null;
+    }
+
+    if (this.sentMessages.some((item) => item.lineMessageId === result.messageId)) {
+      return this.sentMessages.find((item) => item.lineMessageId === result.messageId);
+    }
+
+    const item = {
+      lineMessageId: result.messageId,
+      quoteToken: result.quoteToken || result.sentMessage?.quoteToken || null,
+      messageType,
+      transport,
+      ordinal: this.sentMessages.length
+    };
+    this.sentMessages.push(item);
+    return item;
+  }
+
+  getSentMessages() {
+    return this.sentMessages.map((item) => ({ ...item }));
   }
 }
 

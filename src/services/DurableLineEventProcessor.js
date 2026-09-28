@@ -2,6 +2,7 @@ const logger = require('../utils/logger');
 const WebhookEventRepository = require('../repositories/WebhookEventRepository');
 const ConversationRepository = require('../repositories/ConversationRepository');
 const ConversationQueue = require('../utils/conversationQueue');
+const { getLineSourceId } = require('../utils/lineSource');
 
 class DurableLineEventProcessor {
   constructor(messageBridge, options = {}) {
@@ -10,6 +11,8 @@ class DurableLineEventProcessor {
     this.conversationRepository = options.conversationRepository || new ConversationRepository();
     this.queue = options.queue || new ConversationQueue();
     this.pollIntervalMs = options.pollIntervalMs || 1000;
+    this.retryDelaysMs = options.retryDelaysMs || [1000, 5000, 30000, 120000, 600000];
+    this.maxAttempts = options.maxAttempts || this.retryDelaysMs.length + 1;
     this.pollTimer = null;
     this.drainScheduled = false;
     this.isDraining = false;
@@ -86,6 +89,11 @@ class DurableLineEventProcessor {
     }
   }
 
+  getRetryDelayMs(attempts) {
+    const index = Math.max(0, Math.min(attempts - 1, this.retryDelaysMs.length - 1));
+    return this.retryDelaysMs[index];
+  }
+
   async processRow(row) {
     const eventId = row.webhook_event_id;
     if (!this.repository.claim(eventId)) {
@@ -93,27 +101,43 @@ class DurableLineEventProcessor {
     }
 
     try {
-      await this.messageBridge.handleLineEvent(row.event);
+      const result = await this.messageBridge.handleLineEvent(row.event);
 
-      if (!this.wasProcessed(row.event)) {
-        throw new Error('LINE event returned without a durable message mapping');
+      if (result === false || (row.event.type === 'message' && !this.wasProcessed(row.event))) {
+        throw new Error('LINE event returned without a durable delivery result');
       }
 
       this.syncConversation(row.event);
       this.repository.markCompleted(eventId);
       logger.debug('Durable LINE webhook event completed', { webhookEventId: eventId });
     } catch (error) {
-      this.repository.markRetry(eventId, error);
-      logger.error('Durable LINE webhook event will be retried', {
-        webhookEventId: eventId,
-        error: error.message
+      const current = this.repository.getById(eventId);
+      const attempts = current?.attempts || 1;
+      const delayMs = this.getRetryDelayMs(attempts);
+      const nextAttemptAt = new Date(Date.now() + delayMs).toISOString();
+      const retryResult = this.repository.markRetry(eventId, error, {
+        maxAttempts: this.maxAttempts,
+        nextAttemptAt
       });
+
+      logger.error(
+        retryResult.status === 'dead_letter'
+          ? 'Durable LINE webhook event moved to dead letter'
+          : 'Durable LINE webhook event will be retried',
+        {
+          webhookEventId: eventId,
+          attempts,
+          nextAttemptAt: retryResult.nextAttemptAt || null,
+          error: error.message
+        }
+      );
+
       throw error;
     }
   }
 
   syncConversation(event) {
-    const sourceId = event.source?.groupId || event.source?.roomId || event.source?.userId;
+    const sourceId = getLineSourceId(event.source);
     if (!sourceId) {
       return;
     }
@@ -142,6 +166,22 @@ class DurableLineEventProcessor {
     return Boolean(
       this.messageBridge.messageMappingManager?.getLineToDiscordMapping(lineMessageId)
     );
+  }
+
+  getStatus() {
+    return {
+      queueSize: this.queue.size(),
+      isDraining: this.isDraining,
+      counts: this.repository.getStatusCounts?.() || {}
+    };
+  }
+
+  retryDeadLetter(webhookEventId) {
+    const retried = this.repository.retryDeadLetter(webhookEventId);
+    if (retried) {
+      this.scheduleDrain();
+    }
+    return retried;
   }
 
   async stop() {

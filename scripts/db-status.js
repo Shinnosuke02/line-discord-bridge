@@ -3,6 +3,10 @@
 const fs = require('fs');
 const { getDatabase, closeDatabase, resolveDatabaseFile } = require('../src/infrastructure/sqlite');
 
+function rowsToObject(rows, key, value) {
+  return Object.fromEntries(rows.map((row) => [row[key], row[value]]));
+}
+
 function main() {
   const databaseFile = resolveDatabaseFile();
   if (!fs.existsSync(databaseFile)) {
@@ -19,12 +23,36 @@ function main() {
       counts[table] = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count;
     }
 
+    const webhookStatuses = rowsToObject(
+      db.prepare(`
+        SELECT status, COUNT(*) AS count
+        FROM webhook_events
+        GROUP BY status
+        ORDER BY status
+      `).all(),
+      'status',
+      'count'
+    );
+
+    const messageDirections = rowsToObject(
+      db.prepare(`
+        SELECT direction, COUNT(*) AS count
+        FROM message_links
+        GROUP BY direction
+        ORDER BY direction
+      `).all(),
+      'direction',
+      'count'
+    );
+
     console.log(JSON.stringify({
       ok: quickCheck === 'ok',
       databaseFile,
       journalMode,
       quickCheck,
-      counts
+      counts,
+      webhookStatuses,
+      messageDirections
     }, null, 2));
 
     if (quickCheck !== 'ok') {

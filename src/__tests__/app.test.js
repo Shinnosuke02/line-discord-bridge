@@ -8,7 +8,16 @@ const path = require('path');
 
 jest.mock('../services/MessageBridge');
 jest.mock('../services/DurableLineEventProcessor');
-jest.mock('../infrastructure/sqlite', () => ({ closeDatabase: jest.fn() }));
+const mockSqliteDb = {
+  pragma: jest.fn((name, options) => {
+    if (name === 'quick_check' && options?.simple) return 'ok';
+    return null;
+  })
+};
+jest.mock('../infrastructure/sqlite', () => ({
+  getDatabase: jest.fn(() => mockSqliteDb),
+  closeDatabase: jest.fn()
+}));
 jest.mock('../utils/logger');
 
 const App = require('../app');
@@ -20,14 +29,20 @@ const DurableLineEventProcessor = require('../services/DurableLineEventProcessor
 const mockMessageBridge = {
   start: jest.fn(),
   stop: jest.fn(),
-  getMetrics: jest.fn(),
-  handleLineEvent: jest.fn()
+  getMetrics: jest.fn(() => ({})),
+  handleLineEvent: jest.fn(),
+  isInitialized: true
 };
 
 const mockDurableProcessor = {
   start: jest.fn(),
   stop: jest.fn(),
-  persist: jest.fn()
+  persist: jest.fn(),
+  getStatus: jest.fn(() => ({
+    queueSize: 0,
+    isDraining: false,
+    counts: {}
+  }))
 };
 
 MessageBridge.mockImplementation(() => mockMessageBridge);
@@ -108,11 +123,39 @@ describe('App', () => {
     expect(processOnSpy).toHaveBeenCalledTimes(firstCallCount);
   });
 
-  test('health endpoint responds successfully', async () => {
+  test('health endpoint responds successfully with package version', async () => {
     app.setupRoutes();
     const response = await request(app.app).get('/health').expect(200);
     expect(response.body.status).toBe('healthy');
     expect(response.body.timestamp).toEqual(expect.any(String));
+    expect(response.body.version).toBe('3.2.0');
+  });
+
+  test('ready endpoint verifies SQLite and bridge readiness', async () => {
+    app.messageBridge = mockMessageBridge;
+    app.durableLineEventProcessor = mockDurableProcessor;
+    app.setupRoutes();
+
+    const response = await request(app.app).get('/ready').expect(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      status: 'ready',
+      sqlite: 'ok',
+      discord: 'ready',
+      version: '3.2.0'
+    }));
+    expect(response.body.durable).toEqual(expect.objectContaining({
+      queueSize: 0
+    }));
+  });
+
+  test('ready endpoint returns 503 before MessageBridge is initialized', async () => {
+    app.messageBridge = { ...mockMessageBridge, isInitialized: false };
+    app.durableLineEventProcessor = mockDurableProcessor;
+    app.setupRoutes();
+
+    const response = await request(app.app).get('/ready').expect(503);
+    expect(response.body.status).toBe('not_ready');
+    expect(response.body.discord).toBe('not_ready');
   });
 
   test('valid LINE webhook is persisted before ACK instead of waiting for bridge delivery', async () => {
