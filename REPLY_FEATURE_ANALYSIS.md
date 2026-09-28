@@ -1,5 +1,8 @@
 # メッセージ返信機能の実装状況メモ
 
+> **v3.2補足 / 2026-09-28**  
+> 返信機能の基本方針は本書どおりですが、永続化はSQLite `message_links` がauthoritative storeとなり、Discord 1投稿から複数LINE child messageへの1:N mappingに対応しています。LINE SDKは11.2系 `LineBotClient`、本番Node.jsは24.21.0です。全体の現行状態は `README.md` / `docs/improvement-plan.md` を併読してください。
+
 更新日: 2026-07-01
 
 この文書は、LINE ⇄ Discord 間の返信連携について、現在の実装状況と制約をまとめたものです。初期調査時点の「実現可能性」ではなく、現行コードの仕様に合わせています。

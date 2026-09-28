@@ -2,6 +2,10 @@
 
 対象: `Shinnosuke02/line-discord-bridge`
 
+最終更新: 2026-09-28
+
+現在の本番ベースライン: `v3.2.0` / Node.js `24.21.0` / npm `11.19.0` / PM2 `6.0.8`。`main` のmerge後CI Run #75は全step green。Oracle VPSで `/health=healthy`、`/ready=ready`、SQLite `quick_check=ok` を確認済み。
+
 ## Phase 1 — Reliability
 
 状態: **完了**
@@ -28,7 +32,7 @@
 
 ## Phase 2 — Messaging / Platform modernization
 
-状態: **Oracle VPS稼働確認済み・実通信acceptance確認中**
+状態: **Oracle VPS本番稼働中・残りのlive acceptance確認中**
 
 ### Platform
 
@@ -76,12 +80,12 @@
 
 ### Phase 2 acceptance
 
-Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` ready、SQLite `quick_check=ok` を確認済み。起動時点で durable queue は空。既存 `dead_letter` 24件は内容確認後に個別判断し、一括retryは行わない。
+Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` ready、SQLite `quick_check=ok` を確認済み。起動時点で durable queue は空。Node 24更新直後は旧Node ABI向け `node_modules` のためPM2がrestart loopしたが、`build-essential` 導入後に `npm ci` でnative moduleを再構築して解消。既存 `dead_letter` 24件は内容確認後に個別判断し、一括retryは行わない。
 
 
 - [x] GitHub Actions test / lint / SQLite smoke / production high-severity audit green
 - [x] Oracle VPS Node 24.21.0更新
-- [x] Oracle VPS `npm ci`（Node 24 native modules再構築）
+- [x] Oracle VPS `npm ci`（Node 24 native modules再構築。minimal Ubuntuで `build-essential` / `make` が必要だったため運用手順へ反映）
 - [x] SQLite migration後 `db:status` green（WAL / quick_check=ok）
 - [ ] LINE→Discord通常message live test
 - [ ] Discord→LINE text/image/file-link live test
@@ -91,7 +95,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 
 ## Phase 2.1 — LINE emoji fidelity
 
-状態: **実装完了・Oracle VPS live test待ち**
+状態: **`main` 統合・CI完了、Oracle VPS live test待ち**
 
 - [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
 - [x] `productId` / `emojiId` の既知mappingを優先
@@ -100,10 +104,17 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
 - [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
 - [x] 通常message / messageEditedの両方でemoji metadataを利用
-- [x] GitHub Actions green
+- [x] GitHub Actions green（PRおよびmerge後 `main` Run #75）
 - [ ] Oracle VPS live test（LINE独自絵文字 → Discord Unicode近似）
 
 設計判断: LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。まずmetadata-awareなUnicode近似を安全な既定動作とする。
+
+## Documentation status
+
+- [x] READMEをv3.2 / Phase 2.1 / 現在の本番ベースラインへ更新
+- [x] Oracle VPS手順へNode 24 major upgrade / `build-essential` / native module再構築の実機知見を反映
+- [x] CI手順をdependency audit / runtime smoke / Jest / ESLint / SQLite smokeの現行構成へ更新
+- [x] 2026-07時点のreview文書にhistorical/superseded注記を追加し、現行仕様との混同を防止
 
 ## Phase 3 — Media
 

@@ -1,5 +1,8 @@
 # replyToken対応後リファクタリングレビュー
 
+> **Historical review / 2026-07-01 snapshot**  
+> この文書はreplyToken導入直後のレビュー記録です。現行v3.2.0では `LineSendSession` / `ReplyTokenPolicy` / SQLite `message_links` / 1 Discord → N LINE mappingを含む構成へ進んでいます。**現在の返信仕様は `REPLY_FEATURE_ANALYSIS.md` と `README.md` を優先してください。** 本文中の行番号、test数、未完了項目は当時の状態を示します。
+
 作成日: 2026-07-01
 
 ## 現状
