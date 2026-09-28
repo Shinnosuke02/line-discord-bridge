@@ -1,138 +1,143 @@
-/**
- * emojiHandler テストファイル
- * 
- * 絵文字処理ユーティリティのテストケースを定義
- * - Unicode正規化テスト
- * - 絵文字検証テスト
- * - LINE/Discord間の絵文字変換テスト
- * 
- * @version 3.0.0
- * @since 2024-12-19
- */
 const {
   normalizeEmojis,
   isValidEmoji,
   processEmojiText,
   processLineEmoji,
-  processDiscordEmoji
+  processDiscordEmoji,
+  replaceLineEmojiPlaceholders
 } = require('../emojiHandler');
 
 jest.mock('../logger');
 
 describe('emojiHandler', () => {
   describe('normalizeEmojis', () => {
-    test('正常な絵文字を正規化する', () => {
-      const input = 'Hello 😊 World';
-      const result = normalizeEmojis(input);
-      expect(result).toBe('Hello 😊 World');
+    test('normalizes ordinary emoji text', () => {
+      expect(normalizeEmojis('Hello 😊 World')).toBe('Hello 😊 World');
     });
 
-    test('ゼロ幅文字を削除する', () => {
-      const input = 'Hello\u200B😊\uFEFFWorld';
-      const result = normalizeEmojis(input);
-      expect(result).toBe('Hello😊World');
+    test('removes harmless zero-width separators', () => {
+      expect(normalizeEmojis('Hello\u200B😊\uFEFFWorld')).toBe('Hello😊World');
     });
 
-    test('空文字列を処理する', () => {
-      const result = normalizeEmojis('');
-      expect(result).toBe('');
+    test('preserves ZWJ and variation selectors used by emoji sequences', () => {
+      expect(normalizeEmojis('👩‍💻 ❤️')).toBe('👩‍💻 ❤️');
     });
 
-    test('nullを処理する', () => {
-      const result = normalizeEmojis(null);
-      expect(result).toBe(null);
+    test('handles empty and null values', () => {
+      expect(normalizeEmojis('')).toBe('');
+      expect(normalizeEmojis(null)).toBe(null);
     });
   });
 
   describe('isValidEmoji', () => {
-    test('有効な絵文字を検出する', () => {
+    test('detects supported Unicode emoji', () => {
       expect(isValidEmoji('😊')).toBe(true);
       expect(isValidEmoji('🎉')).toBe(true);
       expect(isValidEmoji('🇯🇵')).toBe(true);
     });
 
-    test('絵文字を含まないテキストを検出する', () => {
+    test('rejects text without emoji', () => {
       expect(isValidEmoji('Hello World')).toBe(false);
       expect(isValidEmoji('123')).toBe(false);
       expect(isValidEmoji('')).toBe(false);
-    });
-
-    test('nullを処理する', () => {
       expect(isValidEmoji(null)).toBe(false);
     });
   });
 
   describe('processEmojiText', () => {
-    test('正常な絵文字テキストを処理する', () => {
-      const input = 'Hello 😊 World';
-      const result = processEmojiText(input);
-      expect(result).toBe('Hello 😊 World');
+    test('keeps ordinary emoji intact', () => {
+      expect(processEmojiText('Hello 😊 World')).toBe('Hello 😊 World');
     });
 
-    test('絵文字化けテキストを修正する', () => {
-      const input = 'Hello (emoji) World';
-      const result = processEmojiText(input);
-      expect(result).toBe('Hello 😊 World');
+    test('retains the legacy generic emoji fallback', () => {
+      expect(processEmojiText('Hello (emoji) World (emoji)')).toBe('Hello 😊 World 😊');
     });
 
-    test('複数の絵文字化けを修正する', () => {
-      const input = 'Hello (emoji) World (emoji)';
-      const result = processEmojiText(input);
-      expect(result).toBe('Hello 😊 World 😊');
+    test('removes lone surrogate halves', () => {
+      expect(processEmojiText('壊れた\uD83Dテキスト')).toBe('壊れたテキスト');
+    });
+  });
+
+  describe('LINE emoji metadata', () => {
+    test('replaces a Japanese fallback label using metadata', () => {
+      const text = '了解です（ありがとう）！';
+      const index = text.indexOf('（ありがとう）');
+
+      expect(processLineEmoji(text, [{
+        index,
+        length: '（ありがとう）'.length,
+        productId: 'custom-product',
+        emojiId: '001'
+      }])).toBe('了解です🙏！');
+    });
+
+    test('uses UTF-16 offsets correctly when astral characters precede the LINE emoji', () => {
+      const text = '🍎 (ありがとう)';
+      expect(text.indexOf('(ありがとう)')).toBe(3);
+
+      expect(replaceLineEmojiPlaceholders(text, [{
+        index: 3,
+        length: '(ありがとう)'.length,
+        productId: 'custom-product',
+        emojiId: '002'
+      }])).toBe('🍎 🙏');
+    });
+
+    test('uses a known product/emoji ID mapping before fallback-label matching', () => {
+      expect(processLineEmoji('Hello (love)', [{
+        index: 6,
+        length: 6,
+        productId: '5ac1bfd5040ab15980c9b435',
+        emojiId: '001'
+      }])).toBe('Hello ❤️');
+    });
+
+    test('preserves unknown fallback labels rather than losing meaning', () => {
+      expect(processLineEmoji('test (mystery)', [{
+        index: 5,
+        length: 9,
+        productId: 'unknown',
+        emojiId: '999'
+      }])).toBe('test (mystery)');
+    });
+
+    test('ignores invalid metadata safely', () => {
+      expect(processLineEmoji('hello (love)', [{
+        index: 999,
+        length: 6,
+        productId: '5ac1bfd5040ab15980c9b435',
+        emojiId: '001'
+      }])).toBe('hello (love)');
     });
   });
 
   describe('processLineEmoji', () => {
-    test('LINE絵文字を処理する', () => {
-      const input = 'LINEからの絵文字 😊';
-      const result = processLineEmoji(input);
-      expect(result).toBe('LINEからの絵文字 😊');
+    test('keeps Unicode LINE text emoji intact', () => {
+      expect(processLineEmoji('LINEからの絵文字 😊')).toBe('LINEからの絵文字 😊');
     });
 
-    test('LINE絵文字化けを修正する', () => {
-      const input = 'LINEからのメッセージ (emoji)';
-      const result = processLineEmoji(input);
-      expect(result).toBe('LINEからのメッセージ 😊');
+    test('retains legacy PUA conversion', () => {
+      expect(processLineEmoji('LINE特殊絵文字 \uE001\uE002')).toBe('LINE特殊絵文字 😀😂');
     });
   });
 
   describe('processDiscordEmoji', () => {
-    test('Discord絵文字を処理する', () => {
-      const input = 'Discordからの絵文字 😊';
-      const result = processDiscordEmoji(input);
-      expect(result).toBe('Discordからの絵文字 😊');
+    test('keeps ordinary Discord emoji', () => {
+      expect(processDiscordEmoji('Discordからの絵文字 😊')).toBe('Discordからの絵文字 😊');
     });
 
-    test('Discordカスタム絵文字を処理する', () => {
-      const input = 'カスタム絵文字 <:custom:123456789>';
-      const result = processDiscordEmoji(input);
-      expect(result).toBe('カスタム絵文字 😊');
-    });
-
-    test('LINE特殊絵文字コードを変換する', () => {
-      const input = 'LINE特殊絵文字 \uE001\uE002';
-      const result = processLineEmoji(input);
-      expect(result).toBe('LINE特殊絵文字 😀😂');
-    });
-
-    test('不正なサロゲートペアを除去する', () => {
-      const input = '壊れた\uD83Dテキスト';
-      const result = processEmojiText(input);
-      expect(result).toBe('壊れたテキスト');
+    test('converts Discord custom emoji fallback', () => {
+      expect(processDiscordEmoji('カスタム絵文字 <:custom:123456789>')).toBe('カスタム絵文字 😊');
     });
   });
 
-  describe('エラーハンドリング', () => {
-    test('不正な文字列を処理する', () => {
-      const input = '\uFFFE\uFFFF';
-      const result = processEmojiText(input);
-      expect(result).toBeDefined();
+  describe('error handling', () => {
+    test('handles invalid Unicode text without throwing', () => {
+      expect(processEmojiText('\uFFFE\uFFFF')).toBeDefined();
     });
 
-    test('非常に長い文字列を処理する', () => {
-      const input = '😊'.repeat(10000);
-      const result = processEmojiText(input);
-      expect(result).toBeDefined();
+    test('handles very long emoji text', () => {
+      expect(processEmojiText('😊'.repeat(10000))).toBeDefined();
     });
   });
 });
