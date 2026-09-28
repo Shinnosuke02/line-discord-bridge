@@ -3,8 +3,8 @@
  *
  * LINE sends LINE-emoji inside text as fallback strings such as "(love)"
  * and exposes the real ranges/product IDs in message.emojis. Discord cannot
- * render LINE emoji natively, so known semantics are converted to close
- * Unicode emoji while unknown fallback text is preserved.
+ * render LINE emoji natively, so only explicitly mapped product/emoji IDs
+ * are converted to Unicode. Unknown emoji keep LINE's fallback text.
  */
 const logger = require('./logger');
 
@@ -12,118 +12,6 @@ const logger = require('./logger');
 const LINE_EMOJI_ID_MAP = new Map([
   ['5ac1bfd5040ab15980c9b435:001', '❤️']
 ]);
-
-const LINE_EMOJI_LABEL_MAP = new Map([
-  ['ありがとう', '🙏'],
-  ['ありがと', '🙏'],
-  ['感謝', '🙏'],
-  ['thank', '🙏'],
-  ['thanks', '🙏'],
-  ['thank you', '🙏'],
-  ['お願い', '🙏'],
-  ['おねがい', '🙏'],
-  ['please', '🙏'],
-  ['ごめん', '🙇'],
-  ['ごめんなさい', '🙇'],
-  ['sorry', '🙇'],
-  ['love', '❤️'],
-  ['heart', '❤️'],
-  ['ハート', '❤️'],
-  ['ラブ', '❤️'],
-  ['好き', '❤️'],
-  ['大好き', '❤️'],
-  ['smile', '😊'],
-  ['笑顔', '😊'],
-  ['にこ', '😊'],
-  ['ニコ', '😊'],
-  ['にこにこ', '😊'],
-  ['ニコニコ', '😊'],
-  ['laugh', '😂'],
-  ['lol', '😂'],
-  ['笑', '😂'],
-  ['爆笑', '😂'],
-  ['cry', '😢'],
-  ['sad', '😢'],
-  ['泣', '😢'],
-  ['涙', '😢'],
-  ['悲しい', '😢'],
-  ['angry', '😠'],
-  ['怒', '😠'],
-  ['怒る', '😠'],
-  ['surprised', '😮'],
-  ['びっくり', '😮'],
-  ['驚', '😮'],
-  ['ok', '👌'],
-  ['オッケー', '👌'],
-  ['おっけー', '👌'],
-  ['了解', '👌'],
-  ['good', '👍'],
-  ['いいね', '👍'],
-  ['グッド', '👍'],
-  ['clap', '👏'],
-  ['拍手', '👏'],
-  ['congrats', '🎉'],
-  ['congratulations', '🎉'],
-  ['おめでとう', '🎉'],
-  ['hello', '👋'],
-  ['こんにちは', '👋'],
-  ['やあ', '👋'],
-  ['bye', '👋'],
-  ['バイバイ', '👋'],
-  ['さようなら', '👋'],
-  ['sparkle', '✨'],
-  ['キラキラ', '✨'],
-  ['star', '⭐'],
-  ['星', '⭐'],
-  ['sweat', '😅'],
-  ['汗', '😅'],
-  ['kiss', '😘'],
-  ['キス', '😘'],
-  ['sleep', '😴'],
-  ['sleepy', '😴'],
-  ['眠い', '😴'],
-  ['ねむい', '😴'],
-  ['fight', '💪'],
-  ['がんばれ', '💪'],
-  ['頑張れ', '💪']
-]);
-
-const LINE_EMOJI_KEYWORD_MAP = [
-  ['ありがとう', '🙏'],
-  ['thank', '🙏'],
-  ['お願い', '🙏'],
-  ['おねがい', '🙏'],
-  ['ごめん', '🙇'],
-  ['sorry', '🙇'],
-  ['heart', '❤️'],
-  ['love', '❤️'],
-  ['ハート', '❤️'],
-  ['笑顔', '😊'],
-  ['smile', '😊'],
-  ['爆笑', '😂'],
-  ['laugh', '😂'],
-  ['泣', '😢'],
-  ['涙', '😢'],
-  ['cry', '😢'],
-  ['怒', '😠'],
-  ['angry', '😠'],
-  ['びっくり', '😮'],
-  ['surpris', '😮'],
-  ['いいね', '👍'],
-  ['good', '👍'],
-  ['拍手', '👏'],
-  ['clap', '👏'],
-  ['おめでとう', '🎉'],
-  ['congrat', '🎉'],
-  ['バイバイ', '👋'],
-  ['hello', '👋'],
-  ['キラキラ', '✨'],
-  ['spark', '✨'],
-  ['眠', '😴'],
-  ['sleep', '😴'],
-  ['頑張', '💪'],
-  ['がんば', '💪']
-];
 
 /**
  * Normalize emoji-bearing text without destroying emoji composition.
@@ -191,15 +79,6 @@ function processEmojiText(text) {
   }
 }
 
-function normalizeLineEmojiLabel(fallbackText) {
-  return String(fallbackText || '')
-    .trim()
-    .replace(/^(?:\(|（|\[)+|(?:\)|）|\])+$/g, '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
 function resolveLineEmojiReplacement(fallbackText, emoji = {}) {
   const key = emoji.productId && emoji.emojiId
     ? `${emoji.productId}:${emoji.emojiId}`
@@ -209,18 +88,15 @@ function resolveLineEmojiReplacement(fallbackText, emoji = {}) {
     return LINE_EMOJI_ID_MAP.get(key);
   }
 
-  const label = normalizeLineEmojiLabel(fallbackText);
-  if (LINE_EMOJI_LABEL_MAP.has(label)) {
-    return LINE_EMOJI_LABEL_MAP.get(label);
-  }
+  // The fallback label is descriptive text, not a unique emoji identity.
+  // Different LINE emoji can share the same fallback such as "ありがとう".
+  // Do not infer a Unicode replacement from that label alone.
+  logger.debug('Unmapped LINE emoji preserved as fallback text', {
+    productId: emoji.productId || null,
+    emojiId: emoji.emojiId || null,
+    fallbackText
+  });
 
-  for (const [keyword, replacement] of LINE_EMOJI_KEYWORD_MAP) {
-    if (label.includes(keyword)) {
-      return replacement;
-    }
-  }
-
-  // Never discard meaning when a LINE emoji is unknown.
   return fallbackText;
 }
 
