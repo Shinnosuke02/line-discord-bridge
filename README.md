@@ -6,9 +6,9 @@
 
 LINE Messaging API と Discord を双方向に接続する常駐ブリッジです。Oracle VPS + PM2 + SQLite を本番構成とし、LINEの1:1トーク・グループ・ルームをDiscordチャンネルへ永続的に対応付けます。
 
-## v3.2 Phase 2
+## v3.2 / Phase 2 + Phase 2.1
 
-v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のLINE / Discord APIへ追従しています。
+v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のLINE / Discord APIへ追従しています。Phase 2.1としてLINE独自絵文字のmetadata-aware変換も `main` へ統合済みです。
 
 - Node.js 24.17+ / discord.js 14.27
 - `@line/bot-sdk` 11.2 `LineBotClient`
@@ -24,6 +24,22 @@ v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のL
 - オプションのLINE mark-as-read
 - Discord→LINEの一般ファイルを、無効な `file` messageではなくURLテキストとして送信
 - MessageBatcherを配送経路から廃止
+- LINE独自絵文字の `message.emojis` metadataを使ったUnicode近似変換
+
+## 現在の本番ベースライン
+
+2026-09-28時点で、Oracle VPS上の本番環境は以下で起動確認済みです。
+
+- application: `3.2.0`
+- Node.js: `24.21.0`
+- npm: `11.19.0`
+- PM2: `6.0.8`
+- SQLite: WAL / `PRAGMA quick_check = ok`
+- `/health`: `healthy`
+- `/ready`: `ready`（SQLite / Discord ready、durable queue 0を確認）
+- GitHub Actions: merge後の `main` Run #75 green
+
+LINE `unsend` → Discord側メッセージ削除は実機確認済みです。LINE `messageEdited` はLINE公式アカウントを含むグループトークでのみWebhook対象になるため、その条件でのlive testを残しています。LINE独自絵文字のUnicode近似変換もコード・CIは完了しており、Oracle VPSでのlive testが残っています。
 
 ## 動作モデル
 
@@ -88,8 +104,9 @@ LINE Messaging APIはBotから任意の一般ファイルを `type: file` とし
 
 ## 前提条件
 
-- Node.js 24.17.0以上
-- npm 10以上
+- Node.js 24.17.0以上（本番確認済み: 24.21.0）
+- npm 10以上（本番確認済み: 11.19.0）
+- Ubuntuでnative moduleをソースビルドする場合は `build-essential`（`make`, `g++`）
 - LINE Messaging API channel
 - Discord Bot
 - Discord Guild ID
@@ -110,6 +127,8 @@ Discord Botには少なくとも以下の権限が必要です。
 ```bash
 git clone https://github.com/Shinnosuke02/line-discord-bridge.git
 cd line-discord-bridge
+sudo apt-get update
+sudo apt-get install -y build-essential
 npm ci
 cp .env.example .env
 ```
@@ -193,7 +212,7 @@ pm2 restart line-discord-bridge --update-env
 
 ```bash
 npm run db:backup
-git pull origin main
+git pull --ff-only origin main
 npm ci
 npm test -- --runInBand
 npm run lint
@@ -206,7 +225,10 @@ pm2 restart line-discord-bridge --update-env
 ```bash
 pm2 status
 curl -fsS http://127.0.0.1:3000/health
+echo
 curl -fsS http://127.0.0.1:3000/ready
+echo
+pm2 save
 ```
 
 ## Health / Readiness
@@ -305,14 +327,18 @@ LINE独自絵文字はDiscordではネイティブ表示できません。受信
 GitHub ActionsではNode 24.17で以下を実行します。
 
 - `npm ci`
+- production dependency audit（high severity gate）
+- runtime API smoke test（LINE / Discord / native modules）
 - Jest
 - ESLint
-- SQLite status / backup smoke test
+- SQLite operations smoke test
 
 ```bash
 npm test -- --runInBand
 npm run lint
 ```
+
+`main` へのmerge後もCI greenを確認してから本番へ反映します。
 
 ## ログ
 
@@ -351,7 +377,9 @@ Phase 3以降:
 - LINE usage APIとの照合
 - より詳細なobservability
 
-改善計画は [docs/improvement-plan.md](docs/improvement-plan.md) を参照してください。
+改善計画は [docs/improvement-plan.md](docs/improvement-plan.md) を参照してください。本番更新手順は [docs/oracle-vps-deployment.md](docs/oracle-vps-deployment.md) に集約しています。
+
+ルート直下の `SOFTWARE_REFACTORING_REVIEW.md` / `REPLY_TOKEN_REFACTORING_REVIEW.md` は2026-07時点のレビュー記録です。現在の仕様・運用状態の判断には、このREADMEと `docs/` 配下を優先してください。
 
 ## License
 
