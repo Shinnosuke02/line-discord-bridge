@@ -6,6 +6,7 @@ const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const { redactLogData } = require('./logRedaction');
+const { version } = require('../../package.json');
 
 // ログディレクトリの作成
 const logDir = path.join(process.cwd(), 'logs');
@@ -103,7 +104,7 @@ const logger = winston.createLogger({
   format: logFormat,
   defaultMeta: {
     service: 'line-discord-bridge',
-    version: process.env.npm_package_version || '1.0.0'
+    version
   },
   transports,
   exitOnError: false
