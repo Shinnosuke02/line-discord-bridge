@@ -28,7 +28,7 @@
 
 ## Phase 2 — Messaging / Platform modernization
 
-状態: **実装・CI検証中**
+状態: **実装完了・Oracle VPS実機検証待ち**
 
 ### Platform
 
@@ -58,7 +58,7 @@
 - [x] JSON message mapping → SQLite migration
 - [x] SQLiteをmessage mapping authoritative store化
 - [x] 1 Discord → N LINE mapping
-- [x] LINE `messageEdited` → Discord edit
+- [x] LINE `messageEdited` → Discord edit（timestampでout-of-order editを抑止）
 - [x] LINE `unsend` → Discord delete
 - [x] Webhook message edit/delete
 - [x] Discord mention suppression
@@ -76,7 +76,7 @@
 
 ### Phase 2 acceptance
 
-- [ ] GitHub Actions test / lint / SQLite smoke green
+- [x] GitHub Actions test / lint / SQLite smoke / production high-severity audit green
 - [ ] Oracle VPS Node 24更新
 - [ ] Oracle VPS `npm ci`
 - [ ] SQLite migration後 `db:status` green
