@@ -24,7 +24,7 @@ v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のL
 - オプションのLINE mark-as-read
 - Discord→LINEの一般ファイルを、無効な `file` messageではなくURLテキストとして送信
 - MessageBatcherを配送経路から廃止
-- LINE独自絵文字の `message.emojis` metadataを使ったUnicode近似変換
+- LINE独自絵文字の `message.emojis` metadataを使ったIDベースのUnicode近似変換
 
 ## 現在の本番ベースライン
 
@@ -84,7 +84,7 @@ message_linksへ全child messageを1:N記録
 - sticker
 - location
 - LINE表示名・アイコンをDiscord Webhookへ反映
-- LINE絵文字はWebhookの `message.emojis` metadataを使って、既知の意味を近いUnicode絵文字へ変換（未知の絵文字は代替テキストを保持）
+- LINE絵文字はWebhookの `message.emojis` metadataを使い、`productId + emojiId` が明示的に対応表へ登録されている場合のみ近いUnicode絵文字へ変換（未知の絵文字は代替テキストを保持）
 - reply
 - `messageEdited`（LINE公式アカウントを含むグループトークのみ）
 - `unsend`（1対1 / グループ / 複数人トーク）
@@ -298,9 +298,11 @@ LINE_MARK_AS_READ_ON_DISCORD_DELIVERY=true
 
 ## LINE絵文字
 
-LINE独自絵文字はDiscordではネイティブ表示できません。受信Webhookの `message.emojis` に含まれるUTF-16位置情報と `productId` / `emojiId` を使い、既知の絵文字は意味が近いUnicode絵文字へ置換します。たとえばLINE側の代替テキスト `（ありがとう）` / `(thank you)` は `🙏` としてDiscordへ転送します。未知の絵文字は意味を失わないようLINEの代替テキストをそのまま残します。通常のUnicode絵文字についてはZWJ・variation selectorを保持して複合絵文字を壊さないようにしています。
+LINE独自絵文字はDiscordではネイティブ表示できません。受信Webhookの `message.emojis` に含まれるUTF-16位置情報と `productId` / `emojiId` を使い、**明示的にID対応表へ登録した絵文字だけ**意味が近いUnicode絵文字へ置換します。
 
-完全なLINE絵文字画像の再現は行いません。LINE独自画像をDiscordのカスタム絵文字として動的登録する方式は、追加権限・絵文字枠・画像配布URLへの依存が必要になるため採用していません。
+LINEの代替テキスト（例: `（ありがとう）`, `(thank you)`）は絵文字の一意な識別子ではありません。異なる絵文字が同じ代替テキストを持ち得るため、代替テキストだけを根拠に `🙏` などへ推測変換しません。IDが未登録の絵文字は代替テキストをそのまま残し、debug logに `productId` / `emojiId` / fallback textを記録します。必要な絵文字だけ、実機で確認してからID対応表へ追加します。
+
+通常のUnicode絵文字についてはZWJ・variation selectorを保持して複合絵文字を壊さないようにしています。完全なLINE絵文字画像の再現は行いません。LINE独自画像をDiscordのカスタム絵文字として動的登録する方式は、追加権限・絵文字枠・画像配布URLへの依存が必要になるため採用していません。
 
 ## メディア
 

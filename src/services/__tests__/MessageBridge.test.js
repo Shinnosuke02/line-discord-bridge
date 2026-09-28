@@ -103,23 +103,23 @@ describe('MessageBridge Phase 2', () => {
     expect(bridge.discord.once).toHaveBeenCalledWith('clientReady', expect.any(Function));
   });
 
-  test('LINE text emoji metadata renders as a Unicode approximation', async () => {
-    const text = '了解です（ありがとう）！';
+  test('LINE text emoji metadata converts only an explicitly mapped ID', async () => {
+    const text = 'Hello (love)';
     const result = await bridge.createDiscordMessage({
       message: {
         id: 'line-emoji-1',
         type: 'text',
         text,
         emojis: [{
-          index: text.indexOf('（ありがとう）'),
-          length: '（ありがとう）'.length,
-          productId: 'custom-product',
+          index: text.indexOf('(love)'),
+          length: '(love)'.length,
+          productId: '5ac1bfd5040ab15980c9b435',
           emojiId: '001'
         }]
       }
     }, 'LINE User');
 
-    expect(result).toEqual({ content: '了解です🙏！' });
+    expect(result).toEqual({ content: 'Hello ❤️' });
   });
 
   test('sendToDiscord suppresses Discord mentions for bot delivery', async () => {
@@ -253,7 +253,7 @@ describe('MessageBridge Phase 2', () => {
     expect(bridge.webhookManager.editMessage).toHaveBeenCalledWith(
       'C1',
       'discord-1',
-      { content: 'edited 🙏' }
+      { content: 'edited (thank you)' }
     );
   });
 

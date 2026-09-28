@@ -59,7 +59,7 @@ describe('emojiHandler', () => {
   });
 
   describe('LINE emoji metadata', () => {
-    test('replaces a Japanese fallback label using metadata', () => {
+    test('does not guess Unicode from a Japanese fallback label alone', () => {
       const text = '了解です（ありがとう）！';
       const index = text.indexOf('（ありがとう）');
 
@@ -68,10 +68,30 @@ describe('emojiHandler', () => {
         length: '（ありがとう）'.length,
         productId: 'custom-product',
         emojiId: '001'
-      }])).toBe('了解です🙏！');
+      }])).toBe('了解です（ありがとう）！');
     });
 
-    test('uses UTF-16 offsets correctly when astral characters precede the LINE emoji', () => {
+    test('preserves the same fallback label for different unknown emoji IDs', () => {
+      const text = '（ありがとう）（ありがとう）';
+      const length = '（ありがとう）'.length;
+
+      expect(processLineEmoji(text, [
+        {
+          index: 0,
+          length,
+          productId: 'product-a',
+          emojiId: '001'
+        },
+        {
+          index: length,
+          length,
+          productId: 'product-b',
+          emojiId: '999'
+        }
+      ])).toBe(text);
+    });
+
+    test('uses UTF-16 offsets correctly without changing an unknown emoji', () => {
       const text = '🍎 (ありがとう)';
       expect(text.indexOf('(ありがとう)')).toBe(3);
 
@@ -80,10 +100,10 @@ describe('emojiHandler', () => {
         length: '(ありがとう)'.length,
         productId: 'custom-product',
         emojiId: '002'
-      }])).toBe('🍎 🙏');
+      }])).toBe(text);
     });
 
-    test('uses a known product/emoji ID mapping before fallback-label matching', () => {
+    test('converts only an explicitly known product/emoji ID mapping', () => {
       expect(processLineEmoji('Hello (love)', [{
         index: 6,
         length: 6,
