@@ -98,16 +98,16 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 状態: **`main` 統合・CI完了、Oracle VPS live test待ち**
 
 - [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
-- [x] `productId` / `emojiId` の既知mappingを優先
-- [x] 「ありがとう」「love」等の既知fallback labelを近似Unicode絵文字へ変換
-- [x] 未知のLINE絵文字は代替テキストを保持し、意味を捨てない
+- [x] `productId` / `emojiId` の完全一致mappingだけをUnicode近似変換に使用
+- [x] fallback label単独の推測変換を廃止（同じ「ありがとう」等を持つ別絵文字を同一Unicodeへ潰さない）
+- [x] 未知のLINE絵文字は代替テキストを保持し、`productId` / `emojiId` / fallback textをdebug logへ記録
 - [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
 - [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
 - [x] 通常message / messageEditedの両方でemoji metadataを利用
 - [x] GitHub Actions green（PRおよびmerge後 `main` Run #75）
 - [ ] Oracle VPS live test（LINE独自絵文字 → Discord Unicode近似）
 
-設計判断: LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。まずmetadata-awareなUnicode近似を安全な既定動作とする。
+設計判断: fallback/ALT文字列は絵文字の一意な識別子ではないため、それだけを根拠にUnicodeへ推測変換しない。`productId + emojiId` の完全一致を確認できたものだけ対応表へ追加する。LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。
 
 ## Documentation status
 
