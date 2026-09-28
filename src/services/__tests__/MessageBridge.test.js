@@ -228,6 +228,31 @@ describe('MessageBridge Phase 2', () => {
     );
   });
 
+  test('ignores stale out-of-order LINE messageEdited events', async () => {
+    bridge.messageMappingManager.getLineToDiscordMapping.mockReturnValue({
+      lineMessageId: 'line-1',
+      discordMessageId: 'discord-1',
+      discordChannelId: 'C1',
+      lineUserId: 'U1',
+      transport: 'webhook',
+      metadata: { lastEditTimestamp: 2000 }
+    });
+    bridge.webhookManager = {
+      editMessage: jest.fn(),
+      deleteMessage: jest.fn()
+    };
+
+    await bridge.processLineEditToDiscord({
+      type: 'messageEdited',
+      timestamp: 1000,
+      source: { groupId: 'G1', userId: 'U1' },
+      message: { id: 'line-1', type: 'text', text: 'stale edit' }
+    });
+
+    expect(bridge.webhookManager.editMessage).not.toHaveBeenCalled();
+    expect(bridge.messageMappingManager.mapLineToDiscord).not.toHaveBeenCalled();
+  });
+
   test('LINE unsend deletes the mapped Discord message and mapping', async () => {
     bridge.messageMappingManager.getLineToDiscordMapping.mockReturnValue({
       lineMessageId: 'line-1',
