@@ -16,6 +16,19 @@ function resolveDatabaseFile() {
   return path.resolve(basePath, 'bridge.sqlite3');
 }
 
+function getColumnNames(db, tableName) {
+  return new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map((row) => row.name));
+}
+
+function ensureColumn(db, tableName, columnName, definition) {
+  const columns = getColumnNames(db, tableName);
+  if (columns.has(columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
 function initializeSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS webhook_events (
@@ -30,9 +43,6 @@ function initializeSchema(db) {
       processed_at TEXT,
       last_error TEXT
     );
-
-    CREATE INDEX IF NOT EXISTS idx_webhook_events_status
-      ON webhook_events(status, received_at);
 
     CREATE TABLE IF NOT EXISTS conversations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,12 +63,40 @@ function initializeSchema(db) {
       created_at TEXT NOT NULL,
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
+  `);
+
+  ensureColumn(db, 'webhook_events', 'next_attempt_at', 'TEXT');
+  ensureColumn(db, 'webhook_events', 'dead_lettered_at', 'TEXT');
+
+  ensureColumn(db, 'message_links', 'line_user_id', 'TEXT');
+  ensureColumn(db, 'message_links', 'discord_channel_id', 'TEXT');
+  ensureColumn(db, 'message_links', 'ordinal', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'message_links', 'message_type', 'TEXT');
+  ensureColumn(db, 'message_links', 'transport', 'TEXT');
+  ensureColumn(db, 'message_links', 'webhook_id', 'TEXT');
+  ensureColumn(db, 'message_links', 'reply_token', 'TEXT');
+  ensureColumn(db, 'message_links', 'reply_token_expiry', 'TEXT');
+  ensureColumn(db, 'message_links', 'reply_token_used_at', 'TEXT');
+  ensureColumn(db, 'message_links', 'quote_token', 'TEXT');
+  ensureColumn(db, 'message_links', 'metadata_json', 'TEXT');
+  ensureColumn(db, 'message_links', 'updated_at', 'TEXT');
+
+  db.exec(`
+    UPDATE message_links
+    SET updated_at = COALESCE(updated_at, created_at)
+    WHERE updated_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_webhook_events_status
+      ON webhook_events(status, next_attempt_at, received_at);
 
     CREATE INDEX IF NOT EXISTS idx_message_links_line
       ON message_links(line_message_id);
 
     CREATE INDEX IF NOT EXISTS idx_message_links_discord
       ON message_links(discord_message_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_message_links_unique
+      ON message_links(direction, line_message_id, discord_message_id, ordinal);
   `);
 }
 
@@ -97,5 +135,6 @@ function closeDatabase() {
 module.exports = {
   getDatabase,
   closeDatabase,
-  resolveDatabaseFile
+  resolveDatabaseFile,
+  initializeSchema
 };
