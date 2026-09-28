@@ -2,7 +2,7 @@
  * メッセージブリッジサービス
  * LINEとDiscord間の双方向メッセージングを管理
  */
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Events } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 const LineService = require('./LineService');
@@ -16,7 +16,7 @@ const BridgeFeatureManager = require('../features/BridgeFeatureManager');
 const { processLineEmoji, processDiscordEmoji } = require('../utils/emojiHandler');
 const lineLimitHandler = require('../middleware/lineLimitHandler');
 const LineUsageMonitor = require('./LineUsageMonitor');
-const MessageBatcher = require('../utils/messageBatcher');
+const { getLineSourceId } = require('../utils/lineSource');
 
 /**
  * メッセージブリッジクラス
@@ -27,8 +27,6 @@ class MessageBridge {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.MessageContent
       ]
     });
@@ -43,7 +41,6 @@ class MessageBridge {
     this.channelManager = null;
     this.webhookManager = null;
     this.lineUsageMonitor = new LineUsageMonitor();
-    this.messageBatcher = new MessageBatcher();
     
     // DiscordServiceにクライアントを設定
     this.discordService.setClient(this.discord);
@@ -63,12 +60,7 @@ class MessageBridge {
    * イベントハンドラーの設定
    */
   setupEventHandlers() {
-    // Discord準備完了（v14互換: ready / v15: clientReady）
-    this.discordReadyHandled = false;
-
     const onReady = async () => {
-      if (this.discordReadyHandled) return;
-      this.discordReadyHandled = true;
       logger.info('Discord client ready', {
         user: this.discord.user?.tag,
         guilds: this.discord.guilds.cache.size
@@ -76,8 +68,7 @@ class MessageBridge {
       await this.initialize();
     };
 
-    this.discord.once('ready', onReady);
-    this.discord.once('clientReady', onReady);
+    this.discord.once(Events.ClientReady, onReady);
 
     // Discordメッセージ受信
     this.discord.on('messageCreate', async (message) => {
@@ -127,9 +118,6 @@ class MessageBridge {
       // 保留中のメッセージを処理
       await this.processPendingMessages();
       
-      // メッセージバッチング設定を初期化
-      this.initializeMessageBatching();
-      
       // LINE使用量監視を開始
       this.startLineUsageMonitoring();
       
@@ -172,21 +160,31 @@ class MessageBridge {
    * @param {Object} event - LINEイベント
    */
   async handleLineEvent(event) {
-    if (event.type !== 'message') return;
-
     if (!this.isInitialized) {
       this.pendingMessages.push({ type: 'line', event });
-      return;
+      return true;
     }
 
     logger.info('Processing LINE event', {
-      eventId: event.message?.id,
-      messageType: event.message?.type,
-      sourceId: event.source.groupId || event.source.userId
+      type: event.type,
+      eventId: event.message?.id || event.unsend?.messageId || null,
+      messageType: event.message?.type || null,
+      sourceId: getLineSourceId(event.source)
     });
 
-    await this.processLineToDiscord(event);
-    this.metrics.messagesProcessed++;
+    let processed = true;
+    if (event.type === 'message') {
+      processed = await this.processLineToDiscord(event);
+    } else if (event.type === 'messageEdited') {
+      processed = await this.processLineEditToDiscord(event);
+    } else if (event.type === 'unsend') {
+      processed = await this.processLineUnsendToDiscord(event);
+    }
+
+    if (processed !== false) {
+      this.metrics.messagesProcessed++;
+    }
+    return processed;
   }
 
   /**
@@ -209,7 +207,7 @@ class MessageBridge {
         }
       }
 
-      const sourceId = event.source.groupId || event.source.userId;
+      const sourceId = getLineSourceId(event.source);
       const mapping = await this.channelManager.getOrCreateChannel(sourceId);
       if (!mapping) return;
 
@@ -268,7 +266,13 @@ class MessageBridge {
           mapping.discordChannelId,
           {
             replyToken,
-            quoteToken
+            quoteToken,
+            messageType: event.message?.type || null,
+            transport: webhookOptions.useWebhook
+              && !(webhookOptions.replyToMessageId && config.features.lineToDiscordReplyMode === 'bot-reply')
+              ? 'webhook'
+              : 'bot',
+            webhookId: sentMessage.webhookId || null
           }
         );
       }
@@ -280,13 +284,93 @@ class MessageBridge {
         isReply: !!replyTargetDiscordMessageId
       });
 
+      if (config.features.markLineReadOnDiscordDelivery && event.message?.markAsReadToken) {
+        await this.lineService.markMessagesAsRead(event.message.markAsReadToken);
+      }
+
+      return Boolean(sentMessage);
     } catch (error) {
       logger.error('Failed to process LINE to Discord', {
         eventId: event.message?.id,
         error: error.message
       });
       this.metrics.errors++;
+      throw error;
     }
+  }
+
+  async processLineEditToDiscord(event) {
+    const lineMessageId = event.message?.id;
+    if (!lineMessageId) {
+      return true;
+    }
+
+    const mapping = this.messageMappingManager.getLineToDiscordMapping(lineMessageId);
+    if (!mapping?.discordMessageId || !mapping?.discordChannelId) {
+      throw new Error(`Original LINE message mapping not found for edit: ${lineMessageId}`);
+    }
+
+    if (event.message.type !== 'text') {
+      logger.info('Ignoring non-text LINE message edit', {
+        lineMessageId,
+        messageType: event.message.type
+      });
+      return true;
+    }
+
+    const content = processLineEmoji(this.lineService.formatMessage(event, ''));
+    if (mapping.transport === 'webhook' && this.webhookManager) {
+      await this.webhookManager.editMessage(mapping.discordChannelId, mapping.discordMessageId, {
+        content
+      });
+    } else {
+      const channel = await this.discord.channels.fetch(mapping.discordChannelId);
+      const message = await channel.messages.fetch(mapping.discordMessageId);
+      await message.edit({
+        content,
+        allowedMentions: { parse: [] }
+      });
+    }
+
+    await this.messageMappingManager.mapLineToDiscord(
+      lineMessageId,
+      mapping.discordMessageId,
+      mapping.lineUserId || event.source?.userId || null,
+      mapping.discordChannelId,
+      {
+        replyToken: event.replyToken || mapping.replyToken || null,
+        quoteToken: event.message?.quoteToken || mapping.quoteToken || null,
+        messageType: event.message.type,
+        transport: mapping.transport,
+        webhookId: mapping.webhookId
+      }
+    );
+
+    return true;
+  }
+
+  async processLineUnsendToDiscord(event) {
+    const lineMessageId = event.unsend?.messageId;
+    if (!lineMessageId) {
+      return true;
+    }
+
+    const mapping = this.messageMappingManager.getLineToDiscordMapping(lineMessageId);
+    if (!mapping?.discordMessageId || !mapping?.discordChannelId) {
+      logger.debug('No Discord mapping found for LINE unsend', { lineMessageId });
+      return true;
+    }
+
+    if (mapping.transport === 'webhook' && this.webhookManager) {
+      await this.webhookManager.deleteMessage(mapping.discordChannelId, mapping.discordMessageId);
+    } else {
+      const channel = await this.discord.channels.fetch(mapping.discordChannelId);
+      const message = await channel.messages.fetch(mapping.discordMessageId);
+      await message.delete();
+    }
+
+    await this.messageMappingManager.removeMapping(lineMessageId, null);
+    return true;
   }
 
   /**
@@ -296,117 +380,85 @@ class MessageBridge {
    */
   async processDiscordToLine(message, lineUserId) {
     try {
-      let lineMessageId = null;
       const lineSendContext = await this.featureManager.resolveLineSendContext(message);
       const lineSendSession = new LineSendSession(lineSendContext);
       const trackedLineService = this.createTrackedLineService(lineUserId, lineSendSession);
 
-      // 添付ファイルの処理
       if (message.attachments?.size > 0) {
-        const results = await this.mediaService.processDiscordAttachments(
+        await this.mediaService.processDiscordAttachments(
           Array.from(message.attachments.values()),
           lineUserId,
           trackedLineService
         );
-        if (results.length > 0 && results[0].lineMessageId) {
-          lineMessageId = results[0].lineMessageId;
-        }
       }
 
-      // テキストメッセージの処理
       if (message.content?.trim()) {
         const text = message.content.trim();
-        
-        // 位置情報の検出と処理
         const locationResult = this.detectAndProcessLocation(text);
+
         if (locationResult) {
-          const lineMessage = {
+          await this.sendTrackedLineMessage(lineUserId, {
             type: 'location',
             title: locationResult.title,
             address: locationResult.address,
             latitude: locationResult.latitude,
             longitude: locationResult.longitude
-          };
-          
-          const result = await this.sendTrackedLineMessage(lineUserId, lineMessage, lineSendSession);
-          if (result?.messageId) {
-            lineMessageId = result.messageId;
-          }
+          }, lineSendSession);
         } else {
           const processedText = processDiscordEmoji(text);
-          
-          // GoogleMapsリンクの検出
           const googleMapsResult = this.detectGoogleMapsLink(processedText);
-          
+
           if (googleMapsResult) {
-            // 元のテキストを先に送信（GoogleMapsリンク以外の部分）
             const remainingText = processedText.replace(googleMapsResult.url, '').trim();
             if (remainingText) {
-              const textMessage = {
+              await this.sendTrackedLineMessage(lineUserId, {
                 type: 'text',
                 text: remainingText
-              };
-              const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendSession);
-              if (textResult?.messageId) {
-                lineMessageId = textResult.messageId;
-              }
+              }, lineSendSession);
             }
-            
-            // その後、位置情報として送信
-            const locationMessage = {
+
+            await this.sendTrackedLineMessage(lineUserId, {
               type: 'location',
               title: googleMapsResult.title,
               address: googleMapsResult.address,
               latitude: googleMapsResult.latitude,
               longitude: googleMapsResult.longitude
-            };
-            
-            const locationResult = await this.sendTrackedLineMessage(lineUserId, locationMessage, lineSendSession);
-            if (locationResult?.messageId) {
-              lineMessageId = locationResult.messageId;
-            }
+            }, lineSendSession);
           } else {
-            // GoogleMapsリンクでない場合は通常のテキストとして送信
-            const textMessage = {
+            await this.sendTrackedLineMessage(lineUserId, {
               type: 'text',
               text: processedText
-            };
-            const textResult = await this.sendTrackedLineMessage(lineUserId, textMessage, lineSendSession);
-            if (textResult?.messageId) {
-              lineMessageId = textResult.messageId;
-            }
+            }, lineSendSession);
           }
         }
       }
 
-      // スタンプの処理
       if (message.stickers?.size > 0) {
-        const results = await this.mediaService.processDiscordStickers(
+        await this.mediaService.processDiscordStickers(
           Array.from(message.stickers.values()),
           lineUserId,
           trackedLineService
         );
-        if (results.length > 0 && results[0].lineMessageId) {
-          lineMessageId = results[0].lineMessageId;
-        }
       }
 
-      // メッセージマッピングを記録
-      if (lineMessageId) {
-        await this.messageMappingManager.mapDiscordToLine(
+      const sentMessages = lineSendSession.getSentMessages();
+      if (sentMessages.length > 0) {
+        await this.messageMappingManager.mapDiscordToLines(
           message.id,
-          lineMessageId,
+          sentMessages,
           lineUserId,
           message.channelId
         );
       }
 
+      return sentMessages;
     } catch (error) {
       logger.error('Failed to process Discord to LINE', {
         messageId: message.id,
         error: error.message
       });
       this.metrics.errors++;
+      throw error;
     }
   }
 
@@ -701,13 +753,18 @@ class MessageBridge {
       if (options.replyToMessageId) {
         return await channel.send({
           ...message,
+          allowedMentions: { parse: [] },
           reply: {
-            messageReference: options.replyToMessageId
+            messageReference: options.replyToMessageId,
+            failIfNotExists: false
           }
         });
       }
 
-      return await channel.send(message);
+      return await channel.send({
+        ...message,
+        allowedMentions: { parse: [] }
+      });
     } catch (error) {
       logger.error('Failed to send message to Discord', {
         channelId,
@@ -752,6 +809,7 @@ class MessageBridge {
       ...message,
       content: '',
       embeds,
+      allowedMentions: { parse: [] },
       reply: {
         messageReference: replyToMessageId,
         failIfNotExists: false
@@ -795,119 +853,18 @@ class MessageBridge {
     }
   }
 
-  /**
-   * ファイルアップロードを処理
-   * @param {Object} req - リクエスト
-   * @returns {Object} 処理結果
-   */
-  async handleFileUpload(req) {
-    try {
-      // ファイルアップロード処理の実装
-      if (!req.file) {
-        return { success: false, message: 'No file uploaded' };
-      }
-
-      // ファイル処理ロジック
-      const result = await this.mediaService.processUploadedFile(req.file);
-      
-      return { 
-        success: true, 
-        message: 'File uploaded successfully',
-        result 
-      };
-    } catch (error) {
-      logger.error('Failed to handle file upload', {
-        error: error.message
-      });
-      return { 
-        success: false, 
-        message: 'File upload failed',
-        error: error.message 
-      };
-    }
-  }
-
-  /**
-   * メッセージバッチング設定を初期化
-   */
-  initializeMessageBatching() {
-    try {
-      const batchTimeout = parseInt(process.env.MESSAGE_BATCH_TIMEOUT, 10) || 120000; // デフォルト2分
-      const maxBatchSize = parseInt(process.env.MESSAGE_BATCH_MAX_SIZE, 10) || 10; // デフォルト10メッセージ
-
-      this.messageBatcher.updateConfig({
-        batchTimeout,
-        maxBatchSize
-      });
-
-      logger.info('Message batching initialized', {
-        batchTimeout,
-        maxBatchSize
-      });
-    } catch (error) {
-      logger.error('Failed to initialize message batching', {
-        error: error.message
-      });
-    }
-  }
-
-  /**
-   * バッチング機能を使用してメッセージを送信
-   * @param {string} userId - LINEユーザーID
-   * @param {Object} message - メッセージ
-   */
-  async sendMessageWithBatching(userId, message) {
-    try {
-      // 送信コールバック関数
-      const sendCallback = async (messages) => {
-        for (const msg of messages) {
-          const limitCheck = lineLimitHandler.shouldLimitMessage(msg);
-          if (limitCheck.allowed) {
-            const result = await this.lineService.pushMessage(userId, msg);
-            if (result?.messageId) {
-              lineLimitHandler.recordMessageSent();
-              logger.debug('Batched message sent to LINE', {
-                userId,
-                messageType: msg.type,
-                messageId: result.messageId
-              });
-            }
-          } else {
-            logger.warn('Batched message blocked due to monthly limit', {
-              userId,
-              messageType: msg.type,
-              reason: limitCheck.reason
-            });
-          }
-        }
-      };
-
-      // メッセージをバッチに追加
-      this.messageBatcher.addToBatch(userId, message, sendCallback);
-      
-    } catch (error) {
-      logger.error('Failed to send message with batching', {
-        userId,
-        messageType: message.type,
-        error: error.message
-      });
-    }
-  }
-
   async sendTrackedLineMessage(userId, message, lineSendContext = new LineSendSession()) {
     const lineSendSession = this.toLineSendSession(lineSendContext);
     const replyResult = await this.sendLineReplyMessageIfAvailable(userId, message, lineSendSession);
     if (replyResult) {
+      lineSendSession.recordResult(replyResult, message.type, 'reply');
       return replyResult;
     }
 
-    const outboundMessage = this.featureManager.applyLineSendContext(message, lineSendSession.getPushContext());
-
-    if (!this.featureManager.requiresDirectLineTracking()) {
-      await this.sendMessageWithBatching(userId, outboundMessage);
-      return null;
-    }
-
+    const outboundMessage = this.featureManager.applyLineSendContext(
+      message,
+      lineSendSession.getPushContext()
+    );
     const limitCheck = lineLimitHandler.shouldLimitMessage(outboundMessage);
     if (!limitCheck.allowed) {
       logger.warn('LINE message blocked due to monthly limit', {
@@ -921,6 +878,7 @@ class MessageBridge {
     const result = await this.lineService.pushMessage(userId, outboundMessage);
     if (result?.messageId) {
       lineLimitHandler.recordMessageSent();
+      lineSendSession.recordResult(result, outboundMessage.type, 'push');
     }
 
     return result;
@@ -1044,7 +1002,7 @@ class MessageBridge {
       pendingMessages: this.pendingMessages.length,
       lineLimitStatus: lineLimitHandler.getLimitStatus(),
       lineUsageMonitoring: this.lineUsageMonitor.getMonitoringStatus(),
-      messageBatching: this.messageBatcher.getBatchStatus()
+      messageMappings: this.messageMappingManager.getStats()
     };
   }
 
@@ -1066,9 +1024,6 @@ class MessageBridge {
    */
   async stop() {
     try {
-      // 全てのバッチを強制送信
-      await this.messageBatcher.flushAllBatches();
-
       this.lineUsageMonitor.stopMonitoring();
       
       if (this.webhookManager) {
