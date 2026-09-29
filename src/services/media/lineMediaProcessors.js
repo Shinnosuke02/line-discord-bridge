@@ -2,9 +2,15 @@ const { AttachmentBuilder } = require('discord.js');
 const sharp = require('sharp');
 const logger = require('../../utils/logger');
 const {
+  processLineEmoji,
+  resolveLineEmojiReplacement
+} = require('../../utils/emojiHandler');
+const {
   isAnimatedPngBuffer,
   isAnimatedStickerResourceType
 } = require('../../utils/lineSticker');
+
+const MAX_DISCORD_LINE_EMOJI_ATTACHMENTS = 10;
 
 function createLineMediaProcessors(deps) {
   return {
@@ -12,7 +18,114 @@ function createLineMediaProcessors(deps) {
     video: (message, lineService) => processLineVideo(deps, message, lineService),
     audio: (message, lineService) => processLineAudio(deps, message, lineService),
     file: (message, lineService) => processLineFile(deps, message, lineService),
-    sticker: (message) => processLineSticker(deps, message)
+    sticker: (message) => processLineSticker(deps, message),
+    textEmoji: (text, emojis) => processLineTextEmoji(deps, text, emojis)
+  };
+}
+
+function getValidLineEmojiRanges(text, emojis = []) {
+  if (!Array.isArray(emojis)) {
+    return [];
+  }
+
+  const sorted = emojis
+    .filter((emoji) => Number.isInteger(emoji?.index)
+      && Number.isInteger(emoji?.length)
+      && emoji.index >= 0
+      && emoji.length > 0
+      && emoji.index + emoji.length <= text.length)
+    .sort((a, b) => a.index - b.index || a.length - b.length);
+
+  const nonOverlapping = [];
+  let nextAvailableIndex = 0;
+
+  for (const emoji of sorted) {
+    if (emoji.index < nextAvailableIndex) {
+      logger.warn('Skipping overlapping LINE emoji metadata for image rendering', {
+        index: emoji.index,
+        length: emoji.length,
+        productId: emoji.productId,
+        emojiId: emoji.emojiId
+      });
+      continue;
+    }
+
+    nonOverlapping.push(emoji);
+    nextAvailableIndex = emoji.index + emoji.length;
+  }
+
+  return nonOverlapping;
+}
+
+async function processLineTextEmoji(deps, text, emojis = []) {
+  if (!text) {
+    return { content: text || '', files: [] };
+  }
+
+  const ranges = getValidLineEmojiRanges(text, emojis);
+  if (ranges.length === 0) {
+    return {
+      content: processLineEmoji(text, emojis),
+      files: []
+    };
+  }
+
+  const imageCandidates = ranges
+    .filter((emoji) => emoji.productId && emoji.emojiId)
+    .slice(0, MAX_DISCORD_LINE_EMOJI_ATTACHMENTS);
+
+  const imageResults = await Promise.all(imageCandidates.map(async (emoji, ordinal) => {
+    try {
+      const asset = await deps.downloadLineEmojiAsset(emoji.productId, emoji.emojiId);
+      return { emoji, ordinal, asset };
+    } catch (error) {
+      logger.debug('LINE emoji image unavailable; using text fallback', {
+        productId: emoji.productId,
+        emojiId: emoji.emojiId,
+        error: error.message
+      });
+      return { emoji, ordinal, asset: null };
+    }
+  }));
+
+  const imageRanges = new Map();
+  const files = [];
+
+  for (const { emoji, ordinal, asset } of imageResults) {
+    if (!asset?.buffer) {
+      continue;
+    }
+
+    const end = emoji.index + emoji.length;
+    const fallbackText = text.slice(emoji.index, end);
+    const rangeKey = `${emoji.index}:${emoji.length}`;
+    const fileName = deps.sanitizeFileNameForDiscord(
+      `line_emoji_${emoji.productId}_${emoji.emojiId}_${ordinal + 1}.png`
+    );
+
+    imageRanges.set(rangeKey, true);
+    files.push(new AttachmentBuilder(asset.buffer, {
+      name: fileName,
+      description: fallbackText || 'LINE emoji'
+    }));
+  }
+
+  let content = text;
+  for (const emoji of [...ranges].sort((a, b) => b.index - a.index || b.length - a.length)) {
+    const end = emoji.index + emoji.length;
+    const fallbackText = text.slice(emoji.index, end);
+    const rangeKey = `${emoji.index}:${emoji.length}`;
+
+    const replacement = imageRanges.has(rangeKey)
+      ? ''
+      : resolveLineEmojiReplacement(fallbackText, emoji);
+
+    content = content.slice(0, emoji.index) + replacement + content.slice(end);
+  }
+
+  return {
+    content: processLineEmoji(content, []),
+    files
   };
 }
 
@@ -207,5 +320,6 @@ async function processLineSticker(deps, message) {
 }
 
 module.exports = {
-  createLineMediaProcessors
+  createLineMediaProcessors,
+  processLineTextEmoji
 };
