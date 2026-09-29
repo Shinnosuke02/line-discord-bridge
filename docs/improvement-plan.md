@@ -95,19 +95,22 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 
 ## Phase 2.1 — LINE emoji fidelity
 
-状態: **`main` 統合・CI完了、Oracle VPS live test待ち**
+状態: **画像優先方式へ改修・CI / Oracle VPS live test待ち**
 
 - [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
-- [x] `productId` / `emojiId` の完全一致mappingだけをUnicode近似変換に使用
+- [x] `productId` / `emojiId` からLINE sticon CDN画像をbest-effort取得し、Discord添付画像を最優先
+- [x] 画像取得失敗時だけ `productId` / `emojiId` 完全一致mappingをUnicode近似fallbackに使用
 - [x] fallback label単独の推測変換を廃止（同じ「ありがとう」等を持つ別絵文字を同一Unicodeへ潰さない）
-- [x] 未知のLINE絵文字は代替テキストを保持し、`productId` / `emojiId` / fallback textをdebug logへ記録
+- [x] 未知 / CDN取得失敗のLINE絵文字は代替テキストを保持
+- [x] 同一assetのメモリキャッシュとin-flight download重複排除
+- [x] Discord添付上限に合わせて1メッセージ最大10絵文字画像
 - [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
 - [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
 - [x] 通常message / messageEditedの両方でemoji metadataを利用
-- [x] GitHub Actions green（PRおよびmerge後 `main` Run #75）
-- [ ] Oracle VPS live test（LINE独自絵文字 → Discord Unicode近似）
+- [ ] GitHub Actions green（画像優先方式）
+- [ ] Oracle VPS live test（LINE独自絵文字 → Discord添付画像、CDN失敗時fallback）
 
-設計判断: fallback/ALT文字列は絵文字の一意な識別子ではないため、それだけを根拠にUnicodeへ推測変換しない。`productId + emojiId` の完全一致を確認できたものだけ対応表へ追加する。LINE絵文字画像をDiscord custom emojiとして自動登録する方式は、追加権限・Guild絵文字枠・非API画像配布URLへの依存が大きいため採用しない。
+設計判断: fallback/ALT文字列は絵文字の一意な識別子ではないため、それだけを根拠にUnicodeへ推測変換しない。まず `productId + emojiId` からsticon画像取得を試し、成功時は実画像をDiscord添付として優先する。sticon CDNはMessaging APIの正式メディア取得APIではないためbest-effort扱いとし、失敗時は完全一致Unicode mapping、最後にfallback textへ戻す。Discord custom emojiへの自動登録は追加権限・Guild絵文字枠が必要なため採用しない。
 
 ## Documentation status
 
