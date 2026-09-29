@@ -1,6 +1,7 @@
 const MediaService = require('../MediaService');
 const config = require('../../config');
 const path = require('path');
+const axios = require('axios');
 
 jest.mock('../../utils/logger');
 jest.mock('axios');
@@ -153,6 +154,131 @@ describe('MediaService Phase 2 API correctness', () => {
     expect(result.type).toBe('text');
     expect(result.fallback).toBe(true);
     expect(lineService.pushMessage.mock.calls[0][1].type).not.toBe('file');
+  });
+
+  test('LINE text emoji prefers the sticon image over fallback text', async () => {
+    const text = '了解です（ありがとう）！';
+    const fallback = '（ありがとう）';
+    const emoji = {
+      index: text.indexOf(fallback),
+      length: fallback.length,
+      productId: '670e0cce840a8236ddd4ee4c',
+      emojiId: '078'
+    };
+
+    axios.get.mockResolvedValueOnce({
+      data: Buffer.from('png-image'),
+      headers: { 'content-type': 'image/png' }
+    });
+
+    const result = await mediaService.processLineTextEmojis(text, [emoji]);
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://stickershop.line-scdn.net/sticonshop/v1/sticon/670e0cce840a8236ddd4ee4c/android/078.png',
+      expect.objectContaining({
+        responseType: 'arraybuffer',
+        timeout: 3500
+      })
+    );
+    expect(result.content).toBe('了解です！');
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].name).toContain('line_emoji_670e0cce840a8236ddd4ee4c_078_1.png');
+    expect(result.files[0].description).toBe(fallback);
+  });
+
+  test('same LINE emoji fallback text keeps distinct images by product and emoji ID', async () => {
+    const fallback = '（ありがとう）';
+    const text = `${fallback}${fallback}`;
+    const emojis = [
+      {
+        index: 0,
+        length: fallback.length,
+        productId: 'product-a',
+        emojiId: '001'
+      },
+      {
+        index: fallback.length,
+        length: fallback.length,
+        productId: 'product-b',
+        emojiId: '002'
+      }
+    ];
+
+    axios.get
+      .mockResolvedValueOnce({
+        data: Buffer.from('image-a'),
+        headers: { 'content-type': 'image/png' }
+      })
+      .mockResolvedValueOnce({
+        data: Buffer.from('image-b'),
+        headers: { 'content-type': 'image/png' }
+      });
+
+    const result = await mediaService.processLineTextEmojis(text, emojis);
+
+    expect(result.content).toBe('');
+    expect(result.files).toHaveLength(2);
+    expect(result.files[0].name).toContain('product-a_001');
+    expect(result.files[1].name).toContain('product-b_002');
+  });
+
+  test('LINE emoji image failure preserves fallback text', async () => {
+    const text = '了解です（ありがとう）！';
+    const fallback = '（ありがとう）';
+    const emoji = {
+      index: text.indexOf(fallback),
+      length: fallback.length,
+      productId: 'unknown-product',
+      emojiId: '999'
+    };
+
+    axios.get.mockRejectedValueOnce(new Error('404'));
+
+    const result = await mediaService.processLineTextEmojis(text, [emoji]);
+
+    expect(result).toEqual({
+      content: text,
+      files: []
+    });
+  });
+
+  test('LINE emoji image failure can still use an exact Unicode ID fallback', async () => {
+    const text = 'Hello (love)';
+    const emoji = {
+      index: text.indexOf('(love)'),
+      length: '(love)'.length,
+      productId: '5ac1bfd5040ab15980c9b435',
+      emojiId: '001'
+    };
+
+    axios.get.mockRejectedValueOnce(new Error('CDN unavailable'));
+
+    const result = await mediaService.processLineTextEmojis(text, [emoji]);
+
+    expect(result).toEqual({
+      content: 'Hello ❤️',
+      files: []
+    });
+  });
+
+  test('LINE emoji image downloads are cached by exact asset URL', async () => {
+    const text = '(love)';
+    const emoji = {
+      index: 0,
+      length: text.length,
+      productId: '5ac1bfd5040ab15980c9b435',
+      emojiId: '001'
+    };
+
+    axios.get.mockResolvedValue({
+      data: Buffer.from('cached-image'),
+      headers: { 'content-type': 'image/png' }
+    });
+
+    await mediaService.processLineTextEmojis(text, [emoji]);
+    await mediaService.processLineTextEmojis(text, [emoji]);
+
+    expect(axios.get).toHaveBeenCalledTimes(1);
   });
 
   test('LINE file names preserve Japanese characters on Discord', async () => {

@@ -13,10 +13,14 @@ const config = require('../config');
 const logger = require('../utils/logger');
 const { createLineMediaProcessors } = require('./media/lineMediaProcessors');
 const {
-  getLineStickerAssetUrls
+  getLineStickerAssetUrls,
+  getLineEmojiAssetUrl
 } = require('../utils/lineSticker');
 
 const execFileAsync = promisify(execFile);
+const LINE_EMOJI_ASSET_CACHE_MAX_ENTRIES = 128;
+const LINE_EMOJI_ASSET_MAX_BYTES = 2 * 1024 * 1024;
+const LINE_EMOJI_ASSET_TIMEOUT_MS = 3500;
 
 /**
  * メディアサービスクラス
@@ -29,10 +33,13 @@ class MediaService {
     this.supportedVideoTypes = config.file.supportedVideoMimeTypes;
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
     this.supportedDocumentTypes = config.file.supportedDocumentMimeTypes;
+    this.lineEmojiAssetCache = new Map();
+    this.lineEmojiAssetPending = new Map();
     this.lineMediaProcessors = createLineMediaProcessors({
       detectFileType: (...args) => this.detectFileType(...args),
       sanitizeFileNameForDiscord: (...args) => this.sanitizeFileNameForDiscord(...args),
       downloadLineStickerAsset: (...args) => this.downloadLineStickerAsset(...args),
+      downloadLineEmojiAsset: (...args) => this.downloadLineEmojiAsset(...args),
       convertAnimatedStickerToGif: (...args) => this.convertAnimatedStickerToGif(...args)
     });
     
@@ -218,6 +225,10 @@ class MediaService {
     return this.lineMediaProcessors.sticker(message);
   }
 
+  async processLineTextEmojis(text, emojis = []) {
+    return this.lineMediaProcessors.textEmoji(text, emojis);
+  }
+
   getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
     return getLineStickerAssetUrls(stickerId, stickerResourceType);
   }
@@ -261,6 +272,83 @@ class MediaService {
     }
 
     throw lastError || new Error(`Failed to download sticker asset for ${stickerId}`);
+  }
+
+  async downloadLineEmojiAsset(productId, emojiId) {
+    const url = getLineEmojiAssetUrl(productId, emojiId);
+    if (!url) {
+      throw new Error('Invalid LINE emoji productId or emojiId');
+    }
+
+    const cachedBuffer = this.lineEmojiAssetCache.get(url);
+    if (cachedBuffer) {
+      return {
+        buffer: cachedBuffer,
+        url,
+        cached: true
+      };
+    }
+
+    const pendingDownload = this.lineEmojiAssetPending.get(url);
+    if (pendingDownload) {
+      return await pendingDownload;
+    }
+
+    const downloadPromise = (async () => {
+      logger.debug('Downloading LINE emoji image', {
+        productId,
+        emojiId,
+        url
+      });
+
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: LINE_EMOJI_ASSET_TIMEOUT_MS,
+        maxContentLength: LINE_EMOJI_ASSET_MAX_BYTES,
+        maxBodyLength: LINE_EMOJI_ASSET_MAX_BYTES
+      });
+      const buffer = Buffer.from(response.data);
+      const contentType = response.headers?.['content-type'] || '';
+
+      if (buffer.length === 0) {
+        throw new Error('LINE emoji asset response was empty');
+      }
+      if (buffer.length > LINE_EMOJI_ASSET_MAX_BYTES) {
+        throw new Error(`LINE emoji asset exceeds ${LINE_EMOJI_ASSET_MAX_BYTES} bytes`);
+      }
+      if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+        throw new Error(`Unexpected LINE emoji content type: ${contentType}`);
+      }
+
+      if (this.lineEmojiAssetCache.size >= LINE_EMOJI_ASSET_CACHE_MAX_ENTRIES) {
+        const oldestKey = this.lineEmojiAssetCache.keys().next().value;
+        if (oldestKey) {
+          this.lineEmojiAssetCache.delete(oldestKey);
+        }
+      }
+      this.lineEmojiAssetCache.set(url, buffer);
+
+      logger.debug('LINE emoji image downloaded successfully', {
+        productId,
+        emojiId,
+        url,
+        bufferSize: buffer.length,
+        contentType: contentType || null
+      });
+
+      return {
+        buffer,
+        url,
+        cached: false
+      };
+    })();
+
+    this.lineEmojiAssetPending.set(url, downloadPromise);
+    try {
+      return await downloadPromise;
+    } finally {
+      this.lineEmojiAssetPending.delete(url);
+    }
   }
 
   async convertAnimatedStickerToGif(buffer, stickerId) {
