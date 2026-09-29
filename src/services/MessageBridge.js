@@ -591,9 +591,10 @@ class MessageBridge {
     switch (messageType) {
     case 'text': {
       const formattedText = this.lineService.formatMessage(event, displayName);
-      return {
-        content: processLineEmoji(formattedText, event.message.emojis || [])
-      };
+      return await this.mediaService.processLineTextEmojis(
+        formattedText,
+        event.message.emojis || []
+      );
     }
         
     case 'image':
