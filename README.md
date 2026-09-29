@@ -37,7 +37,7 @@ v3.2ではPhase 1のdurable delivery基盤を維持しつつ、2026年時点のL
 - SQLite: WAL / `PRAGMA quick_check = ok`
 - `/health`: `healthy`
 - `/ready`: `ready`（SQLite / Discord ready、durable queue 0を確認）
-- GitHub Actions: merge後の `main` Run #75 green
+- GitHub Actions: `main` のproduction audit / runtime smoke / test / lint / SQLite smokeがgreen
 
 LINE `unsend` → Discord側メッセージ削除は実機確認済みです。LINE `messageEdited` はLINE公式アカウントを含むグループトークでのみWebhook対象になるため、その条件でのlive testを残しています。LINE独自絵文字のUnicode近似変換もコード・CIは完了しており、Oracle VPSでのlive testが残っています。
 
