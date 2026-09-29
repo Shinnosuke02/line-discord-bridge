@@ -18,8 +18,21 @@ function getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
   return urls;
 }
 
+function getLineEmojiAssetUrl(productId, emojiId) {
+  const normalizedProductId = String(productId || '');
+  const normalizedEmojiId = String(emojiId || '');
+
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalizedProductId)
+    || !/^[A-Za-z0-9_-]{1,64}$/.test(normalizedEmojiId)) {
+    return null;
+  }
+
+  return `https://stickershop.line-scdn.net/sticonshop/v1/sticon/${normalizedProductId}/android/${normalizedEmojiId}.png`;
+}
+
 module.exports = {
   getLineStickerAssetUrls,
+  getLineEmojiAssetUrl,
   isAnimatedPngBuffer,
   isAnimatedStickerResourceType
 };
