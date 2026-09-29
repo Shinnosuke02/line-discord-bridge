@@ -4,7 +4,7 @@
 
 最終更新: 2026-09-28
 
-現在の本番ベースライン: `v3.2.0` / Node.js `24.21.0` / npm `11.19.0` / PM2 `6.0.8`。`main` のmerge後CI Run #75は全step green。Oracle VPSで `/health=healthy`、`/ready=ready`、SQLite `quick_check=ok` を確認済み。
+現在の本番ベースライン: `v3.2.0` / Node.js `24.21.0` / npm `11.19.0` / PM2 `6.0.8`。`main` のCIはproduction audit / runtime smoke / test / lint / SQLite smokeを継続してgreenに維持。Oracle VPSで `/health=healthy`、`/ready=ready`、SQLite `quick_check=ok` を確認済み。
 
 ## Phase 1 — Reliability
 
@@ -95,7 +95,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 
 ## Phase 2.1 — LINE emoji fidelity
 
-状態: **画像優先方式へ改修・CI / Oracle VPS live test待ち**
+状態: **画像優先方式へ改修・PR CI green、Oracle VPS live test待ち**
 
 - [x] LINE Webhook `message.emojis` の `index` / `length` を使った代替テキスト範囲の認識
 - [x] `productId` / `emojiId` からLINE sticon CDN画像をbest-effort取得し、Discord添付画像を最優先
@@ -107,7 +107,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] UTF-16 index（先行サロゲートペアを含む文章）をテスト
 - [x] ZWJ / variation selectorを保持し、通常Unicode絵文字の複合表示を壊さない
 - [x] 通常message / messageEditedの両方でemoji metadataを利用
-- [ ] GitHub Actions green（画像優先方式）
+- [x] GitHub Actions green（画像優先方式、PR Run #80）
 - [ ] Oracle VPS live test（LINE独自絵文字 → Discord添付画像、CDN失敗時fallback）
 
 設計判断: fallback/ALT文字列は絵文字の一意な識別子ではないため、それだけを根拠にUnicodeへ推測変換しない。まず `productId + emojiId` からsticon画像取得を試し、成功時は実画像をDiscord添付として優先する。sticon CDNはMessaging APIの正式メディア取得APIではないためbest-effort扱いとし、失敗時は完全一致Unicode mapping、最後にfallback textへ戻す。Discord custom emojiへの自動登録は追加権限・Guild絵文字枠が必要なため採用しない。
