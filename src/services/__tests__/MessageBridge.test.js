@@ -39,7 +39,8 @@ jest.mock('../DiscordService', () => jest.fn(() => ({
 jest.mock('../MediaService', () => jest.fn(() => ({
   shutdown: jest.fn(),
   processDiscordAttachments: jest.fn(),
-  processDiscordStickers: jest.fn()
+  processDiscordStickers: jest.fn(),
+  processLineTextEmojis: jest.fn()
 })));
 
 jest.mock('../MessageMappingManager', () => jest.fn(() => ({
@@ -103,23 +104,31 @@ describe('MessageBridge Phase 2', () => {
     expect(bridge.discord.once).toHaveBeenCalledWith('clientReady', expect.any(Function));
   });
 
-  test('LINE text emoji metadata converts only an explicitly mapped ID', async () => {
+  test('LINE text emoji metadata is delegated to image-first media processing', async () => {
     const text = 'Hello (love)';
+    const emojis = [{
+      index: text.indexOf('(love)'),
+      length: '(love)'.length,
+      productId: '5ac1bfd5040ab15980c9b435',
+      emojiId: '001'
+    }];
+    const expected = {
+      content: 'Hello ',
+      files: [{ name: 'line-emoji.png' }]
+    };
+    bridge.mediaService.processLineTextEmojis.mockResolvedValue(expected);
+
     const result = await bridge.createDiscordMessage({
       message: {
         id: 'line-emoji-1',
         type: 'text',
         text,
-        emojis: [{
-          index: text.indexOf('(love)'),
-          length: '(love)'.length,
-          productId: '5ac1bfd5040ab15980c9b435',
-          emojiId: '001'
-        }]
+        emojis
       }
     }, 'LINE User');
 
-    expect(result).toEqual({ content: 'Hello ❤️' });
+    expect(bridge.mediaService.processLineTextEmojis).toHaveBeenCalledWith(text, emojis);
+    expect(result).toBe(expected);
   });
 
   test('sendToDiscord suppresses Discord mentions for bot delivery', async () => {
