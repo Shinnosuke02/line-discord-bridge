@@ -87,6 +87,7 @@ jest.mock('../../middleware/lineLimitHandler', () => ({
 jest.mock('../../utils/logger');
 
 const MessageBridge = require('../MessageBridge');
+const config = require('../../config');
 const lineLimitHandler = require('../../middleware/lineLimitHandler');
 
 describe('MessageBridge Phase 2', () => {
@@ -129,6 +130,34 @@ describe('MessageBridge Phase 2', () => {
 
     expect(bridge.mediaService.processLineTextEmojis).toHaveBeenCalledWith(text, emojis);
     expect(result).toBe(expected);
+  });
+
+  test('LINE emoji CDN kill switch preserves text delivery with no image fetch', async () => {
+    const original = config.features.lineEmojiImageEnabled;
+    config.features.lineEmojiImageEnabled = false;
+
+    try {
+      const text = '了解です（ありがとう）';
+      const emoji = {
+        index: text.indexOf('（ありがとう）'),
+        length: '（ありがとう）'.length,
+        productId: 'unknown-product',
+        emojiId: '001'
+      };
+      const result = await bridge.createDiscordMessage({
+        message: {
+          id: 'line-fallback-1',
+          type: 'text',
+          text,
+          emojis: [emoji]
+        }
+      }, 'LINE User');
+
+      expect(result).toEqual({ content: text });
+      expect(bridge.mediaService.processLineTextEmojis).not.toHaveBeenCalled();
+    } finally {
+      config.features.lineEmojiImageEnabled = original;
+    }
   });
 
   test('sendToDiscord suppresses Discord mentions for bot delivery', async () => {

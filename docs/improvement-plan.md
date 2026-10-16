@@ -119,6 +119,20 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] CI手順をdependency audit / runtime smoke / Jest / ESLint / SQLite smokeの現行構成へ更新
 - [x] 2026-07時点のreview文書にhistorical/superseded注記を追加し、現行仕様との混同を防止
 
+## 2026-10-16 安全性・API互換性レビュー
+
+- [x] `main@7baa5b0` のソース、ロックファイル、GitHub Actions、Oracle運用スクリプトを再点検
+- [x] LINE SDK v11 / discord.js v14 / Node24 LTSの方針を確認し、無目的なmajor upgradeを見送る
+- [x] LINE独自絵文字の画像キャッシュを**総量16MiB**以下に制限（既存128件上限は維持）
+- [x] 非公式sticon CDNに依存する画像取得のみを停止できるopt-out `LINE_EMOJI_IMAGE_ENABLED=false` を追加（未設定時の機能不変）
+- [x] 追加の回帰テスト（cache eviction / cache hit / CDN opt-out）
+- [x] 2026-10-16の本番依存audit警告（axios / proxy-addr / body-parser / qs / moment）を5件のロックファイル更新で対処。Node/LINE/Discord/DB major更新なし
+- [ ] 新規PRとmerge後mainのCI green
+- [ ] VPS実機で保守時間中の前後比較（`/health`、`/ready`、SQLite件数、LINE↔Discord、スタンプ/絵文字）
+- [ ] Discord Developer PortalのMESSAGE CONTENT INTENTと対象ユーザー数（2026年6月以降10,000人基準）確認
+
+**レビュー正本:** [compatibility-review-2026-10-16.md](compatibility-review-2026-10-16.md)。本番自動デプロイ・設定書換え・DB変更は行わない。
+
 ## Phase 3 — Media
 
 - MediaService streaming化

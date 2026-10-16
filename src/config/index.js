@@ -117,7 +117,9 @@ const config = {
     replyBridgeEnabled: process.env.BRIDGE_REPLY_ENABLED !== 'false',
     reactionBridgeEnabled: process.env.BRIDGE_REACTION_ENABLED === 'true',
     lineToDiscordReplyMode: process.env.LINE_TO_DISCORD_REPLY_MODE || 'webhook',
-    markLineReadOnDiscordDelivery: process.env.LINE_MARK_AS_READ_ON_DISCORD_DELIVERY === 'true'
+    markLineReadOnDiscordDelivery: process.env.LINE_MARK_AS_READ_ON_DISCORD_DELIVERY === 'true',
+    // Optional operational rollback for the unofficial LINE sticon CDN.
+    lineEmojiImageEnabled: process.env.LINE_EMOJI_IMAGE_ENABLED !== 'false'
   },
 
   // ログ設定
