@@ -144,7 +144,7 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] `npm run typecheck` を追加（`start` / `restart` は変更しない）
 - [x] `src/utils/async.js`、`lineSource.js`、`lineSticker.js`、`src/services/ReplyTokenPolicy.js` のJSDocを型チェック対象化
 - [x] GitHub Actionsに型チェックを追加（Node 24.17.0 / 24.21.0）
-- [ ] PR・merge後main CI: npm ci / production audit / test / lint / typecheck / SQLite smoke green
+- [x] PR #12 / merge後main Run #95: Node 24.17.0・24.21.0とも npm ci / production audit / test / lint / typecheck / SQLite smoke green
 - [ ] Oracle VPSで必要に応じて既存運用をread-onlyで確認（本フェーズは自動デプロイなし）
 
 運用影響: **本番でのTSビルド・追加コマンド不要**。型チェック対象拡大、TypeScriptファイル導入、再デプロイコマンド整備は次Phaseで別PRとして扱う。
