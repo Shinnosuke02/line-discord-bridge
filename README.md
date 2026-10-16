@@ -350,6 +350,8 @@ npm run lint
 
 `main` へのmerge後もCI greenを確認してから本番へ反映します。
 
+2026-10-16のセキュリティ監査で検出された本番依存の問題は、既存のメジャー範囲内で `package-lock.json` の5パッケージのみを更新して対処します（`axios` / `proxy-addr` / `body-parser` / `qs` / `moment`）。実環境では `npm update` ではなく、レビュー済みロックファイルに対して必ず `npm ci` を使用してください。
+
 ## ログ
 
 本番ではWinstonのファイルログを確認します。
