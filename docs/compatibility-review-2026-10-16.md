@@ -67,7 +67,7 @@
 
 ## CI・回帰テストの合格条件
 
-- `npm ci`（ロックファイル互換）
+- `npm ci`（ロックファイル互換、Node 24.17.0と過去のOracle VPS確認バージョン24.21.0のCIマトリクス）
 - `npm audit --omit=dev --audit-level=high`（2026-10-16最新アドバイザリ、5パッケージ最小パッチを確認）
 - LINE SDK `LineBotClient` / Discord `Events.ClientReady` / native modules runtime smoke
 - Jest全件、ESLint
