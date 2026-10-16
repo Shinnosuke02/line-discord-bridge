@@ -51,6 +51,10 @@ jobs:
       - name: Run lint
         run: npm run lint
 
+      # Type checking emits nothing and never changes production startup.
+      - name: Check JavaScript types (Phase A)
+        run: npm run typecheck
+
       - name: SQLite operations smoke test
         run: |
           node -e "const db=require('./src/infrastructure/sqlite'); db.getDatabase(); db.closeDatabase();"
