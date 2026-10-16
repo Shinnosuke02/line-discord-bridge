@@ -334,7 +334,7 @@ sticon CDNが不安定な場合に限り、`.env` へ `LINE_EMOJI_IMAGE_ENABLED=
 
 ## CI
 
-GitHub ActionsではNode 24.17で以下を実行します。
+GitHub Actionsでは、サポートする最小Node 24.17.0と過去にOracle VPS実機確認したNode 24.21.0の**両方**で以下を実行します。
 
 - `npm ci`
 - production dependency audit（high severity gate）
