@@ -127,7 +127,8 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 - [x] 非公式sticon CDNに依存する画像取得のみを停止できるopt-out `LINE_EMOJI_IMAGE_ENABLED=false` を追加（未設定時の機能不変）
 - [x] 追加の回帰テスト（cache eviction / cache hit / CDN opt-out）
 - [x] 2026-10-16の本番依存audit警告（axios / proxy-addr / body-parser / qs / moment）を5件のロックファイル更新で対処。Node/LINE/Discord/DB major更新なし
-- [ ] 新規PRとmerge後mainのCI green
+- [x] 2026-10-16のPR #10とmerge後 `main` Run #90でproduction audit / Jest / ESLint / SQLite smoke green
+- [ ] CIをNode 24.17.0（最小）とNode 24.21.0（Oracle VPS実機記録）の両方でgreenにする
 - [ ] VPS実機で保守時間中の前後比較（`/health`、`/ready`、SQLite件数、LINE↔Discord、スタンプ/絵文字）
 - [ ] Discord Developer PortalのMESSAGE CONTENT INTENTと対象ユーザー数（2026年6月以降10,000人基準）確認
 
