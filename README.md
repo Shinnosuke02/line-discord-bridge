@@ -306,9 +306,11 @@ LINE独自絵文字はDiscordの本文へインライン画像として埋め込
 
 同じ「ありがとう」という代替テキストを持つ別々のLINE絵文字でも、IDごとに別の画像を取得するため同一の `🙏` へ潰しません。画像取得に成功した箇所は本文から代替テキストを除き、添付画像のdescriptionへ元の代替テキストを保持します。Discordの1メッセージ当たりの添付上限に合わせ、画像化は先頭10個までです。
 
-sticon CDNはMessaging APIの正式なメディア取得APIではないため、**best-effort** として扱います。タイムアウト・404・Content-Type異常などではメッセージ処理自体を失敗させず、Unicode / fallback textへ戻します。取得成功した画像はメモリ内に最大128件キャッシュします。
+sticon CDNはMessaging APIの正式なメディア取得APIではないため、**best-effort** として扱います。タイムアウト・404・Content-Type異常などではメッセージ処理自体を失敗させず、Unicode / fallback textへ戻します。取得成功した画像はメモリ内に最大128件、かつ合計16MiB以下でキャッシュします（1GiB VM保護）。
 
 通常のUnicode絵文字についてはZWJ・variation selectorを保持して複合絵文字を壊さないようにしています。LINEの通常スタンプ（`message.type=sticker`）は従来どおり `stickerId` を使った画像取得を最優先にします。
+
+sticon CDNが不安定な場合に限り、`.env` へ `LINE_EMOJI_IMAGE_ENABLED=false` を設定してPM2を再起動すると、**LINE独自絵文字画像の取得だけ**無効化できます。未設定時は従来どおり画像優先です。既存のスタンプ画像、通常メディア、LINE/Discordの設定には影響しません。
 
 ## メディア
 
@@ -384,6 +386,8 @@ Phase 3以降:
 - dead-letterの管理UI/CLI強化
 - LINE usage APIとの照合
 - より詳細なobservability
+
+2026-10-16時点の互換性レビュー・安全更新手順は [docs/compatibility-review-2026-10-16.md](docs/compatibility-review-2026-10-16.md) を参照してください。
 
 改善計画は [docs/improvement-plan.md](docs/improvement-plan.md) を参照してください。本番更新手順は [docs/oracle-vps-deployment.md](docs/oracle-vps-deployment.md) に集約しています。
 
