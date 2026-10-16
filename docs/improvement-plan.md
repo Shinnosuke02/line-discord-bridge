@@ -134,6 +134,23 @@ Oracle VPSで v3.2.0 / Node 24.21.0 を起動し、`/health` healthy、`/ready` 
 
 **レビュー正本:** [compatibility-review-2026-10-16.md](compatibility-review-2026-10-16.md)。本番自動デプロイ・設定書換え・DB変更は行わない。
 
+## TypeScript導入 Phase A（2026-10・実行コード変更なし）
+
+従来の「Phase 1 — Reliability」とは**別の移行フェーズ**です。JavaScriptを継続し、JSDoc/`// @ts-check` による静的検査を段階導入します。
+
+- [x] Node 24、PM2、SQLite、LINE/Discord SDK構成を固定
+- [x] `tsconfig.typecheck.json`（`noEmit`）を追加
+- [x] TypeScriptとNodeの型定義を**devDependenciesのみ**に追加
+- [x] `npm run typecheck` を追加（`start` / `restart` は変更しない）
+- [x] `src/utils/async.js`、`lineSource.js`、`lineSticker.js`、`src/services/ReplyTokenPolicy.js` のJSDocを型チェック対象化
+- [x] GitHub Actionsに型チェックを追加（Node 24.17.0 / 24.21.0）
+- [ ] PR・merge後main CI: npm ci / production audit / test / lint / typecheck / SQLite smoke green
+- [ ] Oracle VPSで必要に応じて既存運用をread-onlyで確認（本フェーズは自動デプロイなし）
+
+運用影響: **本番でのTSビルド・追加コマンド不要**。型チェック対象拡大、TypeScriptファイル導入、再デプロイコマンド整備は次Phaseで別PRとして扱う。
+
+詳細: [typescript-phase-a.md](typescript-phase-a.md)
+
 ## Phase 3 — Media
 
 - MediaService streaming化

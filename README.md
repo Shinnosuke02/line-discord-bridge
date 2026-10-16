@@ -332,6 +332,19 @@ sticon CDNが不安定な場合に限り、`.env` へ `LINE_EMOJI_IMAGE_ENABLED=
 - channel topicにLINE source IDを保存しない
 - `/upload` endpointはPhase 2で削除
 
+## TypeScript導入 Phase A — JSのまま型チェック
+
+[導入方針・対象ファイル・本番保全手順](docs/typescript-phase-a.md) を参照してください。
+
+この段階ではTypeScriptへ変換したファイルも、`dist/` もありません。`typescript` と `@types/node` は**開発用依存**として追加し、`// @ts-check` を付けた4モジュールだけ `npm run typecheck` で静的検証します。
+
+```bash
+npm ci
+npm run typecheck
+```
+
+既存の `node src/app.js`、`ecosystem.config.js`、`npm start`、`npm restart` の動作、DB、LINE/Discordの通信経路は**今回変更しません**。本番にTSビルドやTypeScriptランタイムは不要です。実際のPM2再起動方式の統一は後続Phaseで別途検証します。
+
 ## CI
 
 GitHub Actionsでは、サポートする最小Node 24.17.0と過去にOracle VPS実機確認したNode 24.21.0の**両方**で以下を実行します。

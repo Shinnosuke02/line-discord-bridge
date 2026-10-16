@@ -1,11 +1,26 @@
+// @ts-check
+
+/**
+ * @param {string} [stickerResourceType]
+ * @returns {boolean}
+ */
 function isAnimatedStickerResourceType(stickerResourceType = '') {
   return ['ANIMATION', 'ANIMATION_SOUND', 'POPUP', 'POPUP_SOUND'].includes(stickerResourceType);
 }
 
+/**
+ * @param {unknown} buffer
+ * @returns {boolean}
+ */
 function isAnimatedPngBuffer(buffer) {
   return Buffer.isBuffer(buffer) && buffer.includes(Buffer.from('acTL'));
 }
 
+/**
+ * @param {string | number} stickerId
+ * @param {string} [stickerResourceType]
+ * @returns {string[]}
+ */
 function getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
   const baseUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/iPhone`;
   const urls = [];
@@ -18,6 +33,11 @@ function getLineStickerAssetUrls(stickerId, stickerResourceType = 'STATIC') {
   return urls;
 }
 
+/**
+ * @param {string | number | null | undefined} productId
+ * @param {string | number | null | undefined} emojiId
+ * @returns {string | null}
+ */
 function getLineEmojiAssetUrl(productId, emojiId) {
   const normalizedProductId = String(productId || '');
   const normalizedEmojiId = String(emojiId || '');
