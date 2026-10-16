@@ -10,7 +10,7 @@
 
 **既存構成の維持が最優先。Node major、Discord SDK major、DBスキーマ置換、チャンネル再構築、PM2プロセス数変更、ユーザー/運用者の資格情報変更は行わない。**
 
-安全対策として、LINE独自絵文字の画像キャッシュ総量を16MiBに制限し、CDN画像取得だけを止められる任意の環境変数 `LINE_EMOJI_IMAGE_ENABLED=false` を追加する。**未設定の場合の機能は変更しない（画像優先）。** データベース移行や既存設定変更は伴わない。回帰テストを追加し、CI合格後にのみ `main` へ取り込む。VPSへの自動デプロイはしない。
+安全対策として、LINE独自絵文字の画像キャッシュ総量を16MiBに制限し、CDN画像取得だけを止められる任意の環境変数 `LINE_EMOJI_IMAGE_ENABLED=false` を追加する。**未設定の場合の機能は変更しない（画像優先）。** さらに10月時点の `npm audit` で確認した5パッケージについて、**既存semver範囲内の最小限のロックファイル更新**のみ実施する。データベース移行や既存設定変更は伴わない。回帰テストを追加し、PRとmerge後mainのCI合格を確認する。VPSへの自動デプロイはしない。
 
 ## 本番で壊してはいけない契約
 
@@ -36,6 +36,8 @@
 - `sharp 0.35.5`
 - `express 4.22.3`
 
+**2026-10-16 セキュリティ修正（ロックファイル内の解決バージョンのみ）:** `axios 1.18.1→1.20.0`、`proxy-addr 2.0.7→2.0.8`、`body-parser 1.20.5→1.20.8`、`qs 6.15.3→6.16.1`、`moment 2.30.1→2.31.0`。**package.jsonの直接依存範囲は維持し、5パッケージ以外のバージョンは不変。** セキュリティ監査・install・test・lint・SQLite smokeをGitHub Actionsで再実行した。
+
 公式情報（2026-10-16取得）:
 
 1. LINE SDK 11.3が公開済み。ただし現行11.2の `LineBotClient` はすでにv11方式。**機能要件のないSDK更新を本番で先行しない。** https://github.com/line/line-bot-sdk-nodejs/releases
@@ -47,13 +49,14 @@
 7. LINEの `messageEdited` は公式アカウントを含むグループトーク向け。1対1に同じeditイベントの到達を期待しない。 https://developers.line.biz/en/reference/messaging-api/
 8. LINE Messaging APIは受信スタンプIDから画像そのものを返す公式取得APIを提供していない。sticker/sticon CDN画像利用は**非公式・best-effort**であり、CDN障害時はfallbackに戻す。 https://developers.line.biz/en/reference/messaging-api/
 
-**運用要点:** `npm ci` は `package-lock.json` の解決バージョンを使用する。`npm update` / `npm install` による本番依存の暗黙更新はしない。
+**運用要点:** `npm ci` は `package-lock.json` の解決バージョンを使用する。`npm update` / `npm install` による本番依存の暗黙更新はしない。修正は一時的な隔離CIでlockfileのみ生成し、合格後に権限付き一時workflowを削除した。
 
 ## レビュー検出事項
 
 | 重要度 | 現状とリスク | 処置 |
 | --- | --- | --- |
 | **高** | LINE emoji画像キャッシュは「128件×最大2MiB」で合計最大256MiB相当になり得る。1GiB VMの400MiB PM2 restart閾値に対して大きい | **対応:** 件数上限は維持しつつ総量16MiBで古い画像から退避。小画像の既存動作維持 |
+| **高／重大** | 9月のlockfileで10月の最新監査が失敗。`axios` にHigh、`proxy-addr` にCritical、他3依存にModerateを検出 | **対応:** 5パッケージのみ互換範囲で更新。`npm audit --omit=dev --audit-level=high` 合格をゲートに追加確認。実際の悪用可能性はnginx・proxy設定に依存するため未断定 |
 | **高** | 非公式LINE sticon CDNの到達性次第でLINE独自絵文字がALT文字列へ戻る | **対応:** 画像取得だけを停止するopt-outスイッチを追加。デフォルト有効、既存ユーザーへの変更なし |
 | 中 | LINE画像・動画・音声受信は全体をBufferに集めるため、大容量や同時受信時はメモリ使用量が大きい | 変更はPhase 3 streaming設計・負荷テスト後に限定。今回既存メディア処理を変更しない |
 | 中 | `/metrics` はアプリ内に認証がない。インターネットへの露出の有無はnginx/firewall設定で決まる | VPS側read-only確認が必要。経路変更は利用者のアクセス要件確認後 |
@@ -65,7 +68,7 @@
 ## CI・回帰テストの合格条件
 
 - `npm ci`（ロックファイル互換）
-- `npm audit --omit=dev --audit-level=high`
+- `npm audit --omit=dev --audit-level=high`（2026-10-16最新アドバイザリ、5パッケージ最小パッチを確認）
 - LINE SDK `LineBotClient` / Discord `Events.ClientReady` / native modules runtime smoke
 - Jest全件、ESLint
 - SQLite作成・status・オンラインbackup smoke
