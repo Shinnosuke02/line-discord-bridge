@@ -591,6 +591,14 @@ class MessageBridge {
     switch (messageType) {
     case 'text': {
       const formattedText = this.lineService.formatMessage(event, displayName);
+      // Keep existing image-first behavior by default; allow operators to
+      // disable only the unofficial sticon fetch without changing credentials,
+      // channels, SQLite data, or the rest of the message bridge.
+      if (!config.features.lineEmojiImageEnabled) {
+        return {
+          content: processLineEmoji(formattedText, event.message.emojis || [])
+        };
+      }
       return await this.mediaService.processLineTextEmojis(
         formattedText,
         event.message.emojis || []
