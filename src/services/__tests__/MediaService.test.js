@@ -281,6 +281,45 @@ describe('MediaService Phase 2 API correctness', () => {
     expect(axios.get).toHaveBeenCalledTimes(1);
   });
 
+  test('LINE emoji image cache never exceeds 16 MiB on the production VM', async () => {
+    // Nine distinct 2 MiB assets previously occupied 18 MiB indefinitely.
+    const asset = Buffer.alloc(2 * 1024 * 1024, 1);
+    axios.get.mockResolvedValue({
+      data: asset,
+      headers: { 'content-type': 'image/png' }
+    });
+
+    for (let index = 0; index < 9; index++) {
+      const result = await mediaService.downloadLineEmojiAsset('product', String(index).padStart(3, '0'));
+      expect(result.buffer.length).toBe(asset.length);
+      expect(mediaService.lineEmojiAssetCacheBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    }
+
+    expect(mediaService.lineEmojiAssetCache.size).toBe(8);
+    expect(mediaService.lineEmojiAssetCacheBytes).toBe(16 * 1024 * 1024);
+
+    // The oldest image was evicted, but remains available on demand.
+    await mediaService.downloadLineEmojiAsset('product', '000');
+    expect(axios.get).toHaveBeenCalledTimes(10);
+    expect(mediaService.lineEmojiAssetCacheBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+  });
+
+  test('small LINE emoji images remain cached without changing delivery', async () => {
+    axios.get.mockResolvedValue({
+      data: Buffer.from('image-one'),
+      headers: { 'content-type': 'image/png' }
+    });
+
+    const first = await mediaService.downloadLineEmojiAsset('product', '001');
+    const second = await mediaService.downloadLineEmojiAsset('product', '001');
+
+    expect(first.cached).toBe(false);
+    expect(second.cached).toBe(true);
+    expect(first.buffer).toEqual(second.buffer);
+    expect(mediaService.lineEmojiAssetCacheBytes).toBe(Buffer.byteLength('image-one'));
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
   test('LINE file names preserve Japanese characters on Discord', async () => {
     const lineMessage = {
       id: 'msg-1',
