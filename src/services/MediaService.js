@@ -19,6 +19,8 @@ const {
 
 const execFileAsync = promisify(execFile);
 const LINE_EMOJI_ASSET_CACHE_MAX_ENTRIES = 128;
+// Bound retained Buffer memory on the production 1 GiB Oracle VM.
+const LINE_EMOJI_ASSET_CACHE_MAX_BYTES = 16 * 1024 * 1024;
 const LINE_EMOJI_ASSET_MAX_BYTES = 2 * 1024 * 1024;
 const LINE_EMOJI_ASSET_TIMEOUT_MS = 3500;
 
@@ -34,6 +36,7 @@ class MediaService {
     this.supportedAudioTypes = config.file.supportedAudioMimeTypes;
     this.supportedDocumentTypes = config.file.supportedDocumentMimeTypes;
     this.lineEmojiAssetCache = new Map();
+    this.lineEmojiAssetCacheBytes = 0;
     this.lineEmojiAssetPending = new Map();
     this.lineMediaProcessors = createLineMediaProcessors({
       detectFileType: (...args) => this.detectFileType(...args),
@@ -320,13 +323,20 @@ class MediaService {
         throw new Error(`Unexpected LINE emoji content type: ${contentType}`);
       }
 
-      if (this.lineEmojiAssetCache.size >= LINE_EMOJI_ASSET_CACHE_MAX_ENTRIES) {
+      // Keep the existing FIFO cache behavior, but cap total resident image
+      // buffers as well as the number of distinct keys. The original
+      // 128 x 2 MiB upper bound could consume 256 MiB on a 1 GiB server.
+      while (this.lineEmojiAssetCache.size >= LINE_EMOJI_ASSET_CACHE_MAX_ENTRIES
+        || this.lineEmojiAssetCacheBytes + buffer.length > LINE_EMOJI_ASSET_CACHE_MAX_BYTES) {
         const oldestKey = this.lineEmojiAssetCache.keys().next().value;
-        if (oldestKey) {
-          this.lineEmojiAssetCache.delete(oldestKey);
-        }
+        if (!oldestKey) break;
+        const evicted = this.lineEmojiAssetCache.get(oldestKey);
+        this.lineEmojiAssetCache.delete(oldestKey);
+        this.lineEmojiAssetCacheBytes -= evicted.length;
       }
+
       this.lineEmojiAssetCache.set(url, buffer);
+      this.lineEmojiAssetCacheBytes += buffer.length;
 
       logger.debug('LINE emoji image downloaded successfully', {
         productId,
