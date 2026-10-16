@@ -8,8 +8,13 @@ on:
 
 jobs:
   test:
+    name: Node ${{ matrix.node-version }} tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['24.17.0', '24.21.0']
     env:
       NODE_ENV: test
       LINE_CHANNEL_SECRET: test-line-secret
@@ -25,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.17.0'
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install dependencies
